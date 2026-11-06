@@ -63,7 +63,9 @@ The toolbar reports visible and total columns, and its **Comments only** control
 
 ## Keyboard use
 
-Choose **Keyboard help** in a report, or press `?`, for the complete shortcut list. The selected cell has a persistent shaded background. Arrow keys or Vim-style `H`, `J`, `K`, and `L` move between cells; Home/End or `0`/`$` move across the row; and `G` and Shift+`G` move to the first and last rows. In Develop mode Enter/F2 edits and `C` opens comments; Ctrl/Cmd+Z and Ctrl/Cmd+Y undo and redo requirement edits. Press `/` to focus the selected cell's column filter, or the comments search field while browsing comments.
+Choose **Keyboard help**, or press `?`, for the complete shortcut list. Use the arrow keys or Vim's `h`, `j`, `k`, and `l` to move one cell. Use Home/End or `0`/`$` to reach either end of a row. Press `/` to focus the selected column's filter or, when browsing comments, the comment search field.
+
+In Develop mode, Tab and Shift+Tab move across visible cells and wrap between rows. At the outer edges they leave the grid. Ctrl/Cmd+Arrow jumps to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge. Ctrl/Cmd+Home and Ctrl/Cmd+End reach the first and last corners of the visible data. Press `gg` for the first row and Shift+G for the bottom, including the blank entry row. Press Enter, F2, or `i` to edit a non-ID cell, and `c` to open its comments. Ctrl/Cmd+Z undoes an edit and Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redoes it. The textarea keeps its normal text editing shortcuts.
 
 ## Use as a Git diff tool
 

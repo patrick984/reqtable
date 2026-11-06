@@ -78,8 +78,106 @@ function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").re
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...document.querySelectorAll("[data-grid-cell]")];}
 
-function focusGridCell(row,column){const cells=gridCells();if(!cells.length)return;const maxRow=Math.max(...cells.map(c=>+c.dataset.rowIndex)),maxCol=visibleColumns().length-1;row=Math.max(0,Math.min(maxRow,row));column=Math.max(0,Math.min(maxCol,column));const cell=cells.find(c=>+c.dataset.rowIndex===row&&+c.dataset.columnIndex===column);if(cell){state.focus={row,column};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}}function restoreSelectedCell(){requestAnimationFrame(()=>focusGridCell(state.focus.row,state.focus.column));}function focusSelectedFilter(){const column=visibleColumns()[state.focus.column],input=column&&[...document.querySelectorAll("[data-filter]")].find(x=>x.dataset.filter===column.name);if(input){input.focus();input.select();}}function enterTableFromFilter(input){const column=visibleColumns().findIndex(c=>c.name===input.dataset.filter);clearTimeout(filterTimer);renderBodyOnly();requestAnimationFrame(()=>focusGridCell(0,Math.max(0,column)));}
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeHeaderPopups();closeQuick();closeValueFilter();hideCommentHover();closeReview();restoreSelectedCell();return;}if(e.target.matches("[data-filter]")&&(e.key==="ArrowDown"||e.key==="Enter")){e.preventDefault();enterTableFromFilter(e.target);return;}if(e.target.matches("input,textarea,select")||e.target.isContentEditable)return;if(e.key==="?"){e.preventDefault();showHelp();return;}if(e.key==="/"){e.preventDefault();if(!review.hidden&&!state.commentContext){$("#comment-search").focus();$("#comment-search").select();}else focusSelectedFilter();return;}const cell=e.target.closest("[data-grid-cell]");if(!cell)return;let row=+cell.dataset.rowIndex,column=+cell.dataset.columnIndex,handled=true,key=e.key.toLocaleLowerCase();if(e.key==="ArrowLeft"||key==="h")column--;else if(e.key==="ArrowRight"||key==="l")column++;else if(e.key==="ArrowUp"||key==="k")row--;else if(e.key==="ArrowDown"||key==="j")row++;else if(e.key==="Home"||e.key==="0")column=0;else if(e.key==="End"||e.key==="$" )column=visibleColumns().length-1;else if(e.key==="PageUp")row-=10;else if(e.key==="PageDown")row+=10;else if(key==="g")row=e.shiftKey?Number.MAX_SAFE_INTEGER:0;else if((e.key==="Enter"||key==="c")&&data.options.commentsEnabled&&cell.dataset.column!==data.meta.idColumn){e.preventDefault();cell.querySelector(".comment-button")?.click();return;}else handled=false;if(handled){e.preventDefault();if(e.ctrlKey&&(e.key==="Home"||e.key==="End"))row=e.key==="Home"?0:Number.MAX_SAFE_INTEGER;focusGridCell(row,column);}});
+function focusGridCell(row,column){const cells=gridCells();if(!cells.length)return;const maxRow=Math.max(...cells.map(c=>+c.dataset.rowIndex)),maxCol=visibleColumns().length-1;row=Math.max(0,Math.min(maxRow,row));column=Math.max(0,Math.min(maxCol,column));const cell=cells.find(c=>+c.dataset.rowIndex===row&&+c.dataset.columnIndex===column);if(cell){state.focus={row,column};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}}function restoreSelectedCell(){requestAnimationFrame(()=>focusGridCell(state.focus.row,state.focus.column));}function focusSelectedFilter(){const column=visibleColumns()[state.focus.column],input=column&&[...document.querySelectorAll("[data-filter]")].find(x=>x.dataset.filter===column.name);if(input){input.focus();input.select();}}function enterTableFromFilter(input){const column=visibleColumns().findIndex(c=>c.name===input.dataset.filter);clearTimeout(filterTimer);closeValueFilter();renderBodyOnly();requestAnimationFrame(()=>focusGridCell(0,Math.max(0,column)));}
+const arrowSteps={
+  ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]
+};
+let pendingG=null;
+function jumpGridRegion(row,column,dr,dc){
+  const rows=sortedRows(),columns=visibleColumns();
+  const inGrid=(r,c)=>r>=0&&r<=rows.length&&c>=0&&c<columns.length;
+  const filled=(r,c)=>Boolean(rows[r]&&valueFor(rows[r],columns[c].name).trim());
+  if(!inGrid(row+dr,column+dc))return;
+  const followRun=filled(row,column)&&filled(row+dr,column+dc);
+  while(inGrid(row+dr,column+dc)){
+    const nextFilled=filled(row+dr,column+dc);
+    if(followRun&&!nextFilled)break;
+    row+=dr;
+    column+=dc;
+    if(!followRun&&nextFilled)break;
+  }
+  focusGridCell(row,column);
+}
+document.addEventListener("focusout",e=>{
+  if(e.target===pendingG)pendingG=null;
+});
+document.addEventListener("keydown",e=>{
+  const previousG=pendingG;
+  pendingG=null;
+  if(e.defaultPrevented||e.isComposing)return;
+  if(e.key==="Escape"){
+    closeHeaderPopups();closeQuick();closeValueFilter();hideCommentHover();closeReview();restoreSelectedCell();
+    return;
+  }
+  if(e.target.matches("[data-filter]")&&(e.key==="ArrowDown"||e.key==="Enter")){
+    e.preventDefault();
+    enterTableFromFilter(e.target);
+    return;
+  }
+  if(e.target.matches("input,textarea,select")||e.target.isContentEditable||e.altKey)return;
+  const modified=e.ctrlKey||e.metaKey;
+  if(!modified&&e.key==="?"){e.preventDefault();showHelp();return;}
+  if(!modified&&e.key==="/"){
+    e.preventDefault();
+    if(!review.hidden&&!state.commentContext){$("#comment-search").focus();$("#comment-search").select();}
+    else focusSelectedFilter();
+    return;
+  }
+  const cell=e.target.closest("[data-grid-cell]");
+  if(!cell)return;
+  let row=+cell.dataset.rowIndex,column=+cell.dataset.columnIndex;
+  const develop=developMode(),key=e.key.toLowerCase(),step=Object.hasOwn(arrowSteps,e.key)&&arrowSteps[e.key];
+  const lastColumn=visibleColumns().length-1;
+  if(modified){
+    if(e.shiftKey)return;
+    if(develop&&step&&e.target===cell){
+      e.preventDefault();
+      jumpGridRegion(row,column,...step);
+      return;
+    }
+    if(e.key!=="Home"&&e.key!=="End")return;
+    if(!develop&&!e.ctrlKey)return;
+    row=e.key==="Home"?0:develop?sortedRows().length-1:Number.MAX_SAFE_INTEGER;
+    column=e.key==="Home"?0:lastColumn;
+  }else if(develop&&e.key==="Tab"&&e.target===cell){
+    const direction=e.shiftKey?-1:1;
+    column+=direction;
+    if(column<0||column>lastColumn){
+      const nextRow=cell.parentElement[e.shiftKey?"previousElementSibling":"nextElementSibling"];
+      if(!nextRow)return;
+      row+=direction;
+      column=e.shiftKey?lastColumn:0;
+    }
+  }else if(step){
+    row+=step[0];
+    column+=step[1];
+  }else if(key==="h")column--;
+  else if(key==="l")column++;
+  else if(key==="k")row--;
+  else if(key==="j")row++;
+  else if(e.key==="Home"||e.key==="0")column=0;
+  else if(e.key==="End"||e.key==="$")column=lastColumn;
+  else if(e.key==="PageUp")row-=10;
+  else if(e.key==="PageDown")row+=10;
+  else if(key==="g"){
+    if(develop&&!e.shiftKey){
+      e.preventDefault();
+      if(e.repeat||previousG!==cell){pendingG=cell;return;}
+    }
+    row=e.shiftKey?Number.MAX_SAFE_INTEGER:0;
+  }else if(develop&&key==="i"&&e.target===cell){
+    e.preventDefault();
+    startCellEdit(cell);
+    return;
+  }else if((e.key==="Enter"||key==="c")&&data.options.commentsEnabled&&cell.dataset.column!==data.meta.idColumn){
+    if(e.key==="Enter"&&e.target!==cell)return;
+    e.preventDefault();
+    cell.querySelector(".comment-button")?.click();
+    return;
+  }else return;
+  e.preventDefault();
+  focusGridCell(row,column);
+});
 document.querySelectorAll("#reviewer-filter,#comment-column-filter,#comment-status-filter").forEach(el=>el.addEventListener("change",renderReviewPanel));if(data.meta.mode!=="diff")document.querySelectorAll(".diff-only").forEach(el=>el.hidden=true);if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);const storedInitials=loadReviewerInitials();if(storedInitials)$("#reviewer-initials").value=storedInitials;populateReviewFilters();
 
 /* Develop-mode editing and browser-side persistence. */
@@ -429,7 +527,7 @@ TEMPLATE = r"""<!doctype html>
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
-<dialog id="keyboard-help" class="help-dialog"><div class="help-head"><h2>Keyboard shortcuts</h2><button id="close-help">Close</button></div><div class="help-body"><p>Focus a table cell with <kbd>Tab</kbd>, then use:</p><table class="shortcut-table"><tbody><tr><th><kbd>Arrow keys</kbd> or <kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></th><td>Move one cell</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd> or <kbd>0</kbd> / <kbd>$</kbd></th><td>First / last visible column</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>Ctrl</kbd>+<kbd>End</kbd></th><td>First / last table row</td></tr><tr><th><kbd>G</kbd> / <kbd>Shift</kbd>+<kbd>G</kbd></th><td>First / last table row</td></tr><tr><th><kbd>Page Up</kbd> / <kbd>Page Down</kbd></th><td>Move ten rows</td></tr><tr><th><kbd>Enter</kbd> or <kbd>F2</kbd></th><td>Edit a non-ID cell in Develop mode</td></tr><tr><th><kbd>C</kbd></th><td>Open comments for a non-ID cell</td></tr><tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd></th><td>Undo / redo requirement edits in Develop mode. Ctrl/Cmd+Shift+Z also redoes.</td></tr><tr><th><kbd>/</kbd></th><td>Focus the selected column filter, or comment search when browsing comments</td></tr><tr><th><kbd>Down Arrow</kbd> or <kbd>Enter</kbd> in a filter</th><td>Move to that column in the first matching row</td></tr><tr><th><kbd>?</kbd></th><td>Open this help page</td></tr><tr><th><kbd>Escape</kbd></th><td>Cancel editing or close menus, popups, or the comments sidebar</td></tr></tbody></table><p>On the menu bar, Left and Right move between menus. Down and Up open a menu and move through items. Enter activates an item, Space toggles a checkbox, and Escape closes the menu. In an editor, Ctrl/Cmd+Enter applies the edit. Column dividers can be dragged. Double-click a divider to auto-size the column on its left.</p></div></dialog>
+<dialog id="keyboard-help" class="help-dialog"><div class="help-head"><h2>Keyboard shortcuts</h2><button id="close-help">Close</button></div><div class="help-body"><p>Focus a table cell with <kbd>Tab</kbd>, then use:</p><table class="shortcut-table"><tbody><tr><th><kbd>Arrow keys</kbd> or <kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></th><td>Move one cell</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd> or <kbd>0</kbd> / <kbd>$</kbd></th><td>First / last visible column</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>Ctrl</kbd>+<kbd>End</kbd></th><td>First / last table corner. In Develop, Cmd also works and End skips the blank entry row.</td></tr><tr><th><kbd>g</kbd> / <kbd>G</kbd></th><td>First / last table row. In Develop, press <kbd>g</kbd> twice for the first row.</td></tr><tr><th><kbd>Page Up</kbd> / <kbd>Page Down</kbd></th><td>Move ten rows</td></tr><tr class="develop-only"><th><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>Next / previous cell, wrapping across rows. Tab leaves the grid at its edges.</td></tr><tr class="develop-only"><th><kbd>Ctrl/Cmd</kbd>+<kbd>Arrow</kbd></th><td>Jump to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge.</td></tr><tr class="develop-only"><th><kbd>Enter</kbd>, <kbd>F2</kbd>, or <kbd>i</kbd></th><td>Edit a non-ID cell</td></tr><tr><th><kbd>C</kbd></th><td>Open comments for a non-ID cell</td></tr><tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd></th><td>Undo / redo requirement edits in Develop mode. Ctrl/Cmd+Shift+Z also redoes.</td></tr><tr><th><kbd>/</kbd></th><td>Focus the selected column filter, or comment search when browsing comments</td></tr><tr><th><kbd>Down Arrow</kbd> or <kbd>Enter</kbd> in a filter</th><td>Move to that column in the first matching row</td></tr><tr><th><kbd>?</kbd></th><td>Open this help page</td></tr><tr><th><kbd>Escape</kbd></th><td>Cancel editing or close menus, popups, or the comments sidebar</td></tr></tbody></table><p>On the menu bar, Left and Right move between menus. Down and Up open a menu and move through items. Enter activates an item, Space toggles a checkbox, and Escape closes the menu. In an editor, Ctrl/Cmd+Enter applies the edit. Column dividers can be dragged. Double-click a divider to auto-size the column on its left.</p></div></dialog>
 <script id="reqtable-data" type="application/json">__DATA__</script><script>__JS__</script></body></html>"""
 
 
