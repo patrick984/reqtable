@@ -1,0 +1,8 @@
+ID,Category,Requirement,Acceptance Criteria,Priority,Owner
+SYS-001,Performance,The service shall start within **10 seconds**.,Measured from process launch until ready status.,Must,PN
+SYS-002,Storage,"The service shall retain logs for:
+- 14 days
+- 1 GB maximum",Oldest logs are removed first.,Must,AB
+SYS-003,Security,The service shall accept HTTP connections.,A client can connect over port 8080.,Should,PN
+SYS-005,Legacy,The legacy export shall remain available.,The legacy command produces a text file.,Could,AB
+

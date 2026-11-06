@@ -1,0 +1,8 @@
+ID,Category,Requirement,Acceptance Criteria,Priority,Owner,Release
+SYS-001,Performance,The service shall start within **5 seconds**.,Measured from process launch until the health endpoint reports ready.,Must,PN,1.0
+SYS-002,Storage,"The service shall retain logs for:
+- 30 days
+- 2 GB maximum",Oldest logs are compressed and then removed first.,Must,AB,1.0
+SYS-003,Security,The service shall accept HTTPS connections using TLS 1.3.,A client connects securely and an HTTP request is redirected.,Must,PN,1.0
+SYS-004,Availability,The service shall recover automatically after an unexpected restart.,The service returns to ready state without operator action.,Should,AB,1.1
+

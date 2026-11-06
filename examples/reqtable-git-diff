@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+if [ "$#" -lt 2 ]; then
+    echo "Usage: reqtable-git-diff OLD.csv NEW.csv" >&2
+    exit 2
+fi
+
+old_csv=$1
+new_csv=$2
+if [ "$old_csv" = /dev/null ] || [ "$new_csv" = /dev/null ]; then
+    echo "reqtable-git-diff requires both CSV snapshots; use a snapshot report for added/deleted files." >&2
+    exit 2
+fi
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+reqtable_pyz=${REQTABLE_PYZ:-"$script_dir/../dist/reqtable.pyz"}
+id_column=${REQTABLE_ID_COLUMN:-ID}
+output=$(mktemp "${TMPDIR:-/tmp}/reqtable-diff.XXXXXX.html")
+
+set -- python "$reqtable_pyz" --old "$old_csv" --new "$new_csv" --id-column "$id_column" -o "$output"
+if [ -n "${REQTABLE_CONFIG:-}" ]; then
+    set -- "$@" --config "$REQTABLE_CONFIG"
+fi
+"$@"
+
+if command -v open >/dev/null 2>&1; then
+    open "$output"
+elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$output"
+else
+    echo "$output"
+fi

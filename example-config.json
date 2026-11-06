@@ -1,0 +1,20 @@
+{
+  "id_column": "ID",
+  "title": "Requirements review",
+  "document_mode": "review",
+  "columns": {
+    "hidden": ["Rationale"],
+    "order": ["ID", "Category", "Requirement", "Acceptance Criteria", "Priority"],
+    "widths": {
+      "ID": "8rem",
+      "Requirement": "30rem",
+      "Acceptance Criteria": "30rem"
+    }
+  },
+  "comments": {
+    "enabled": true,
+    "reviewer_initials": null,
+    "csv_column": "Comments",
+    "csv_format": "json"
+  }
+}

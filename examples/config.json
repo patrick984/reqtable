@@ -1,0 +1,16 @@
+{
+  "id_column": "ID",
+  "title": "Example requirements review",
+  "document_mode": "review",
+  "columns": {
+    "order": ["ID", "Category", "Requirement", "Acceptance Criteria", "Priority", "Owner", "Release"],
+    "widths": {
+      "ID": "8rem",
+      "Requirement": "28rem",
+      "Acceptance Criteria": "26rem"
+    }
+  },
+  "comments": {
+    "reviewer_initials": "PN"
+  }
+}
