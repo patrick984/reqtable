@@ -308,6 +308,14 @@ The report is one HTML5 file containing:
 
 Report data will be serialized safely so cell content cannot terminate a `<script>` element or inject executable markup. A restrictive Content Security Policy meta tag should be included where compatible with the inline implementation.
 
+#### Compact report format
+
+Format version 2 stores source snapshots, comments, report settings, and a small status map for historical diff CSV exports. The browser derives searchable text, Markdown HTML, diff markup, and the table from the source snapshots. New reports and copies saved in the browser both omit the precomputed cells and rendered table rows. Comment extraction reads both format versions.
+
+Store new data when it is needed to recover the user's work or reproduce an export. Derive new views from the saved data. When changing the format, verify that earlier reports still extract and that new reports and saved copies reopen offline with their edits, comments, and diff behavior.
+
+Measure report size and browser opening time for snapshots, historical diffs, and Develop reports before considering compression. Treat compression as a separate format change if the measurements justify adding decoding in Python and the browser.
+
 ### 10.2 Header and summary
 
 The report header contains:

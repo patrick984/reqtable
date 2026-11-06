@@ -547,7 +547,7 @@ def extract_report_json(report_path: str) -> dict[str, Any]:
         data = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
         raise InputError(f"{path}: invalid embedded report data: {exc}") from exc
-    if not isinstance(data, dict) or data.get("format") != "reqtable-report" or data.get("formatVersion") != 1:
+    if not isinstance(data, dict) or data.get("format") != "reqtable-report" or data.get("formatVersion") not in (1, 2):
         raise InputError(f"{path}: unsupported or invalid reqtable report format")
     if not isinstance(data.get("comments"), list) or not isinstance(data.get("source"), dict):
         raise InputError(f"{path}: malformed report data")
@@ -598,7 +598,12 @@ def extract_comments_csv(
             headers = list(source["new"]["headers"]) + [h for h in source["old"]["headers"] if h not in source["new"]["headers"]]
             if "_Diff Status" in headers:
                 raise InputError("cannot use union CSV base because '_Diff Status' already exists")
-            status_by_id = {row["id"]: row["status"] for row in data["rows"]}
+            if data["formatVersion"] == 1:
+                status_by_id = {row["id"]: row["status"] for row in data["rows"]}
+            else:
+                status_by_id = data.get("diffStatus")
+                if not isinstance(status_by_id, dict):
+                    raise InputError(f"{report_path}: malformed diff status map")
             selected = {
                 "headers": headers + ["_Diff Status"],
                 "rows": [{**old_rows.get(rid, {}), **new_rows.get(rid, {}), "_Diff Status": status_by_id.get(rid, "")} for rid in order],

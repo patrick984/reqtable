@@ -13,6 +13,7 @@ from reqtable.core import (
     InputError,
     build_report_data,
     extract_comments_csv,
+    extract_report_json,
     load_config,
     read_csv_table,
     render_diff,
@@ -236,6 +237,9 @@ class ReportTests(TempFiles):
             "created": "2026-09-13T15:42:18+10:00", "modified": None, "text": "Why removed?"
         }]
         report_path = self.write("diff-reviewed.html", render_report(data))
+        embedded = extract_report_json(report_path)
+        self.assertEqual(embedded["formatVersion"], 2)
+        self.assertNotIn("rows", embedded)
         with self.assertRaisesRegex(InputError, "would omit comments"):
             extract_comments_csv(str(report_path), str(self.root / "out.csv"), "Comments", "json", "new", False)
         extract_comments_csv(str(report_path), str(self.root / "union.csv"), "Comments", "json", "union", False)
@@ -243,6 +247,16 @@ class ReportTests(TempFiles):
             rows = list(csv.DictReader(handle))
         removed = next(row for row in rows if row["ID"] == "R2")
         self.assertEqual(removed["_Diff Status"], "removed")
+
+        legacy = self.write(
+            "legacy.html",
+            '<script id="reqtable-data" type="application/json">'
+            + json.dumps(data)
+            + "</script>",
+        )
+        legacy_csv = self.root / "legacy.csv"
+        extract_comments_csv(str(legacy), str(legacy_csv), "Comments", "json", "union", False)
+        self.assertEqual(legacy_csv.read_bytes(), (self.root / "union.csv").read_bytes())
 
 
 if __name__ == "__main__":
