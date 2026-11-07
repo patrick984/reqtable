@@ -113,3 +113,50 @@ function buildValueRules(records,headers,idColumn,issue){
   return rules;
 }
 """
+
+VALUE_EDIT_JS = r"""
+function observedSuggestions(rows,column){
+  const values=new Set();
+  for(const row of rows){
+    const value=String(row[column]??"").trimEnd();
+    if(!value)continue;
+    if(value.length>60||value.includes("\n"))return [];
+    values.add(value);
+    if(values.size>50)return [];
+  }
+  return [...values].sort((a,b)=>a.localeCompare(b)).map(value=>({value,detail:""}));
+}
+function suggestionSource(rule,rows,column){
+  if(!rule){
+    return {items:observedSuggestions(rows,column),defined:false,multiple:false};
+  }
+  const items=[...rule.values].map(([value,record])=>({value,detail:String(record.row.Definition??"").trim()}));
+  return {items,defined:true,multiple:rule.multiple};
+}
+function valueSegments(text){
+  return text.split(";").map(piece=>({text:piece.trim()}));
+}
+function segmentIndex(text,caret){
+  return text.slice(0,caret).split(";").length-1;
+}
+function matchSuggestions(source,text,caret){
+  let query=text,taken=new Set();
+  if(source.multiple){
+    const segments=valueSegments(text),at=segmentIndex(text,caret);
+    query=segments[at].text;
+    taken=new Set(segments.filter((_,i)=>i!==at).map(segment=>segment.text.toLocaleLowerCase()).filter(Boolean));
+  }
+  const needle=query.toLocaleLowerCase();
+  const open=source.items.filter(item=>item.value!==query&&!taken.has(item.value.toLocaleLowerCase()));
+  const prefix=open.filter(item=>item.value.toLocaleLowerCase().startsWith(needle));
+  if(!source.defined)return prefix;
+  return [...prefix,...open.filter(item=>!prefix.includes(item)&&item.value.toLocaleLowerCase().includes(needle))];
+}
+function chooseSuggestion(source,text,caret,value){
+  if(!source.multiple)return {text:value,caret:value.length,commit:true};
+  const parts=text.split(";").map(part=>part.trim());
+  parts[segmentIndex(text,caret)]=value;
+  const next=parts.filter(Boolean).join("; ");
+  return {text:next,caret:next.length,commit:false};
+}
+"""

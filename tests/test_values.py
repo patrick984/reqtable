@@ -8,6 +8,7 @@ from pathlib import Path
 
 from reqtable.core import build_report_data, load_config, read_csv_table
 from reqtable.traceability import TRACE_COLUMNS, TRACE_MODEL_JS
+from reqtable.values import VALUE_EDIT_JS
 from tests.test_core import TempFiles
 
 UAT_CSV = Path(__file__).resolve().parent.parent / "requirements-uat.csv"
@@ -154,3 +155,86 @@ assert.equal(rules.get("Priority").multiple,true);
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class ValueEditorTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
+                       + TRACE_MODEL_JS + VALUE_EDIT_JS + assertions, text=True, check=True)
+
+    PRELUDE = ValueModelTests.PRELUDE + r"""
+const names=source=>source.items.map(item=>item.value);
+const rule=column=>index(base).values.get(column);
+const pick=(source,text,caret=text.length)=>matchSuggestions(source,text,caret).map(item=>item.value);
+"""
+
+    def test_defined_values_carry_definitions_and_skip_aliases(self):
+        self.run_js(self.PRELUDE + r"""
+const source=suggestionSource(rule("Priority"),[],"Priority");
+assert.deepEqual(source.items,[{value:"Must",detail:"Defined."},{value:"Should",detail:"Defined."}]);
+assert.equal(source.defined,true);
+assert.equal(source.multiple,false);
+const method=suggestionSource(rule("Method"),[],"Method");
+assert.deepEqual(names(method),["Manual browser test","Automated test"]);
+assert.equal(method.multiple,true);
+""")
+
+    def test_observed_values_keep_prefix_matching_and_limits(self):
+        self.run_js(self.PRELUDE + r"""
+const rows=[{Cat:"Zed"},{Cat:"Alpha"},{Cat:"Alpine "},{Cat:""}];
+const source=suggestionSource(undefined,rows,"Cat");
+assert.deepEqual(source.items,[{value:"Alpha",detail:""},{value:"Alpine",detail:""},{value:"Zed",detail:""}]);
+assert.deepEqual(pick(source,"Al"),["Alpha","Alpine"]);
+assert.deepEqual(pick(source,"pha"),[]);
+assert.deepEqual(pick(source,"Alpha"),[]);
+assert.deepEqual(suggestionSource(undefined,[{Cat:"a\nb"}],"Cat").items,[]);
+assert.deepEqual(suggestionSource(undefined,[{Cat:"x".repeat(61)}],"Cat").items,[]);
+assert.deepEqual(suggestionSource(undefined,Array.from({length:51},(_,i)=>({Cat:"v"+i})),"Cat").items,[]);
+""")
+
+    def test_defined_values_match_prefix_before_contained_text(self):
+        self.run_js(self.PRELUDE + r"""
+const source=suggestionSource(rule("Method"),[],"Method");
+assert.deepEqual(pick(source,"browser"),["Manual browser test"]);
+assert.deepEqual(pick(source,"A"),["Automated test","Manual browser test"]);
+assert.deepEqual(pick(source,"TEST"),["Manual browser test","Automated test"]);
+assert.deepEqual(pick(source,"auto"),["Automated test"]);
+assert.deepEqual(pick(source,"zzz"),[]);
+""")
+
+    def test_multiple_columns_work_on_the_segment_under_the_caret(self):
+        self.run_js(self.PRELUDE + r"""
+const source=suggestionSource(rule("Method"),[],"Method");
+const text="Manual browser test; au; ";
+assert.deepEqual(pick(source,text,text.indexOf("au")+1),["Automated test"]);
+assert.deepEqual(pick(source,"Automated test; ",16),["Manual browser test"]);
+assert.deepEqual(pick(source,"Automated test; Manual browser test",5),[]);
+assert.deepEqual(pick(source,"Manual browser test; ",3),[]);
+""")
+
+    def test_choosing_replaces_only_the_segment(self):
+        self.run_js(self.PRELUDE + r"""
+const multi=suggestionSource(rule("Method"),[],"Method");
+const middle="Manual browser test;au;Documentation review";
+const joined="Manual browser test; Automated test; Documentation review";
+assert.deepEqual(chooseSuggestion(multi,middle,middle.indexOf("au")+1,"Automated test"),
+  {text:joined,caret:joined.length,commit:false});
+assert.deepEqual(chooseSuggestion(multi,"Manual browser test; ",21,"Automated test"),
+  {text:"Manual browser test; Automated test",caret:35,commit:false});
+assert.deepEqual(chooseSuggestion(multi,"",0,"Automated test"),{text:"Automated test",caret:14,commit:false});
+const single=suggestionSource(rule("Priority"),[],"Priority");
+assert.deepEqual(chooseSuggestion(single,"Mu",2,"Must"),{text:"Must",caret:4,commit:true});
+""")
+
+    def test_findings_group_by_record_and_column(self):
+        self.run_js(self.PRELUDE + r"""
+const found=index([...base,req("R1",{Priority:"Shoud",Method:"Nope; Automated test"}),req("R2",{Priority:"Must"})]).issues;
+const cells=groupFindingsByCell(found);
+assert.deepEqual([...cells.keys()],["R1"]);
+assert.deepEqual([...cells.get("R1").keys()].sort(),["Method","Priority"]);
+assert.equal(cells.get("R1").get("Priority").length,1);
+const two=groupFindingsByCell([{id:null,field:"Part of",message:"x"},{id:"A",field:"ID",message:"y"},{id:"A",field:"ID",message:"z"}]);
+assert.equal(two.get("A").get("ID").length,2);
+assert.equal(two.size,1);
+""")

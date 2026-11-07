@@ -100,6 +100,16 @@ function buildTraceIndex(rows,identify,schema={}){
   const values=buildValueRules(records.values(),headers,schema.idColumn,issue);
   return {records,systems,roots,issues,glossary,values};
 }
+function groupFindingsByCell(issues){
+  const cells=new Map();
+  for(const finding of issues){
+    if(!finding.id)continue;
+    const columns=cells.get(finding.id)??new Map();
+    columns.set(finding.field,[...(columns.get(finding.field)??[]),finding]);
+    cells.set(finding.id,columns);
+  }
+  return cells;
+}
 function traceCanLink(record,field,target){
   const rule=traceFields[field];
   if(record===target||record.id.includes(";")||target.id.includes(";")||!rule.from.includes(record.type)
@@ -336,8 +346,40 @@ const trace=(()=>{
   function renderIssues(){
     $("#trace-findings").querySelector("summary").textContent=`Trace findings (${index.issues.length})`;
     $("#trace-issues").innerHTML=index.issues.length?index.issues.map(({id,field,message})=>
-      `<li>${id?link(id,id)+" · ":""}<strong>${escapeHtml(field)}</strong><br>${escapeHtml(message)}</li>`
+      `<li data-finding-id="${escapeHtml(id??"")}" data-finding-field="${escapeHtml(field)}">${id?link(id,id)+" · ":""}<strong>${escapeHtml(field)}</strong><br>${escapeHtml(message)}</li>`
     ).join(""):"<li>No trace findings.</li>";
+  }
+  function showFindings(id,column){
+    openPanel(id);
+    $("#trace-findings").open=true;
+    let first=null;
+    for(const item of $("#trace-issues").children){
+      const match=item.dataset.findingId===id&&item.dataset.findingField===column;
+      item.classList.toggle("trace-finding-active",match);
+      first??=match?item:null;
+    }
+    first?.scrollIntoView({block:"nearest"});
+  }
+  function paintMarkers(){
+    const cells=groupFindingsByCell(index.issues);
+    for(const row of tableBody.rows){
+      const columns=cells.get(row.dataset.rowId);
+      if(!columns)continue;
+      for(const cell of row.querySelectorAll("[data-grid-cell]")){
+        const column=cell.dataset.column,issues=columns.get(column);
+        const wrapper=cell.querySelector(".cell-wrap");
+        if(!issues||!wrapper||wrapper.querySelector(".trace-marker"))continue;
+        const id=row.dataset.rowId,marker=document.createElement("button");
+        marker.type="button";
+        marker.className="trace-marker";
+        marker.textContent="⚑";
+        const label=`${issues.length} trace ${issues.length===1?"finding":"findings"} for ${id}, ${column}`;
+        marker.setAttribute("aria-label",label);
+        marker.title=`${label}\n${issues.map(issue=>issue.message).join("\n")}`;
+        marker.addEventListener("click",()=>showFindings(id,column));
+        wrapper.append(marker);
+      }
+    }
   }
   function renderDetail(){
     if(panel.hidden)return;
@@ -752,7 +794,7 @@ const trace=(()=>{
     if(view==="systems")focusControl(tree,"data-trace-system",selectedSystem);
   });
 
-  return {refresh,matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+  return {refresh,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>view==="sources"?sourceLayout:null,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
@@ -924,11 +966,21 @@ TRACE_CSS = """
 #trace-findings summary {cursor:pointer}
 #trace-issues {padding-inline-start:20px;overflow-wrap:anywhere}
 #trace-issues li {margin-bottom:6px}
+#trace-issues li.trace-finding-active {background:var(--selected);outline:2px solid var(--accent);border-radius:4px;padding:2px 4px}
+:root {--trace-finding:#b42318}
+@media(prefers-color-scheme:dark) {:root {--trace-finding:#ff9a8f}}
+.cell-wrap:has(.trace-marker) {padding-right:24px}
+.cell-wrap:has(.quality-marker):has(.trace-marker) {padding-right:46px}
+.trace-marker {
+  position:absolute; top:-4px; right:0; width:22px; height:24px;
+  border:0; padding:0; background:transparent; color:var(--trace-finding); font-weight:700;
+}
+.quality-marker~.trace-marker {right:22px}
 #trace-query {display:block;width:100%}
 #trace-candidates button,#trace-candidates label {display:block;width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
 #trace-record-form label,#trace-delete-form label {display:grid;gap:3px;margin-bottom:10px}
 #trace-systems[hidden],#trace-scope[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
-@media print {#trace-workspace,#trace-panel,.trace-row-marker,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
+@media print {#trace-workspace,#trace-panel,.trace-row-marker,.trace-marker,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
 """
