@@ -28,6 +28,17 @@ CSS = r"""
 .toolbar .popover kbd{font:inherit;font-size:.8em;color:var(--muted);white-space:nowrap;border:0;padding:0}
 .toolbar .popover .menu-section{border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
 .toolbar .popover #hidden-filter-warning:not(:empty){padding:5px 12px}
+.toolbar.has-active-filters {
+  background:color-mix(in srgb,var(--selected) 55%,var(--panel));
+}
+#active-filters {margin-inline-start:auto}
+#active-filters>summary {display:flex; align-items:center; color:var(--accent)}
+#active-filters[hidden] {display:none}
+#active-filters .popover {
+  left:auto; right:0; width:max-content; min-width:0;
+  max-width:min(28rem,calc(100vw - 36px)); padding:8px 12px; overflow-wrap:anywhere;
+}
+#active-filter-list {margin:4px 0 0; padding-inline-start:1.25em}
 #table-context-menu{position:fixed;top:auto;left:auto;z-index:80;padding:4px;min-width:180px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}
 #table-context-menu[hidden]{display:none}
 #table-context-menu button{display:block;width:100%;text-align:left;border:0}
@@ -164,6 +175,37 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
 
 
 function filterActive(column){return Boolean(state.filters.get(column)||state.valueFilters.get(column)?.size);}function renderColumnChooser(){const box=$("#column-list");box.innerHTML=data.columns.map(c=>`<label><input type="checkbox" data-column-toggle="${escapeHtml(c.name)}" ${state.hidden.has(c.name)?'':'checked'}> ${escapeHtml(c.label)}</label>`).join("");const hiddenFiltered=data.columns.filter(c=>state.hidden.has(c.name)&&filterActive(c.name)).length;$("#hidden-filter-warning").textContent=hiddenFiltered?`${hiddenFiltered} hidden column filter${hiddenFiltered===1?' is':'s are'} active`:"";}function renderStatusControls(){document.querySelectorAll("[data-status]").forEach(el=>el.checked=state.statuses.has(el.dataset.status));}function cycleSort(column){if(!state.sort||state.sort.column!==column)state.sort={column,direction:1};else if(state.sort.direction===1)state.sort.direction=-1;else state.sort=null;render();}
+function renderActiveFilters(){
+  const details=$("#active-filters"),summary=details.querySelector("summary");
+  const descriptions=[];
+  for(const column of data.columns){
+    if(!filterActive(column.name))continue;
+    const label=column.label+(state.hidden.has(column.name)?" (hidden column)":"");
+    const query=state.filters.get(column.name),values=state.valueFilters.get(column.name);
+    if(query)descriptions.push(`${label} contains “${query}”`);
+    if(values?.size)descriptions.push(`${label} is ${[...values].map(value=>`“${value}”`).join(" or ")}`);
+  }
+  if(state.commentsOnly)descriptions.push("Rows with comments only");
+  if(diffActive()){
+    const statuses=["added","removed","changed","unchanged"];
+    const shown=statuses.filter(status=>state.statuses.has(status)
+      &&(status!=="unchanged"||state.unsavedDiff||data.options.includeUnchanged));
+    if(shown.length<statuses.length){
+      descriptions.push(shown.length?`Status: ${shown.join(", ")}`:"Status: no statuses selected");
+    }
+  }
+  const active=descriptions.length>0;
+  details.closest(".toolbar").classList.toggle("has-active-filters",active);
+  details.hidden=!active;
+  if(!active)details.open=false;
+  summary.title=descriptions.join("\n");
+  summary.setAttribute("aria-label",`Active filters (${descriptions.length})`);
+  $("#active-filter-list").replaceChildren(...descriptions.map(description=>{
+    const item=document.createElement("li");
+    item.textContent=description;
+    return item;
+  }));
+}
 function closeHeaderPopups(except=null){document.querySelectorAll("details.popup-menu[open]").forEach(d=>{if(d!==except)d.removeAttribute("open");});}function positionPopover(element,anchor){const r=anchor.getBoundingClientRect(),margin=8;element.hidden=false;const width=element.offsetWidth,height=element.offsetHeight;let left=Math.min(r.left,innerWidth-width-margin),top=r.bottom+5;if(top+height>innerHeight-margin)top=Math.max(margin,r.top-height-5);element.style.left=`${Math.max(margin,left)}px`;element.style.top=`${Math.max(margin,top)}px`;}function closeQuick(){quick.hidden=true;quick.innerHTML="";state.editingId=null;}function sameReviewer(c){return c&&c.initials.toLocaleUpperCase()===reviewerInitials().toLocaleUpperCase()&&Boolean(reviewerInitials());}
 function openQuick(button){hover.hidden=true;closeHeaderPopups();const cell=button.closest("[data-grid-cell]");if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();}const rid=button.dataset.commentRow,column=button.dataset.commentColumn,existing=commentsFor(rid,column).sort((a,b)=>a.created.localeCompare(b.created)),previous=existing[existing.length-1];state.commentContext={rid,column};state.editingId=null;const previousHtml=previous?`<div class="quick-previous"><div class="meta">Previous comment${existing.length>1?` · ${existing.length-1} earlier`:''}</div>${commentCard(previous,sameReviewer(previous)?`<div class="comment-actions"><button type="button" data-quick-edit-comment="${escapeHtml(previous.id)}">Edit</button></div>`:"")}</div>`:"";quick.innerHTML=`<h3>${escapeHtml(rid)} / ${escapeHtml(column)}</h3>${previousHtml}<form id="quick-comment-form"><label for="quick-comment-text">New comment</label><textarea id="quick-comment-text" required></textarea><div class="comment-actions"><button class="primary" id="quick-comment-save" type="submit">Add comment</button><button type="button" id="open-comment-sidebar">Show sidebar</button><button type="button" id="close-quick-comment">Cancel</button></div></form>`;positionPopover(quick,button);$("#quick-comment-form").addEventListener("submit",saveQuickComment);$("#open-comment-sidebar").addEventListener("click",()=>{closeQuick();openComments(rid,column,true);});$("#close-quick-comment").addEventListener("click",()=>{closeQuick();restoreSelectedCell();});$("#quick-comment-text").focus();}
 function addComment(text,rid,column){if(column===data.meta.idColumn){alert("Comments cannot be attached to the ID column.");return false;}const initials=reviewerInitials();if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");focusReviewerInitials();return false;}persistReviewerInitials();if(developMode())remember();state.comments.push({id:(globalThis.crypto&&crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`),requirementId:rid,column,initials,created:localTimestamp(),modified:null,text});setDirty(true);return true;}
@@ -474,7 +516,7 @@ ${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-l
 }else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;}
-function renderBody(){rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();}
+function renderBody(){renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();}
 function syncModeUi(){document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
@@ -1284,6 +1326,7 @@ document.addEventListener("keydown",event=>{
     menu.open=false;
     summary.focus();
   }else if(event.target===summary&&["Enter"," "].includes(event.key)){
+    if(menu.id==="active-filters")return;
     closeHeaderPopups(menu);
     menu.open=true;
     menuItems(menu)[0]?.focus();
@@ -1346,7 +1389,13 @@ TEMPLATE = r"""<!doctype html>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
-<details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
+<details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong>
+<details id="active-filters" class="popup-menu" hidden>
+  <summary aria-label="Active filters">
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 3h12L9.5 8v4l-3 1V8z"/></svg>
+  </summary>
+  <div class="popover"><strong>Active filters</strong><ul id="active-filter-list"></ul></div>
+</details></section>
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="row-drag-preview" aria-hidden="true" hidden></div>
 <div id="table-context-menu" class="popover" role="group" aria-label="Requirement actions" hidden></div>
