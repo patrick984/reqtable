@@ -37,6 +37,7 @@ Each feature file starts with an H1 title and one paragraph describing the user-
 
 - [Review export](./review-export.md) covers Export for review and Export changes for review, and the reviewer's comparison toggle. Last proven 2026-11-07 (`snapshot-export`, `changes-export`, `review-toggle`). `removed-row-comment` was proven before this skill existed and has not been rerun with it.
 - [Develop editing](./develop-editing.md) covers cell edits, adding, deleting, moving, undo and Save CSV. Last proven 2026-11-07 for `edit-cell`, `add-row`, `delete-row`, `move-row`, `undo` and `save-csv`, as setup for the review export proof.
+- [Allowed values](./allowed-values.md) covers editor suggestions with definitions for constrained columns, multi-value segment completion, and the trace finding markers in grid cells. Not yet proven.
 - [Review comments](./review-comments.md) covers reviewer initials, adding a comment, Save report copy, and CLI extraction. Not yet proven end to end.
 - [Diff report](./diff-report.md) covers the generated old/new comparison, its counts, view toggle and status filters. Not yet proven.
 - [Quality check](./quality-check.md) covers Check requirement quality in Develop mode. Not yet proven.

@@ -197,6 +197,8 @@ A column is checked only when it has at least one `Value` record. Trace findings
 
 Findings also report invalid `Value` and `Field` records: a missing or unknown **Field**, a reserved column (the ID column, `Type`, `Field`, `Multiple` or a link column), a missing **Name** or **Definition**, duplicate names or clashing aliases within one field, two `Field` records for one column, and a **Multiple** other than `Yes` or `No`. Value and Field records appear in **All fields** and stay out of the Requirements view.
 
+In Develop mode, editing a column that has `Value` records suggests exactly the defined values, each with its definition, in table order. Aliases are not suggested. Typing narrows the list to values that start with the text, then values that contain it. In a `Multiple` column the editor works on the semicolon-separated segment under the caret, hides values already in the cell, and replaces only that segment when you choose one. The editor stays open so you can type `; ` and add another value. A cell with any trace finding shows a flag button. Click it to open the finding in **Trace findings**.
+
 ## Review comments
 
 Enter reviewer initials in the report, then select or hover a non-ID cell to reveal its `+` control. A nearby quick-comment popup keeps the latest comment visible, permits its author to edit it, and can open the full comments sidebar. Numbered red indicators mark cells with comments. Reviewer colors are derived consistently from initials. The resizable sidebar supports browsing, searching, inline editing, deleting, and navigating to a cell without closing. Saving or cancelling an inline edit returns to the same browse or single-cell view.
@@ -219,7 +221,7 @@ Narrow cells open a wider editor anchored to the selected cell. It fits within t
 
 With a grid cell focused in Spreadsheet mode, Ctrl/Cmd+Shift+Up or Down adds a requirement above or below. Alt/Option+Shift+Up or Down moves the selected requirement. Ctrl/Cmd+Backspace or Delete opens the delete confirmation. Plain Delete or Backspace clears the selected cells; the ID column, protected columns and removed rows are skipped, and one Undo restores them. The Edit menu shows shortcuts for the active keyboard mode. Press Alt/Option+/ to search available menu commands, then use the arrow keys and Enter to run one.
 
-Committing an edit removes trailing whitespace and blank lines. Columns with up to 50 distinct nonempty values, each a single line of at most 60 characters, suggest existing values as you type. Click a suggestion or use Down Arrow and Enter to select it and commit the edit. You can also enter a new value.
+Committing an edit removes trailing whitespace and blank lines. Columns with up to 50 distinct nonempty values, each a single line of at most 60 characters, suggest existing values as you type. Click a suggestion or use Down Arrow and Enter to select it and commit the edit. Columns with defined values suggest those values instead, with their definitions, and a `Multiple` column keeps the editor open after you choose one. You can also enter a new value.
 
 In Develop mode, right-click a cell or press Shift+F10 on a focused cell to open its actions. Drag the grip beside a requirement ID to reorder it in the normal view with source order and no filters. The line shows where the row will land. One Undo reverses the move.
 
