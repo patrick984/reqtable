@@ -1357,15 +1357,19 @@ function gridClipboardEvent(){
   const cell=document.activeElement;
   return developMode()&&!state.editingCell&&cell?.matches("[data-grid-cell]")&&tableBody.contains(cell);
 }
-function copySelection(event){
-  if(!gridClipboardEvent()||!event.clipboardData)return;
+function selectionText(){
   const {top,bottom,left,right}=selectionBounds();
   const columns=visibleColumns().slice(left,right+1);
   const rows=sortedRows().slice(top,bottom+1);
-  if(!rows.length||!columns.length)return;
-  const lines=rows.map(row=>columns.map(column=>csvField(valueFor(row,column.name),"\t")).join("\t"));
+  if(!rows.length||!columns.length)return null;
+  return rows.map(row=>columns.map(column=>csvField(valueFor(row,column.name),"\t")).join("\t")).join("\r\n");
+}
+function copySelection(event){
+  if(!gridClipboardEvent()||!event.clipboardData)return;
+  const text=selectionText();
+  if(text===null)return;
   event.preventDefault();
-  event.clipboardData.setData("text/plain",lines.join("\r\n"));
+  event.clipboardData.setData("text/plain",text);
 }
 function parseClipboardBlock(text){
   const rows=[];
@@ -1450,10 +1454,21 @@ function syncClipboardActions(){
   const disabled=!developMode()||!!state.editingCell||!gridCells().length;
   for(const id of ["copy-cells","paste-cells","clear-cells"])$("#"+id).disabled=disabled;
 }
-$("#copy-cells").addEventListener("click",()=>{
+$("#copy-cells").addEventListener("click",async()=>{
   if(state.editingCell)return;
+  const text=selectionText();
   focusGridCell(state.focus.row,state.focus.column,true);
-  document.execCommand("copy");
+  if(text===null)return;
+  try{await navigator.clipboard.writeText(text);return;}catch{}
+  const scratch=document.createElement("textarea");
+  scratch.value=text;
+  scratch.style.cssText="position:fixed;opacity:0;pointer-events:none";
+  document.body.append(scratch);
+  scratch.select();
+  const copied=document.execCommand("copy");
+  scratch.remove();
+  focusGridCell(state.focus.row,state.focus.column,true);
+  if(!copied)$("#save-status").textContent="Copy from the menu needs clipboard permission; use Cmd/Ctrl+C";
 });
 $("#paste-cells").addEventListener("click",async()=>{
   if(state.editingCell)return;
