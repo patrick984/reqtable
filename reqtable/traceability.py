@@ -224,7 +224,7 @@ const trace=(()=>{
   };
   const verificationColumns=()=>[data.meta.idColumn,"Requirement","Verification Method","Verification Level","Verified by","Compliance"];
   const verificationLayout={
-    defaults:new Map([[data.meta.idColumn,110],["Requirement",320],["Verification Method",130],["Verification Level",130],["Verified by",300],["Compliance",130]]),
+    defaults:new Map([[data.meta.idColumn,110],["Requirement",280],["Verification Method",120],["Verification Level",120],["Verified by",240],["Compliance",130]]),
     flexible:new Set(["Requirement"]),
     overrides:new Map(),
   };
@@ -647,7 +647,7 @@ const trace=(()=>{
     system=id;
     unallocated=onlyUnallocated;
     revealed=null;
-    if(!switchView("requirements"))render();
+    if(!switchView(usesScope()?view:"requirements"))render();
     restoreGridSelection(current,column);
   }
   function updateLink(record,field,value){
