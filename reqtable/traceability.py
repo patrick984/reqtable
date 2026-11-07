@@ -856,6 +856,7 @@ const trace=(()=>{
 
   return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>view==="sources"?sourceLayout:null,
+    columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name):0,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
     scoped:()=>["systems","sources","glossary"].includes(view)||(view==="requirements"&&(!!system||unallocated))||!!revealed,

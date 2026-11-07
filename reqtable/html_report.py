@@ -193,7 +193,7 @@ function localTimestamp(){const d=new Date(),off=-d.getTimezoneOffset(),sign=off
 function displayTimestamp(value){const d=new Date(value);if(Number.isNaN(d.getTime()))return value;const pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;}
 function filenameTimestamp(){const d=new Date(),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;}
 function reviewerColor(initials){let hash=0;for(const ch of initials.toLocaleUpperCase())hash=(hash*31+ch.codePointAt(0))>>>0;return `hsl(${hash%360} 68% 48%)`;}
-function availableColumns(){return trace?data.columns.filter(c=>trace.columnAvailable(c.name)):data.columns;}
+function availableColumns(){return trace?data.columns.filter(c=>trace.columnAvailable(c.name)).sort((a,b)=>trace.columnRank(a.name)-trace.columnRank(b.name)):data.columns;}
 function visibleColumns(){return availableColumns().filter(c=>!state.hidden.has(c.name));}
 function defaultHiddenColumns(){return trace?.defaultHidden()??new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));}
 function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell.old:cell.new)??"";}function commentsFor(rid,column){return state.comments.filter(c=>c.requirementId===rid&&c.column===column);}
