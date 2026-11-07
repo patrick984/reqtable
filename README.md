@@ -76,7 +76,7 @@ Enable the pilot with `--traceability` or `"traceability": true` in the JSON con
 
 Open **Glossary** in either mode to browse the shared terms for the whole project. Use the **Name** or **Definition** column filter to search. In Develop mode, choose **Add term…**, then edit any of its fields in the grid. To attach a citation, select the term and choose **Links → Link source…**.
 
-Each term is a `Term` record in the same CSV, with a unique ID, a **Name**, and a **Definition**. Separate optional **Aliases** with semicolons, for example `CSV; Delimited Text`. Set **Auto Link** to `Yes` to also link single-word Title Case spellings for that term. The **Trace findings** panel reports incomplete records, duplicate names, and spellings shared by different terms.
+Each term is a `Term` record in the same CSV. Enter its **Name** and **Definition** and ReqTable assigns a unique ID when you add it. The Glossary hides IDs by default. Use **Columns** to show them. Separate optional **Aliases** with semicolons, for example `CSV; Delimited Text`. Set **Auto Link** to `Yes` to also link single-word Title Case spellings for that term. The **Trace findings** panel reports incomplete records, duplicate names, and spellings shared by different terms.
 
 The browser underlines registered Title Case phrases and uppercase acronyms in rendered **Requirement**, **Acceptance Criteria**, and **Rationale** text. Matching is case-sensitive, uses whole spellings, and prefers the longest match. For example, a term named `Comma-Separated Values` with alias `CSV` matches either spelling. Code, existing links, URLs, and email addresses are skipped. Matches use continuous rendered text, so a formatting boundary inside a phrase can interrupt a match.
 

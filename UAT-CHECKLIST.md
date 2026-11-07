@@ -144,7 +144,7 @@ Generate the Develop and Review reports using the `--traceability` commands in t
 
 ## Project glossary
 
-1. With networking disabled, open **Glossary** in each traceability report. Verify both modes show the same terms. Filter by **Name** or **Definition**, then clear the filters. Verify **Add term…** is available only in Develop mode.
+1. With networking disabled, open **Glossary** in each traceability report. Verify both modes show the same terms with the ID column hidden. Use **Columns** to show IDs, then restore the default columns. Filter by **Name** or **Definition**, then clear the filters. Verify **Add term…** is available only in Develop mode.
 2. In Requirements, activate a dotted-underlined `CSV` by click and by keyboard. Verify the definition and source appear beside the text. Press Escape and verify focus returns to the term.
 3. In Develop, add a term named `Example Term` with aliases `ET; Example`. In a requirement, enter ``Example Term, ET, et, Example, ET2, https://example.test/ET, and `ET` ``. Verify only the full phrase and uppercase acronym initially link. Set the term's **Auto Link** to `Yes` and verify the standalone `Example` links. Add another term with alias `ET` and verify that spelling stops linking and appears in **Trace findings**.
-4. Attach a source to the term through **Links**. Save and reopen an HTML copy, then export the CSV and regenerate with `--traceability`. Verify the term, aliases, single-word setting, and source survive.
+4. Verify **Add term…** asks for the name and definition and assigns each new term a distinct ID. Attach a source to a term through **Links**. Save and reopen an HTML copy, then export the CSV and regenerate with `--traceability`. Verify the term, generated ID, aliases, single-word setting, and source survive.

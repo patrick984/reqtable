@@ -654,20 +654,24 @@ function updateDirty(){
 function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);}updateDirty();}
 function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);if(snapshot.qualityReview)state.qualityReview=cloneValue(snapshot.qualityReview);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
 function selectedRequirementId(){return document.querySelector("[data-grid-cell].selected-cell")?.closest("tr")?.dataset.rowId||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The requirement ID cannot be empty.");return null;}if(trace&&id.includes(";")){alert("A traceable ID cannot contain a semicolon.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`Requirement ID ${id} already exists.`);return null;}return id;}
-function nextRequirementId(){
-  const ids=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])].map(rowId)
-    .filter(id=>!trace||!id.includes(";"));
-  const numbered=ids.map(id=>id.match(/^(.*?)([0-9]+)$/)).filter(Boolean);
+function nextRecordId(preferredPrefix=null){
+  const rows=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])];
   const families=new Map();
-  for(const [,prefix,digits] of numbered){
+  for(const row of rows){
+    const match=rowId(row).match(/^(.*?)([0-9]+)$/);
+    if(!match)continue;
+    const [,prefix,digits]=match;
+    if(trace&&prefix.includes(";"))continue;
     const family=families.get(prefix)??{count:0,max:0n,width:0};
-    family.count++;
+    if(!trace||traceType(row)!=="Term")family.count++;
     const number=BigInt(digits);
     if(number>family.max)family.max=number;
     family.width=Math.max(family.width,digits.length);
     families.set(prefix,family);
   }
-  const [prefix,family]=[...families].sort((a,b)=>b[1].count-a[1].count)[0]??["REQ-",{max:0n,width:3}];
+  const prefix=preferredPrefix??[...families].filter(([,family])=>family.count)
+    .sort((a,b)=>b[1].count-a[1].count)[0]?.[0]??"REQ-";
+  const family=families.get(prefix)??{max:0n,width:3};
   return prefix+String(family.max+1n).padStart(family.width,"0");
 }
 function newRequirement(id){
@@ -684,7 +688,7 @@ function addRequirement(position){
   if(state.editingCell||(trace&&!trace.entry()))return;
   const selected=state.currentRows.findIndex(row=>rowId(row)===selectedRequirementId());
   if(selected<0&&position!=="end"){alert("Select a current requirement first.");return;}
-  const proposed=prompt(`New requirement ID (${data.meta.idColumn}):`,nextRequirementId());
+  const proposed=prompt(`New requirement ID (${data.meta.idColumn}):`,nextRecordId());
   if(proposed===null)return;
   const id=validateNewId(proposed);
   if(!id)return;
@@ -954,7 +958,7 @@ function applyCellEdit(form,next,continueAtEntry=false){
   const row=findCurrentRow(id);
   if(id===""&&value){
     remember();
-    id=nextRequirementId();
+    id=nextRecordId();
     const added=newRequirement(id);
     trace?.allocate(added);
     added[column]=value;

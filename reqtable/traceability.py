@@ -176,8 +176,8 @@ const trace=(()=>{
     return true;
   }
   function defaultHidden(){
-    return new Set(data.columns.filter(({name,hidden})=>name!==data.meta.idColumn
-      &&(hidden||(view==="requirements"&&!requirementsDefaults.has(name)))).map(({name})=>name));
+    return new Set(data.columns.filter(({name,hidden})=>name===data.meta.idColumn
+      ?view==="glossary":hidden||(view==="requirements"&&!requirementsDefaults.has(name))).map(({name})=>name));
   }
   const viewStates=new Map();
   const collapsed=new Set();
@@ -506,8 +506,10 @@ const trace=(()=>{
     if(!writable())return;
     recordEdit={type,record,parent};
     $("#trace-editor-title").textContent=record?"Rename system":parent?(type==="System"?"Add subsystem":"Add child requirement"):`Add ${type.toLowerCase()}`;
-    $("#trace-record-id").value=record?.id??(type==="Requirement"?nextRequirementId():"");
-    $("#trace-record-id").readOnly=!!record;
+    const idInput=$("#trace-record-id");
+    $("#trace-record-id-field").hidden=idInput.disabled=type==="Term";
+    idInput.value=record?.id??(type==="Requirement"?nextRecordId():"");
+    idInput.readOnly=!!record;
     $("#trace-record-name").value=record?.row.Name??"";
     $("#trace-record-name").required=type!=="Requirement";
     $("#trace-record-name-field").hidden=type==="Requirement";
@@ -519,6 +521,7 @@ const trace=(()=>{
     $("#trace-term-aliases").value="";
     $("#trace-term-single-word").checked=false;
     editor.showModal();
+    if(type==="Term")$("#trace-record-name").focus();
   }
   function optionList(select,choices,empty){
     select.replaceChildren(new Option(empty,""),...choices.map(record=>new Option(caption(record),record.id)));
@@ -681,7 +684,7 @@ const trace=(()=>{
     event.preventDefault();
     if(!writable())return;
     const {type,record,parent}=recordEdit;
-    const id=record?.id??validateNewId($("#trace-record-id").value);
+    const id=record?.id??(type==="Term"?nextRecordId("TERM-"):validateNewId($("#trace-record-id").value));
     const name=$("#trace-record-name").value.trim(),content=$("#trace-record-content").value.trim();
     if(!id)return;
     if((type==="Requirement"||type==="Term")&&!content){
@@ -844,7 +847,7 @@ TRACE_HTML = """
   <form id="trace-record-form">
     <div class="help-head"><h2 id="trace-editor-title">Add record</h2><button type="button" id="trace-editor-cancel">Cancel</button></div>
     <div class="help-body">
-      <label>ID <input id="trace-record-id" required></label>
+      <label id="trace-record-id-field">ID <input id="trace-record-id" required></label>
       <label id="trace-record-name-field">Name <input id="trace-record-name"></label>
       <label id="trace-record-content-field"><span id="trace-record-content-label"></span>
         <textarea id="trace-record-content" rows="3"></textarea></label>
