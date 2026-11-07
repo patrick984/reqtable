@@ -41,10 +41,11 @@ CSS = r"""
   max-width:min(28rem,calc(100vw - 36px)); padding:8px 12px; overflow-wrap:anywhere;
 }
 #active-filter-list {display:grid; gap:4px; margin:4px 0 0; padding:0; list-style:none}
-#active-filter-list li {display:flex; align-items:flex-start; justify-content:space-between; gap:8px}
+#active-filter-list li {display:flex; align-items:center; justify-content:space-between; gap:8px}
 #active-filter-list .remove-filter {
-  display:grid; place-items:center; flex:none; width:22px; height:22px;
-  padding:0; border:1px solid var(--line); border-radius:4px; line-height:1;
+  display:flex; align-items:center; justify-content:center; flex:none;
+  width:22px; height:22px; padding:0; border:1px solid var(--line);
+  border-radius:4px; font-size:16px; line-height:1;
 }
 #table-context-menu{position:fixed;top:auto;left:auto;z-index:80;padding:4px;min-width:180px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}
 #table-context-menu[hidden]{display:none}
