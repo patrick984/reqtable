@@ -64,7 +64,7 @@ python -m reqtable requirements-uat.csv --id-column ID --traceability \
   -o requirements-uat.html
 ```
 
-The report opens in **Requirements** with the core writing columns, including Verification Method. Use **Columns** to show more writing fields, or **All fields** to see every CSV record and relationship column. The **System** selector includes all requirements, unallocated requirements, and individual systems. Select **Include subsystems** for a combined view. A requirement shared across systems, such as `REQ-003`, appears once in that view.
+The report opens in **Requirements** with the core writing columns, including Verification Method. Use **Columns** to show more writing fields such as Rationale, or **All fields** to see every CSV record and relationship column. The **System** selector includes all requirements, unallocated requirements, and individual systems. Select **Include subsystems** for a combined view. A requirement shared across systems, such as `REQ-003`, appears once in that view.
 
 Select a record and use **Links** in the workspace bar to see or add relationships. A dot in the ID cell marks records that already have links. Following a link opens the corresponding record view, and **Back to previous record** returns to the starting point. If a target is filtered out within the current grid, **Reveal in grid** shows it alongside that view. The active-filters menu can remove the exception or the system filter. **Trace findings** reports invalid links and cycles. An optional **Name** gives a requirement a short label in link lists and pickers. You can edit it in **All fields**.
 

@@ -151,7 +151,7 @@ const trace=(()=>{
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const glossaryColumns=new Set([data.meta.idColumn,"Name",...glossaryFields]);
-  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Rationale",...glossaryFields]);
+  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin",...glossaryFields]);
   const glossaryPopover=createGlossaryPopover();
   const labels={
     "Part of":["Parent system","Move to…"],
