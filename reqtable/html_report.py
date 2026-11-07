@@ -93,11 +93,16 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 .report-identity {max-width:100%}
 .save-area {margin-inline-start:auto}
 .report-identity h1 {margin:0; font-size:1.3rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.report-identity .mode-badge {flex:none; padding:1px 6px; font-size:.85em; white-space:nowrap}
+.report-identity .mode-badge,.report-identity .report-info>summary {
+  flex:none; padding:1px 6px; font-size:.85em; white-space:nowrap;
+}
 .header-disclosure {flex:none}
 .report-info,.dirty {position:static}
 .header-disclosure>summary {padding:2px 6px}
-.report-info>summary {border-radius:50%; width:24px; text-align:center; font-weight:700}
+.report-info>summary {
+  border-radius:99px; min-width:22px; text-align:center; font-weight:700;
+  color:var(--accent); border-color:var(--accent); background:var(--panel);
+}
 .header-disclosure>summary:hover,.header-disclosure[open]>summary {background:var(--selected)}
 .header-disclosure .popover {
   z-index:35; width:max-content; min-width:0; max-width:min(34rem,calc(100vw - 36px));
