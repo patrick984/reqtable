@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from .quality import QUALITY_JS
+from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_UI_JS
 
 
 CSS = r"""
@@ -185,7 +186,7 @@ function rowGrip(enabled){
 }
 function canDragRows(){
   return developMode()&&!diffActive()&&!state.sort&&!state.commentsOnly
-    &&!quality.only&&state.statuses.has("unchanged")&&!data.columns.some(column=>filterActive(column.name));
+    &&!quality.only&&!trace?.scoped()&&state.statuses.has("unchanged")&&!data.columns.some(column=>filterActive(column.name));
 }
 function renderHead(){const cols=visibleColumns();headRow.innerHTML=statusHead()+cols.map(c=>`<th scope="col" class="heading-cell" data-header-column="${escapeHtml(c.name)}"><button class="sort-button" data-sort="${escapeHtml(c.name)}">${escapeHtml(c.label)} <span aria-hidden="true">${state.sort&&state.sort.column===c.name?(state.sort.direction===1?'▲':'▼'):''}</span></button><span class="resize-handle" data-resize="${escapeHtml(c.name)}" role="separator" aria-orientation="vertical" aria-label="Resize ${escapeHtml(c.label)} column" title="Drag to resize; double-click to auto-size"></span></th>`).join("");filterRow.innerHTML=statusFilterHead()+cols.map(c=>{const value=state.filters.get(c.name)||'',selected=state.valueFilters.get(c.name),active=value||selected?.size;return `<th><label class="sr-only" for="filter-${escapeHtml(c.name)}">Filter ${escapeHtml(c.label)}</label><div class="filter-control"><input id="filter-${escapeHtml(c.name)}" data-filter="${escapeHtml(c.name)}" value="${escapeHtml(value)}" placeholder="${selected?.size?`${selected.size} selected`:'Filter…'}"><button class="clear-filter" data-clear-filter="${escapeHtml(c.name)}" aria-label="Clear ${escapeHtml(c.label)} filter" ${active?'':'hidden'}>×</button></div></th>`;}).join("");}
 let rangeSelection=null;
@@ -218,6 +219,7 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
   const column=selected?.dataset.column;
   $("#revert-selected-cell").disabled=!!state.editingCell||!canRevertCell(column,row?.cells[column]);
   paintSelection();
+  trace?.syncSelection(row?.id??null);
   $("#restore-deleted-requirement").disabled=!!state.editingCell||!developMode()||row?.status!=="removed";
 }
 
@@ -225,7 +227,7 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
 function filterActive(column){return Boolean(state.filters.get(column)||state.valueFilters.get(column)?.size);}function renderColumnChooser(){const box=$("#column-list");box.innerHTML=data.columns.map(c=>`<label><input type="checkbox" data-column-toggle="${escapeHtml(c.name)}" ${state.hidden.has(c.name)?'':'checked'}> ${escapeHtml(c.label)}</label>`).join("");const hiddenFiltered=data.columns.filter(c=>state.hidden.has(c.name)&&filterActive(c.name)).length;$("#hidden-filter-warning").textContent=hiddenFiltered?`${hiddenFiltered} hidden column filter${hiddenFiltered===1?' is':'s are'} active`:"";}function renderStatusControls(){document.querySelectorAll("[data-status]").forEach(el=>el.checked=state.statuses.has(el.dataset.status));}function cycleSort(column){if(!state.sort||state.sort.column!==column)state.sort={column,direction:1};else if(state.sort.direction===1)state.sort.direction=-1;else state.sort=null;render();}
 function renderActiveFilters(){
   const details=$("#active-filters"),summary=details.querySelector("summary");
-  const filters=[];
+  const filters=trace?.filters()??[];
   for(const column of data.columns){
     if(!filterActive(column.name))continue;
     const label=column.label+(state.hidden.has(column.name)?" (hidden column)":"");
@@ -299,14 +301,14 @@ document.addEventListener("change",e=>{if(e.target.matches("[data-column-toggle]
     [...document.querySelectorAll("[data-column-toggle]")].find(input=>input.dataset.columnToggle===column)?.focus();
   }
 }if(e.target.matches("[data-status]")){e.target.checked?state.statuses.add(e.target.dataset.status):state.statuses.delete(e.target.dataset.status);render();}if(e.target.matches("[data-value-filter]")){const column=e.target.dataset.valueFilter,chosen=new Set([...valuePopover.querySelectorAll("[data-value-filter]")].filter(x=>x.checked).map(x=>x.value));if(chosen.size)state.valueFilters.set(column,chosen);else state.valueFilters.delete(column);state.filters.delete(column);renderHead();renderBodyOnly();requestAnimationFrame(()=>{const input=[...document.querySelectorAll("[data-filter]")].find(x=>x.dataset.filter===column);if(input)showValueFilter(input);});}});
-$("#view-toggle").addEventListener("click",()=>{state.view=state.view==="unified"?"side-by-side":"unified";render();});$("#changes-only").addEventListener("click",()=>{state.statuses=new Set(["added","removed","changed"]);render();});$("#comments-only-rows").addEventListener("click",()=>{state.commentsOnly=!state.commentsOnly;renderBodyOnly();});$("#clear-filters").addEventListener("click",()=>{state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;quality.only=false;render();});$("#reset-view").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);quality.only=false;quality.revealId=null;state.view=data.options.initialView;state.sort=null;state.widths=new Map(data.columns.map(c=>[c.name,configuredPixels(c)]));render();});$("#show-all-columns").addEventListener("click",()=>{state.hidden.clear();closeHeaderPopups();render();});$("#default-columns").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));closeHeaderPopups();render();});document.querySelectorAll("details.popup-menu").forEach(details=>details.addEventListener("toggle",()=>{if(details.open)closeHeaderPopups(details);}));
+$("#view-toggle").addEventListener("click",()=>{state.view=state.view==="unified"?"side-by-side":"unified";render();});$("#changes-only").addEventListener("click",()=>{state.statuses=new Set(["added","removed","changed"]);render();});$("#comments-only-rows").addEventListener("click",()=>{state.commentsOnly=!state.commentsOnly;renderBodyOnly();});$("#clear-filters").addEventListener("click",()=>{state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;quality.only=false;trace?.reset();render();});$("#reset-view").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);quality.only=false;quality.revealId=null;trace?.reset();state.view=data.options.initialView;state.sort=null;state.widths=new Map(data.columns.map(c=>[c.name,configuredPixels(c)]));render();});$("#show-all-columns").addEventListener("click",()=>{state.hidden.clear();closeHeaderPopups();render();});$("#default-columns").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));closeHeaderPopups();render();});document.querySelectorAll("details.popup-menu").forEach(details=>details.addEventListener("toggle",()=>{if(details.open)closeHeaderPopups(details);}));
 $("#browse-comments").addEventListener("click",()=>{if(!review.hidden){closeReview();return;}showAllComments(true);});$("#close-review").addEventListener("click",closeReview);$("#back-comments").addEventListener("click",()=>showAllComments(true));function closeReview(){review.hidden=true;$("#browse-comments").setAttribute("aria-expanded","false");}function resetReviewFilters(){$("#reviewer-filter").value="";$("#comment-column-filter").value="";$("#comment-status-filter").value="";populateReviewFilters();}
 function populateReviewFilters(){const setOptions=(el,values,label)=>{const current=el.value;el.innerHTML=`<option value="">${label}</option>`+[...values].sort().map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");el.value=current;};setOptions($("#reviewer-filter"),new Set(state.comments.map(c=>c.initials)),"All reviewers");setOptions($("#comment-column-filter"),new Set(data.columns.filter(c=>c.name!==data.meta.idColumn).map(c=>c.name)),"All columns");}
-function showAllComments(focusSearch=false){closeQuality();state.commentContext=null;state.editingId=null;review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel();if(focusSearch)requestAnimationFrame(()=>$("#comment-search").focus());}function openComments(rid,column,focusEditor=false){if(column===data.meta.idColumn)return;closeQuality();state.commentContext={rid,column};state.editingId=null;$("#comment-search").value="";resetReviewFilters();review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel(focusEditor);}
+function showAllComments(focusSearch=false){trace?.close();closeQuality();state.commentContext=null;state.editingId=null;review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel();if(focusSearch)requestAnimationFrame(()=>$("#comment-search").focus());}function openComments(rid,column,focusEditor=false){if(column===data.meta.idColumn)return;trace?.close();closeQuality();state.commentContext={rid,column};state.editingId=null;$("#comment-search").value="";resetReviewFilters();review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel(focusEditor);}
 function renderReviewPanel(focusEditor=false){populateReviewFilters();const reviewBody=$(".review-body"),previousScroll=reviewBody.scrollTop,context=state.commentContext,q=($("#comment-search").value||"").toLocaleLowerCase(),reviewer=$("#reviewer-filter").value,column=$("#comment-column-filter").value,status=$("#comment-status-filter").value,statusMap=new Map(data.rows.map(r=>[r.id,r.status]));let list=state.comments.filter(c=>!context||(c.requirementId===context.rid&&c.column===context.column));list=list.filter(c=>(!reviewer||c.initials===reviewer)&&(!column||c.column===column)&&(!status||statusMap.get(c.requirementId)===status)&&`${c.text}\n${c.initials}\n${c.requirementId}\n${c.column}\n${c.created}\n${c.modified||''}`.toLocaleLowerCase().includes(q)).sort((a,b)=>a.created.localeCompare(b.created));const cellCount=new Set(state.comments.map(c=>`${c.requirementId}\u0000${c.column}`)).size;$("#review-title").textContent=context?`Comments: ${context.rid} / ${context.column}`:"All comments";$("#back-comments").hidden=!context;$("#comment-counts").textContent=`${state.comments.length} comments across ${cellCount} cells · ${list.length} shown`;let body=list.map(c=>c.id===state.editingId?`<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(displayTimestamp(c.modified||c.created))}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><form class="inline-comment-editor" data-inline-comment-id="${escapeHtml(c.id)}"><label class="sr-only" for="inline-comment-text-${escapeHtml(c.id)}">Edit comment</label><textarea id="inline-comment-text-${escapeHtml(c.id)}" required>${escapeHtml(c.text)}</textarea><div class="comment-editor-actions"><button class="primary" type="submit">Save changes</button><button type="button" data-cancel-inline-edit>Cancel</button></div></form></article>`:commentCard(c,`<div class="comment-actions"><button data-go-comment="${escapeHtml(c.id)}">Go to cell</button><button data-edit-comment="${escapeHtml(c.id)}">Edit</button><button data-delete-comment="${escapeHtml(c.id)}">Delete</button></div>`)).join("");if(!list.length)body='<div class="empty-state">No comments match.</div>';const editor=context&&!state.editingId?`<form id="comment-form" class="comment-editor"><label for="comment-text">New comment</label><textarea id="comment-text" required></textarea><div class="comment-editor-actions"><button class="primary" type="submit">Add comment</button></div></form>`:"";$("#comment-list").innerHTML=body+editor;reviewBody.scrollTop=previousScroll;const form=$("#comment-form");if(form)form.addEventListener("submit",saveComment);document.querySelectorAll(".inline-comment-editor").forEach(el=>el.addEventListener("submit",saveInlineComment));document.querySelectorAll("[data-cancel-inline-edit]").forEach(el=>el.addEventListener("click",cancelInlineEdit));if(focusEditor)requestAnimationFrame(()=>$(".inline-comment-editor textarea,#comment-text")?.focus());}
 function reviewerInitials(){return $("#reviewer-initials").value.trim();}function validInitials(s){return s.length>=1&&s.length<=16&&![...s].some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);}function loadReviewerInitials(){try{return localStorage.getItem("reqtable-reviewer-initials")||"";}catch{return "";}}function persistReviewerInitials(){const initials=reviewerInitials();if(!validInitials(initials))return;try{localStorage.setItem("reqtable-reviewer-initials",initials);}catch{}}
 function restoreSidebarFocus(id){requestAnimationFrame(()=>{const button=[...document.querySelectorAll("[data-edit-comment]")].find(x=>x.dataset.editComment===id);(button||$("#comment-search"))?.focus();});}function cancelInlineEdit(){const id=state.editingId;state.editingId=null;renderReviewPanel();restoreSidebarFocus(id);}function saveInlineComment(e){e.preventDefault();const id=e.currentTarget.dataset.inlineCommentId,c=state.comments.find(x=>x.id===id),text=e.currentTarget.querySelector("textarea").value.trim(),initials=reviewerInitials();if(!c||!text)return;if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");return;}if(developMode())remember();c.text=text;c.initials=initials;c.modified=localTimestamp();state.editingId=null;persistReviewerInitials();setDirty(true);render();renderReviewPanel();restoreSidebarFocus(id);}function saveComment(e){e.preventDefault();const text=$("#comment-text").value.trim();if(!text||!state.commentContext)return;if(!addComment(text,state.commentContext.rid,state.commentContext.column))return;render();renderReviewPanel();restoreSelectedCell();}function deleteComment(id){if(!confirm("Delete this comment?"))return;if(developMode())remember();state.comments=state.comments.filter(c=>c.id!==id);setDirty(true);render();renderReviewPanel();restoreSelectedCell();}
-function goToComment(c){state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
+function goToComment(c){trace?.reveal(c.requirementId);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
 function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");}function filenameInitials(s){return s.replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^[-_]+|[-_]+$/g,"");}
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...document.querySelectorAll("[data-grid-cell]")];}
@@ -362,7 +364,7 @@ document.addEventListener("keydown",e=>{
   pendingG=null;
   if(e.defaultPrevented||e.isComposing)return;
   if(e.key==="Escape"){
-    closeHeaderPopups();closeQuick();closeValueFilter();hideCommentHover();closeReview();closeQuality();restoreSelectedCell();
+    closeHeaderPopups();closeQuick();closeValueFilter();hideCommentHover();closeReview();closeQuality();trace?.close();restoreSelectedCell();
     return;
   }
   if(e.target.matches("[data-filter]")&&(e.key==="ArrowDown"||e.key==="Enter")){
@@ -588,7 +590,7 @@ ${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-l
 }else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;}
-function renderBody(){scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();paintQualityMarkers();renderQualityPanel();}
+function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} ${trace?"records":"requirements"}`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();}
 function syncModeUi(){document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
@@ -609,9 +611,10 @@ function updateDirty(){
 }
 function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);}updateDirty();}
 function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);if(snapshot.qualityReview)state.qualityReview=cloneValue(snapshot.qualityReview);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
-function selectedRequirementId(){return document.querySelector("[data-grid-cell].selected-cell")?.closest("tr")?.dataset.rowId||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The requirement ID cannot be empty.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`Requirement ID ${id} already exists.`);return null;}return id;}
+function selectedRequirementId(){return document.querySelector("[data-grid-cell].selected-cell")?.closest("tr")?.dataset.rowId||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The requirement ID cannot be empty.");return null;}if(trace&&id.includes(";")){alert("A traceable ID cannot contain a semicolon.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`Requirement ID ${id} already exists.`);return null;}return id;}
 function nextRequirementId(){
-  const ids=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])].map(rowId);
+  const ids=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])].map(rowId)
+    .filter(id=>!trace||!id.includes(";"));
   const numbered=ids.map(id=>id.match(/^(.*?)([0-9]+)$/)).filter(Boolean);
   const families=new Map();
   for(const [,prefix,digits] of numbered){
@@ -644,7 +647,9 @@ function addRequirement(position){
   if(!id)return;
   const index=position==="end"?state.currentRows.length:selected+(position==="below"?1:0);
   remember();
-  state.currentRows.splice(index,0,newRequirement(id));
+  const row=newRequirement(id);
+  trace?.allocate(row);
+  state.currentRows.splice(index,0,row);
   state.sort=null;
   updateDirty();
   render();
@@ -680,6 +685,10 @@ function handleSpreadsheetRowShortcut(event){
 }
 function moveRequirement(delta,repeat=false){
   if(!developMode()||state.editingCell)return;
+  if(trace?.scoped()){
+    if(!repeat)alert("Open All records and clear any revealed record before reordering.");
+    return;
+  }
   const {top,bottom}=selectionBounds();
   if(top===bottom){
     const id=selectedRequirementId();
@@ -743,8 +752,47 @@ function moveRenderedRows(index,target,count,selection){
   if(document.activeElement!==cell)cell.focus({preventScroll:true});
   ensureCellVisible(cell);
 }
-function renameRequirement(){if(!developMode())return;const oldId=selectedRequirementId(),row=oldId&&findCurrentRow(oldId);if(!row){alert("Select a current requirement before renaming it.");return;}const proposed=prompt(`Rename requirement ${oldId}:`,oldId);if(proposed===null)return;const id=validateNewId(proposed,oldId);if(!id||id===oldId)return;remember();row[data.meta.idColumn]=id;for(const comment of state.comments)if(comment.requirementId===oldId)comment.requirementId=id;if(state.commentContext?.rid===oldId)state.commentContext.rid=id;const column=visibleColumns()[state.focus.column]?.name;updateDirty();render();focusRequirement(id,column);}
-function deleteRequirement(){if(!developMode())return;const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);if(index<0){alert("Select a current requirement before deleting it.");return;}const commentCount=state.comments.filter(c=>c.requirementId===id).length,message=commentCount?`Delete requirement ${id} and its ${commentCount} attached comment${commentCount===1?'':'s'}?`:`Delete requirement ${id}?`;if(!confirm(message))return;remember();state.currentRows.splice(index,1);state.comments=state.comments.filter(c=>c.requirementId!==id);updateDirty();render();}
+function renameRequirement(){
+  if(!developMode()||state.editingCell)return;
+  const oldId=selectedRequirementId(),row=oldId&&findCurrentRow(oldId);
+  const kind=trace?"record":"requirement";
+  if(!row){alert(`Select a current ${kind} before renaming it.`);return;}
+  const proposed=prompt(`Rename ${kind} ${oldId}:`,oldId);
+  if(proposed===null)return;
+  const id=validateNewId(proposed,oldId);
+  if(!id||id===oldId)return;
+  const links=trace?.incomingChanges(oldId,id)??[];
+  remember();
+  for(const change of links)change.row[change.field]=change.value;
+  row[data.meta.idColumn]=id;
+  for(const comment of state.comments)if(comment.requirementId===oldId)comment.requirementId=id;
+  if(state.commentContext?.rid===oldId)state.commentContext.rid=id;
+  trace?.rename(oldId,id);
+  const column=visibleColumns()[state.focus.column]?.name;
+  updateDirty();
+  render();
+  focusRequirement(id,column);
+}
+function deleteRequirement(){
+  if(!developMode()||state.editingCell)return;
+  const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);
+  const kind=trace?"record":"requirement";
+  if(index<0){alert(`Select a current ${kind} before deleting it.`);return;}
+  const commentCount=state.comments.filter(c=>c.requirementId===id).length;
+  const links=(trace?.incomingChanges(id,null)??[]).filter(change=>rowId(change.row)!==id);
+  const comments=commentCount?` and its ${commentCount} attached comment${commentCount===1?"":"s"}`:"";
+  const affected=links.length
+    ?`\n\nThe following records reference ${id}. Confirm to remove these links as part of the deletion.\n`
+      +links.map(({row,field})=>`${rowId(row)} · ${field}`).join("\n")
+    :"";
+  if(!confirm(`Delete ${kind} ${id}${comments}?${affected}`))return;
+  remember();
+  for(const change of links)change.row[change.field]=change.value;
+  state.currentRows.splice(index,1);
+  state.comments=state.comments.filter(c=>c.requirementId!==id);
+  updateDirty();
+  render();
+}
 function columnSuggestions(column){
   const values=new Set();
   for(const row of state.currentRows){
@@ -809,6 +857,7 @@ function applyCellEdit(form,next,continueAtEntry=false){
     remember();
     id=nextRequirementId();
     const added=newRequirement(id);
+    trace?.allocate(added);
     added[column]=value;
     state.currentRows.push(added);
   }else if(row&&String(row[column]??"")!==value){
@@ -952,6 +1001,7 @@ clone.querySelector("#row-drag-preview").hidden=true;
 clone.querySelector("#row-drag-preview").replaceChildren();
 clone.querySelector("#comment-list").replaceChildren();
 clone.querySelector("#quality-panel").hidden=true;
+trace?.clearCopy(clone);
 for(const selector of ["#quality-settings-dialog","#quality-dismiss-dialog"]){
   clone.querySelector(selector).removeAttribute("open");
 }
@@ -1273,7 +1323,7 @@ document.addEventListener("submit",event=>{const form=event.target.closest("[dat
     }
   }
 }},true);
-function matches(row){if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=review.hidden?Infinity:review.getBoundingClientRect().left,safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
+function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
 function syncReviewerLabel(){
   const initials=reviewerInitials();
   $("#reviewer-label").textContent=initials||"Set initials";
@@ -1437,7 +1487,9 @@ document.addEventListener("keydown",event=>{
   event.preventDefault();
   event.stopImmediatePropagation();
 },true);
-""" + QUALITY_JS + r"""
+""" + QUALITY_JS
+
+INITIAL_RENDER_JS = """
 render();
 updateDirty();
 """
@@ -1474,7 +1526,7 @@ TEMPLATE = r"""<!doctype html>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
 <details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
-<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
+<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
 <details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong>
@@ -1489,6 +1541,7 @@ TEMPLATE = r"""<!doctype html>
 <div id="table-context-menu" class="popover" role="group" aria-label="Requirement actions" hidden></div>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
+__TRACE_HTML__
 <aside id="quality-panel" class="review-panel" hidden aria-labelledby="quality-title">
   <div class="review-head"><h2 id="quality-title" tabindex="-1">Requirement quality</h2><button id="close-quality">Close</button></div>
   <div class="review-body">
@@ -1559,14 +1612,18 @@ def render_report(data: dict[str, Any]) -> str:
     embedded["formatVersion"] = 2
     if meta["mode"] == "diff":
         embedded["diffStatus"] = {row["id"]: row["status"] for row in data["rows"]}
+    traceability = data["options"].get("traceability", False)
+    trace_js = TRACE_MODEL_JS + TRACE_UI_JS if traceability else "const trace=null;\n"
     return (
-        TEMPLATE.replace("__TITLE__", title)
+        TEMPLATE.replace("__TRACE_MENU__", TRACE_MENU if traceability else "")
+        .replace("__TRACE_HTML__", TRACE_HTML if traceability else "")
+        .replace("__TITLE__", title)
         .replace("__DOCUMENT_MODE_LABEL__", "Develop mode" if document_mode == "develop" else "Review mode")
         .replace("__DOCUMENT_MODE__", document_mode)
         .replace("__META__", description)
         .replace("__SUMMARY__", summary)
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
-        .replace("__CSS__", CSS)
+        .replace("__CSS__", CSS + (TRACE_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", JS)
+        .replace("__JS__", JS + trace_js + INITIAL_RENDER_JS)
     )

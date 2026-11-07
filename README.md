@@ -53,6 +53,23 @@ In Develop mode, double-click a non-ID cell or press Enter/F2 to edit its Markdo
 
 **File → Save CSV As…** selects a writable destination in supported Chromium contexts. **Save CSV** reuses that destination for the session. Both include the configured `Comments` column by default and download a CSV if the picker is unavailable. **File → Autosave** keeps a local recovery draft where browser storage is available and writes to the selected CSV after a short pause once a writable handle is established. When you reopen the original report, choose **Recover draft** above the table to restore committed edits. The same action is available under File. **Save report copy** creates a resumable self-contained HTML file. Develop copies use names such as `requirements-developed-PN-20260913-085719.html`; Review copies retain the `requirements-reviewed-PN-20260913-085719.html` convention.
 
+## Systems and traceability pilot
+
+Build the pilot from ReqTable's own requirements CSV.
+
+```sh
+python -m reqtable requirements-uat.csv --id-column ID --traceability \
+  --document-mode develop -o requirements-uat-develop.html
+python -m reqtable requirements-uat.csv --id-column ID --traceability \
+  -o requirements-uat.html
+```
+
+Open **View → Systems and traceability** in either report. Select a system to show its allocated requirements, with **Include subsystems** for a combined view. Start with `REQ-003` under either subsystem to see the shared row, its proposed stakeholder need and its two proposed child requirements. Select a trace link to go to its grid row. If the row is filtered out, **Reveal in grid** shows it alongside the current view. The active-filters menu can remove that exception or the system filter.
+
+In Develop mode, use **Add trace record…** for a system, need or source. Use the inspect button beside a system to edit its name or change its parent with **Part of**. Search relationship pickers by ID or name. For bulk changes, edit the corresponding CSV columns directly in the grid. The **Trace findings** list shows invalid or broken links and cycles. **Rename ID** updates incoming links and comments. Deleting a referenced record shows the affected links and asks whether to remove them as part of the deletion. Undo restores the record and links together.
+
+Enable the pilot with `--traceability` or `"traceability": true` in the JSON configuration. The generator adds missing traceability columns. A blank `Type` means `Requirement`, and multi-value link fields use semicolon-separated IDs. Requirements without an allocation remain visible in **All records**. Leave traceability off for flat CSVs. Use the same flag when regenerating a report from a saved CSV. With the default JSON comments format, the exported comments are restored as annotations when regenerating. See the [traceability proposal](requirements-traceability-proposal.md) for the schema and model.
+
 ## Review comments
 
 Enter reviewer initials in the report, then select or hover a non-ID cell to reveal its `+` control. A nearby quick-comment popup keeps the latest comment visible, permits its author to edit it, and can open the full comments sidebar. Numbered red indicators mark cells with comments. Reviewer colors are derived consistently from initials. The resizable sidebar supports browsing, searching, inline editing, deleting, and navigating to a cell without closing. Saving or cancelling an inline edit returns to the same browse or single-cell view.
@@ -81,7 +98,7 @@ Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the
 
 Click an ID cell to select the row, then Shift+click another ID or use Shift+Up/Down to select a block. Drag any selected row’s grip to move the whole block in its existing order.
 
-In Develop mode, choose **View → Check requirement quality** to scan all current rows, including filtered rows. The sidebar shows the flagged wording and a suggestion. **Edit wording** opens the cell editor with the exact match selected. Select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
+In Develop mode, choose **View → Check requirement quality** to scan all current requirements, including filtered rows. The sidebar shows the flagged wording and a suggestion. **Edit wording** opens the cell editor with the exact match selected. Select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
 
 Open **Quality settings** in the sidebar to choose the statement column, required fields, obligation keyword and enabled checks. The defaults recognize `Requirement` or `Requirement Text` and use `shall`. A blank keyword turns off obligation checks. Set initial values in the generator configuration with `quality.requirement_column`, `quality.required_columns` and `quality.obligation`.
 

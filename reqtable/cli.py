@@ -32,6 +32,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--id-column")
     result.add_argument("--title")
     result.add_argument("--document-mode", choices=("review", "develop"))
+    result.add_argument(
+        "--traceability", action=argparse.BooleanOptionalAction, default=None,
+        help="interpret the CSV as a systems and traceability document",
+    )
     result.add_argument("--encoding")
     result.add_argument("--delimiter")
     result.add_argument("--initial-diff-view", choices=("unified", "side-by-side"))
@@ -52,6 +56,7 @@ def _overrides(args: argparse.Namespace) -> dict[str, object]:
         "id_column": args.id_column,
         "title": args.title,
         "document_mode": args.document_mode,
+        "traceability": args.traceability,
         "csv.encoding": args.encoding,
         "csv.delimiter": args.delimiter,
         "diff.initial_view": args.initial_diff_view,

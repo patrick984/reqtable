@@ -71,6 +71,7 @@ function scanQuality(){
   const findings=new Map();
   quality.dismissed=[];
   for(const row of state.currentRows){
+    if(data.options?.traceability&&!trace.isRequirement(row))continue;
     const id=rowId(row),fields=new Map();
     for(const column of qualityColumns){
       const value=String(row[column]??"");
@@ -220,7 +221,7 @@ function renderQualityPanel(){
   }
   list.replaceChildren(...cards);
   $("#quality-count").textContent=qualityColumns.length
-    ?`${count} ${count===1?"finding":"findings"} across ${quality.findings.size} of ${state.currentRows.length} requirements · ${quality.dismissed?.length??0} dismissed`
+    ?`${count} ${count===1?"finding":"findings"} across ${quality.findings.size} of ${data.options?.traceability?state.currentRows.filter(trace.isRequirement).length:state.currentRows.length} requirements · ${quality.dismissed?.length??0} dismissed`
     :"Choose a requirement column or required fields in Quality settings.";
   $("#quality-only").checked=quality.only;
   body.scrollTop=scroll;
@@ -238,6 +239,7 @@ function openQuality(id,column){
     paintQualityMarkers();
   }
   closeReview();
+  trace?.close();
   quality.activeCell=id===undefined?null:{id,column};
   qualityPanel.hidden=false;
   renderLayout();
@@ -263,6 +265,7 @@ function jumpToQualityCell(id,column,hidden,issue){
       state.commentsOnly=false;
       state.statuses=new Set(["added","removed","changed","unchanged"]);
       quality.revealId=id;
+      trace?.reveal(id);
     }
     render();
   }else renderQualityPanel();

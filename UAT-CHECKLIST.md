@@ -119,3 +119,15 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 
 9. In Develop mode, use Tab and Shift+Tab across row boundaries and out of the grid. Try Ctrl/Cmd+Arrow on filled cells and across a blank gap. With a filter active and a column hidden, verify Ctrl/Cmd+Home and Ctrl/Cmd+End reach the visible data corners. Use `gg` and Shift+G to reach the first row and blank entry row. Press `i` on a non-ID cell, type `hjkl` in the editor, and press Escape to return to the same cell.
 10. In Chromium, click directly on the text in an editable cell, then paste a two-row, two-column block of tab-separated text. Verify all four values update and one Undo restores them. Click the text in another cell, copy it, and paste into a different cell. Verify pasting into an open cell editor or a column filter only inserts text into that field.
+
+## Systems and traceability pilot
+
+Generate the Develop and Review reports using the `--traceability` commands in the [README](README.md#systems-and-traceability-pilot). Work on a copy of the CSV when testing saves.
+
+1. Open **View → Systems and traceability**. Select Python generator and Browser report in turn. Edit `REQ-003` in one view and confirm the other view shows the same edit. Select ReqTable with **Include subsystems** enabled and confirm `REQ-003` appears once.
+2. Inspect `REQ-003` and follow the proposed need and both child requirements. Follow a hidden target and confirm **Reveal in grid** retains the system filter. Remove the reveal via **Active filters**.
+3. Use the system inspect button to edit a name and try the **Part of** picker. Verify a system and its descendants are excluded from its candidate list. Search for a parent requirement by ID or name and confirm that the picker excludes targets that would form a cycle.
+4. Enter a missing or wrong-type link directly in the grid. Confirm **Trace findings** identifies it, then repair it using the picker or remove control.
+5. Rename `REQ-003` and confirm both child references and an attached comment follow it. Cancel its deletion and confirm nothing changes. Confirm deletion, then undo and verify the record, links and comment return together.
+6. In Chromium, use **Save CSV As…** and regenerate a report from the saved file with `--traceability`. Verify the edits, graph and any JSON comments survive. With networking disabled, open the Review report, navigate a trace, and save and reopen an HTML copy.
+7. Generate a flat report without `--traceability` and confirm the systems menu is absent and ordinary columns, including any project-specific `Type`, retain their meaning.

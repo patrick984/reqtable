@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .markdown import render_markdown
+from .traceability import TRACE_COLUMNS
 
 
 class ReqtableError(Exception):
@@ -36,6 +37,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "id_column": None,
     "title": "Requirements",
     "document_mode": "review",
+    "traceability": False,
     "csv": {"encoding": "utf-8-sig", "delimiter": ",", "strict_columns": True},
     "columns": {"hidden": [], "order": [], "labels": {}, "widths": {}, "markdown": None},
     "diff": {
@@ -104,6 +106,10 @@ def load_config(path: str | None, overrides: dict[str, Any] | None = None) -> di
 
 
 def validate_config(config: dict[str, Any]) -> None:
+    if not isinstance(config["traceability"], bool):
+        raise ConfigError("traceability must be true or false")
+    if config["traceability"] and config["id_column"] in TRACE_COLUMNS:
+        raise ConfigError("the ID column cannot be a reserved traceability column")
     quality = config["quality"]
     for field in ("requirement_column", "obligation"):
         value = quality[field]
@@ -393,12 +399,62 @@ def generation_time() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def prepare_trace_table(
+    table: CsvTable, config: dict[str, Any]
+) -> tuple[CsvTable, list[dict[str, Any]]]:
+    comments_config = config["comments"]
+    comment_column = comments_config["csv_column"]
+    if comments_config["enabled"] and comment_column in (*TRACE_COLUMNS, config["id_column"]):
+        raise ConfigError("the comments column cannot also store traceability data")
+    managed_comments = (
+        comments_config["enabled"] and comments_config["csv_format"] == "json"
+        and comment_column in table.headers
+    )
+    headers = [name for name in table.headers if not managed_comments or name != comment_column]
+    headers.extend(name for name in TRACE_COLUMNS if name not in headers)
+    rows = [{name: row.get(name, "") for name in headers} for row in table.rows]
+    comments = []
+    if managed_comments:
+        for rid, row in zip(table.ids, table.rows):
+            message = f"{table.path}: expected exported JSON comments in {comment_column!r} for {rid!r}"
+            try:
+                records = json.loads(row[comment_column] or "[]")
+            except ValueError as exc:
+                raise InputError(message) from exc
+            if not isinstance(records, list):
+                raise InputError(message)
+            for record in records:
+                if (
+                    not isinstance(record, dict)
+                    or record.get("column") not in headers
+                    or record["column"] == config["id_column"]
+                    or not valid_initials(record.get("initials"))
+                    or not all(isinstance(record.get(key), str) for key in ("created", "text"))
+                    or (record.get("modified") is not None and not isinstance(record["modified"], str))
+                ):
+                    raise InputError(message)
+                comments.append({
+                    "id": f"imported-{len(comments)}",
+                    "requirementId": rid,
+                    **{key: record.get(key) for key in ("column", "initials", "created", "modified", "text")},
+                })
+    return CsvTable(table.path, headers, rows, table.ids, dict(zip(table.ids, rows))), comments
+
+
 def build_report_data(
     new: CsvTable,
     config: dict[str, Any],
     output_name: str,
     old: CsvTable | None = None,
 ) -> dict[str, Any]:
+    comments = []
+    traceability = config["traceability"]
+    if traceability:
+        new, comments = prepare_trace_table(new, config)
+        if old:
+            old, old_comments = prepare_trace_table(old, config)
+            comments.extend({**comment, "id": f"old-{comment['id']}"} for comment in old_comments
+                            if comment["requirementId"] not in new.by_id)
     columns = effective_columns(old, new, config)
     quality = config["quality"]
     quality_columns = set(quality["required_columns"])
@@ -506,6 +562,7 @@ def build_report_data(
             "commentsFormat": config["comments"]["csv_format"],
             "csvDelimiter": config["csv"]["delimiter"],
             "quality": quality,
+            "traceability": traceability,
         },
         "columns": column_data,
         "rows": rows,
@@ -513,7 +570,7 @@ def build_report_data(
             "new": {"headers": new.headers, "rows": new.rows},
             "old": {"headers": old.headers, "rows": old.rows} if old else None,
         },
-        "comments": [],
+        "comments": comments,
     }
 
 

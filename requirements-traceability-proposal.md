@@ -1,6 +1,6 @@
 # ReqTable systems and traceability proposal
 
-**Status:** Proposed design for the ReqTable pilot.
+**Status:** Implemented as an opt-in pilot. See the [README](README.md#systems-and-traceability-pilot) for generation commands and the [UAT checklist](UAT-CHECKLIST.md#systems-and-traceability-pilot) for trial scenarios.
 
 ReqTable should support system breakdown, requirement allocation, and traceability in a single CSV. The generated report should derive its navigation, reverse links, and findings from that CSV and run offline. The pilot will use ReqTable itself as the system, with the Python generator and Browser report as subsystems.
 
