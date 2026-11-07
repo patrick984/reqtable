@@ -44,7 +44,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .report-header {
   display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
-  position:relative; gap:4px 12px; margin-bottom:5px;
+  position:relative; gap:4px 12px; margin-bottom:14px;
 }
 .report-identity,.save-area {display:flex; align-items:center; gap:6px; min-width:0}
 .report-identity {max-width:100%}
@@ -70,6 +70,9 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
   .page {height:100vh; display:flex; flex-direction:column}
   .report-header,.toolbar,.recovery-notice {flex:none}
   .table-wrap {min-height:0}
+}
+@media screen and (max-width:700px) {
+  .report-header {margin-bottom:7px}
 }
 @media print {
   .report-header .header-disclosure,#save-status {display:none}
