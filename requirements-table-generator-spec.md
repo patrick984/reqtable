@@ -35,7 +35,7 @@ Both the generator and generated report must work without network access. The ge
 ## 3. Non-goals
 
 - Silently overwriting the input CSV without a user gesture or browser permission.
-- Parsing spreadsheets such as XLSX.
+- Writing spreadsheets such as XLSX.
 - Reproducing Git's rename or move detection.
 - Executing arbitrary Markdown HTML, JavaScript, or user-supplied templates.
 - Pixel-perfect reproduction of the VS Code interface.
@@ -64,6 +64,8 @@ The executable name in examples is `reqtable.pyz`; running the source module dir
 ```text
 python reqtable.pyz INPUT.csv -o OUTPUT.html [options]
 ```
+
+`INPUT` may also be an `.xlsx` workbook (section 7.3), here and for `--old` and `--new`.
 
 ### 5.2 Diff mode
 
@@ -114,6 +116,9 @@ If the chosen comments-column name already exists in the reconstructed schema, e
 | `--include-unchanged` | Include unchanged rows in diff output; enabled by default. |
 | `--changes-only` | Initially show only changed, added, and removed rows. |
 | `--reviewer-initials TEXT` | Optional initial value for the reviewer-initials field. |
+| `--table NAME` | Table to read from each `.xlsx` input (section 7.3). |
+| `--sheet NAME` | Sheet to read from each `.xlsx` input. |
+| `--header-row N` | Header row on `--sheet`; default is the first non-empty row. |
 
 Boolean options may have explicit positive and negative forms where needed, for example `--include-unchanged` and `--no-include-unchanged`.
 
@@ -123,9 +128,12 @@ Boolean options may have explicit positive and negative forms where needed, for 
 python reqtable.pyz --help
 python reqtable.pyz --version
 python reqtable.pyz --print-default-config
+python reqtable.pyz --list-tables WORKBOOK.xlsx
 ```
 
 `--print-default-config` writes a documented default JSON configuration to standard output.
+
+`--list-tables` prints each sheet of a workbook, with its state when it is hidden, and each table with its sheet, cell range and header names. It needs no other input and exits 0.
 
 ### 5.6 Configuration precedence
 
@@ -218,6 +226,31 @@ Column names in configuration refer to original CSV header names, not display la
 - Leading whitespace and trailing whitespace are significant unless a specific ignore option is enabled.
 - An absent column in one snapshot is treated as an empty cell for row comparison, while the header itself is still reported as old-only or new-only in metadata.
 - Columns named by `diff.ignore_columns` remain displayable but do not cause a row to receive `changed` status. If another column changes, ignored columns are still rendered without change highlighting.
+
+### 7.3 XLSX input
+
+A path ending in `.xlsx` (any letter case) is accepted wherever a CSV path is: the positional input, `--old` and `--new`. Only the Office Open XML workbook format is read, using the standard library. The selected cells are converted to CSV text with the configured delimiter and then follow section 7 unchanged, including the header, ID, duplicate and column-count rules. `csv.encoding` does not apply. Reports and error messages label the source as `FILE.xlsx [NAME]`, where `NAME` is the table or sheet read; the label carries the file name, not its directory.
+
+Selection, which applies to every `.xlsx` input of one invocation:
+
+- `--table NAME` reads an Excel table by name. Its range gives the header row and the data rows. A totals row is excluded and trailing empty rows are dropped.
+- `--sheet NAME` reads a sheet. The header row is `--header-row N` if given, otherwise the first row with any non-empty cell. The columns run from the first to the last non-empty header cell, and the data runs to the last row with any non-empty cell in those columns.
+- With neither option, a workbook containing exactly one table reads that table. Otherwise the run fails with an input error that lists the tables and sheets.
+- `--table` with `--sheet`, and `--header-row` without `--sheet`, are configuration errors. All three options are configuration errors when no input is an `.xlsx` file.
+- Table and sheet names match without regard to letter case. An unknown name is an input error that lists the available names.
+
+Cell values:
+
+- Text is read as stored, including rich text and inline strings. Phonetic guides are ignored.
+- Booleans read as `TRUE` or `FALSE`, and error cells as their displayed text, such as `#N/A`.
+- A formula cell reads as the value Excel last calculated and saved. A formula with no saved value reads as empty. Reqtable never recalculates.
+- Numbers read in their shortest exact form: `1.1000000000000001` becomes `1.1`, and whole numbers carry no `.0`. A number does not keep trailing or leading zeros, so a version `1.10` or an identifier `007` survives only if the cell is formatted as text in Excel.
+- A number with a date or time format reads as an ISO date, or as an ISO date and time when it has a time part, honouring the workbook's 1904 date setting. A time without a date reads as `HH:MM:SS`.
+- A merged cell has its value in the top-left cell only; the other cells read as empty.
+
+Git baselines (`--old git:REV`) read text, not workbooks. Combining one with an `.xlsx` input is an input error; commit a CSV export for that.
+
+When the single input of a snapshot run is an `.xlsx` and the output path ends in `.csv`, the selected block is written as CSV instead of a report, in the format of the browser's Save CSV (section 10.14): UTF-8 with a byte-order mark and CRLF record endings, written atomically. The block is validated first with the usual rules, so the ID column is required and an export is never a CSV that reqtable would itself reject. A `.csv` output with any other input is unchanged.
 
 ## 8. Safe Markdown subset
 

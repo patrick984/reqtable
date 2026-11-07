@@ -1,6 +1,6 @@
 # Requirements Table Generator
 
-`reqtable` turns a requirements CSV into an interactive, self-contained HTML report. It can also compare two CSV snapshots and show line- and word-level changes in unified or side-by-side views. Tables support sorting, per-column filters, column visibility, drag resizing, and divider double-click auto-sizing.
+`reqtable` turns a requirements CSV (or Excel workbook) into an interactive, self-contained HTML report. It can also compare two CSV snapshots and show line- and word-level changes in unified or side-by-side views. Tables support sorting, per-column filters, column visibility, drag resizing, and divider double-click auto-sizing.
 
 The generator uses only the Python standard library. Generated reports contain all CSS, JavaScript, data, and review comments in one file and work offline.
 
@@ -34,6 +34,47 @@ python reqtable.pyz --extract-comments requirements-reviewed-PN.html \
 ```
 
 Use `--csv-base union` when extracting a diff report if comments on removed requirements must be retained.
+
+## Read from Excel
+
+Pass an `.xlsx` workbook wherever you would pass a CSV: the input, `--old`, or `--new`. See which sheets and tables a workbook has:
+
+```sh
+python reqtable.pyz --list-tables requirements.xlsx
+```
+
+Export a table to CSV (the output must end in `.csv`):
+
+```sh
+python reqtable.pyz requirements.xlsx --table Requirements --id-column ID \
+  -o requirements.csv
+```
+
+Make a report from a table:
+
+```sh
+python reqtable.pyz requirements.xlsx --table Requirements --id-column ID \
+  -o requirements.html
+```
+
+Read a plain sheet whose headers are not on its first row:
+
+```sh
+python reqtable.pyz requirements.xlsx --sheet Requirements --header-row 3 \
+  --id-column ID -o requirements.html
+```
+
+With no `--table` or `--sheet`, a workbook that has exactly one table reads that table. Otherwise reqtable lists the tables and sheets and asks you to choose. Without `--header-row`, a sheet's header is its first non-empty row. The same choice applies to every workbook in a run.
+
+Things to know about the numbers:
+
+- Numbers lose trailing and leading zeros. A version `1.10` becomes `1.1` and `007` becomes `7`, unless the cell is formatted as Text in Excel.
+- Formulas read as the value Excel last calculated and saved. Reqtable does not recalculate, so save the workbook in Excel first.
+- Date-formatted cells become ISO dates such as `2026-12-01`.
+- Only the top-left cell of a merged range has a value.
+- `--old git:REV` does not read workbooks yet. Commit a CSV export to compare against a git checkpoint.
+
+Reqtable only reads workbooks; it never writes one.
 
 ## Configuration
 
