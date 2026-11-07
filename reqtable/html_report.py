@@ -16,7 +16,7 @@ CSS = r"""
 #command-results{display:grid;gap:2px;max-height:45vh;overflow:auto;margin-top:8px}
 #command-results button{display:flex;justify-content:space-between;gap:12px;text-align:left}
 #command-results small{color:var(--muted)}
-#command-results kbd,#search-menus kbd{white-space:nowrap;font:inherit;font-size:.85em}
+#command-results kbd{white-space:nowrap;font:inherit;font-size:.85em}
 .toolbar .popup-menu>summary:hover,.toolbar .popup-menu[open]>summary{background:var(--selected)}
 .toolbar .popover{top:100%;padding:5px 0;min-width:200px;max-width:calc(100vw - 20px)}
 .toolbar .popover button:not([hidden]){display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;padding:6px 12px;text-align:left;border:0;border-radius:0;background:transparent}
@@ -704,7 +704,7 @@ function renderCommandResults(){
   for(const menu of menus){
     const group=menu.querySelector("summary").textContent;
     for(const item of menu.querySelectorAll(".popover button,.popover input[type=checkbox]")){
-      if(item.disabled||item.closest("[hidden]"))continue;
+      if(item.id==="search-menus"||item.disabled||item.closest("[hidden]"))continue;
       const hint=item.querySelector("kbd:not([hidden])");
       const labelNode=item.labels?.[0]??item;
       const label=[...labelNode.childNodes].filter(node=>!node.matches?.("kbd"))
@@ -734,7 +734,10 @@ function openCommandSearch(){
   commandSearch.showModal();
   commandQuery.focus();
 }
-$("#search-menus").addEventListener("click",openCommandSearch);
+$("#search-menus").addEventListener("click",event=>{
+  event.currentTarget.closest(".popup-menu").querySelector("summary").focus();
+  openCommandSearch();
+});
 $("#close-command-search").addEventListener("click",()=>commandSearch.close());
 commandQuery.addEventListener("input",renderCommandResults);
 commandSearch.addEventListener("keydown",event=>{
@@ -816,10 +819,10 @@ TEMPLATE = r"""<!doctype html>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
 <details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
-<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only" aria-pressed="false">Show changes since save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="open-settings" class="develop-only">Settings…</button></div></details>
+<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only" aria-pressed="false">Show changes since save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
-<button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
+<details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
