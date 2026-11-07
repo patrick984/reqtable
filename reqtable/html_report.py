@@ -434,7 +434,7 @@ function cancelCellEdit(){
   render();
   focusRequirement(rid,column);
 }
-function applyCellEdit(form,next){
+function applyCellEdit(form,next,continueAtEntry=false){
   const originalCell=form.closest("[data-grid-cell]");
   const sameRow=next?.parentElement===originalCell.parentElement;
   const nextId=next?.parentElement.dataset.rowId;
@@ -456,6 +456,7 @@ function applyCellEdit(form,next){
   updateDirty();
   render();
   if(next&&focusRequirement(sameRow?id:nextId,nextColumn))return;
+  if(continueAtEntry&&form.dataset.rowId===""&&id!==""&&focusRequirement("",column))return;
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
 function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function csvField(value,delimiter){const text=String(value??"");return(/["\r\n]/.test(text)||text.includes(delimiter))?'"'+text.replace(/"/g,'""')+'"':text;}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const delimiter=data.options.csvDelimiter||",",lines=[headers.map(x=>csvField(x,delimiter)).join(delimiter)];for(const source of snapshot.rows){const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}lines.push(headers.map(h=>csvField(row[h]??"",delimiter)).join(delimiter));}return"\ufeff"+lines.join("\r\n")+"\r\n";}
@@ -625,7 +626,7 @@ document.addEventListener("submit",event=>{const form=event.target.closest("[dat
       const cell=editor.closest("[data-grid-cell]");
       const row=cell.parentElement[event.shiftKey?"previousElementSibling":"nextElementSibling"];
       const next=row?.querySelectorAll("[data-grid-cell]")[+cell.dataset.columnIndex];
-      applyCellEdit(editor,next);
+      applyCellEdit(editor,next,!event.shiftKey&&!row);
     }
     return;
   }
