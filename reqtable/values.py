@@ -160,3 +160,29 @@ function chooseSuggestion(source,text,caret,value){
   return {text:next,caret:next.length,commit:false};
 }
 """
+
+VALUE_RENAME_JS = r"""
+function valueSlug(text){
+  return text.toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+}
+function valueRecordId(field,name,taken){
+  const base=`VAL-${valueSlug(field)||"FIELD"}-${valueSlug(name)||"VALUE"}`;
+  let id=base;
+  for(let n=2;taken.has(id);n++)id=`${base}-${n}`;
+  return id;
+}
+function renameValueUses(rows,column,multiple,oldName,newName){
+  const changes=[];
+  for(const row of rows){
+    const type=String(row.Type??"").trim();
+    if(type==="Value"||type==="Field")continue;
+    const cell=String(row[column]??"");
+    const parts=multiple?cell.split(";").map(part=>part.trim()):[cell.trim()];
+    if(!parts.includes(oldName))continue;
+    changes.push({row,value:parts.map(part=>part===oldName?newName:part).filter(Boolean).join("; ")});
+  }
+  return changes;
+}
+"""
+
+VALUE_EDIT_JS += VALUE_RENAME_JS

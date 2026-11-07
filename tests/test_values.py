@@ -238,3 +238,45 @@ const two=groupFindingsByCell([{id:null,field:"Part of",message:"x"},{id:"A",fie
 assert.equal(two.get("A").get("ID").length,2);
 assert.equal(two.size,1);
 """)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class ValueRenameTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
+                       + VALUE_EDIT_JS + assertions, text=True, check=True)
+
+    def test_single_value_columns_match_the_whole_cell(self):
+        self.run_js(r"""
+const rows=[{ID:"A",Priority:"Must"},{ID:"B",Priority:" Must "},{ID:"C",Priority:"Must have"},
+  {ID:"D",Priority:"must"},{ID:"E",Priority:"Should"},{ID:"F"}];
+const changes=renameValueUses(rows,"Priority",false,"Must","Required");
+assert.deepEqual(changes.map(({row,value})=>[row.ID,value]),[["A","Required"],["B","Required"]]);
+""")
+
+    def test_multiple_columns_match_exact_segments_and_normalize(self):
+        self.run_js(r"""
+const rows=[{ID:"A",Method:"Manual;Automated test"},{ID:"B",Method:"Manual test; Automated test"},
+  {ID:"C",Method:"manual"},{ID:"D",Method:"Documentation;  Manual ; "}];
+const changes=renameValueUses(rows,"Method",true,"Manual","Manual UAT");
+assert.deepEqual(changes.map(({row,value})=>[row.ID,value]),
+  [["A","Manual UAT; Automated test"],["D","Documentation; Manual UAT"]]);
+""")
+
+    def test_value_and_field_records_are_left_alone(self):
+        self.run_js(r"""
+const rows=[{ID:"V",Type:"Value",Priority:"Must"},{ID:"F",Type:"Field",Priority:"Must"},
+  {ID:"R",Type:"Requirement",Priority:"Must"},{ID:"N",Type:"Need",Priority:"Must"}];
+assert.deepEqual(renameValueUses(rows,"Priority",false,"Must","Shall").map(change=>change.row.ID),["R","N"]);
+assert.deepEqual(renameValueUses(rows,"Priority",false,"Shall","Must"),[]);
+""")
+
+    def test_value_ids_use_the_field_and_name_and_stay_unique(self):
+        self.run_js(r"""
+assert.equal(valueSlug("  Won't / Will not "),"WON-T-WILL-NOT");
+assert.equal(valueRecordId("Priority","Won't",new Set()),"VAL-PRIORITY-WON-T");
+assert.equal(valueRecordId("Verification Method","Manual browser test",new Set()),"VAL-VERIFICATION-METHOD-MANUAL-BROWSER-TEST");
+const taken=new Set(["VAL-PRIORITY-MUST","VAL-PRIORITY-MUST-2"]);
+assert.equal(valueRecordId("Priority","must",taken),"VAL-PRIORITY-MUST-3");
+assert.equal(valueRecordId("Priority","???",new Set()),"VAL-PRIORITY-VALUE");
+""")
