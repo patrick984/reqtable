@@ -57,9 +57,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+@dataclass(frozen=True)
+class CsvSource:
+    """A CSV to read: a file on disk (text is None) or already-read text with a display label."""
+
+    label: str
+    text: str | None
+    path: Path
+
+    @property
+    def filename(self) -> str:
+        return self.path.name if self.text is None else self.label
+
+
 @dataclass
 class CsvTable:
-    path: Path
+    label: str
+    filename: str
     headers: list[str]
     rows: list[dict[str, str]]
     ids: list[str]
@@ -171,13 +185,20 @@ def valid_initials(value: Any) -> bool:
 
 
 def read_csv_table(path: str, config: dict[str, Any]) -> CsvTable:
-    source = Path(path)
+    return read_csv_source(CsvSource(str(Path(path)), None, Path(path)), config)
+
+
+def read_csv_source(csv_source: CsvSource, config: dict[str, Any]) -> CsvTable:
+    source = csv_source.label
     encoding = config["csv"]["encoding"]
     delimiter = config["csv"]["delimiter"]
-    try:
-        handle = source.open("r", encoding=encoding, newline="")
-    except (OSError, LookupError) as exc:
-        raise InputError(f"cannot open {source}: {exc}") from exc
+    if csv_source.text is not None:
+        handle: Any = io.StringIO(csv_source.text, newline="")
+    else:
+        try:
+            handle = csv_source.path.open("r", encoding=encoding, newline="")
+        except (OSError, LookupError) as exc:
+            raise InputError(f"cannot open {source}: {exc}") from exc
     with handle:
         reader = csv.reader(handle, delimiter=delimiter, strict=True)
         try:
@@ -229,7 +250,7 @@ def read_csv_table(path: str, config: dict[str, Any]) -> CsvTable:
                 record_by_id[normalized_id] = record_number
         except (csv.Error, UnicodeError) as exc:
             raise InputError(f"{source}: invalid CSV near record {reader.line_num}: {exc}") from exc
-    return CsvTable(source, headers, rows, ids, by_id)
+    return CsvTable(source, csv_source.filename, headers, rows, ids, by_id)
 
 
 def effective_columns(old: CsvTable | None, new: CsvTable, config: dict[str, Any]) -> list[str]:
@@ -416,7 +437,7 @@ def prepare_trace_table(
     comments = []
     if managed_comments:
         for rid, row in zip(table.ids, table.rows):
-            message = f"{table.path}: expected exported JSON comments in {comment_column!r} for {rid!r}"
+            message = f"{table.label}: expected exported JSON comments in {comment_column!r} for {rid!r}"
             try:
                 records = json.loads(row[comment_column] or "[]")
             except ValueError as exc:
@@ -438,7 +459,7 @@ def prepare_trace_table(
                     "requirementId": rid,
                     **{key: record.get(key) for key in ("column", "initials", "created", "modified", "text")},
                 })
-    return CsvTable(table.path, headers, rows, table.ids, dict(zip(table.ids, rows))), comments
+    return CsvTable(table.label, table.filename, headers, rows, table.ids, dict(zip(table.ids, rows))), comments
 
 
 def build_report_data(
@@ -544,8 +565,8 @@ def build_report_data(
             "mode": "diff" if old else "snapshot",
             "documentMode": config["document_mode"],
             "generated": generation_time(),
-            "newFilename": new.path.name,
-            "oldFilename": old.path.name if old else None,
+            "newFilename": new.filename,
+            "oldFilename": old.filename if old else None,
             "baseFilename": stem,
             "idColumn": config["id_column"],
             "counts": counts,

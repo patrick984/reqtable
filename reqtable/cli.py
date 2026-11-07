@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from . import __version__
 from .core import (
     DEFAULT_CONFIG,
     ConfigError,
+    CsvSource,
     InputError,
     OutputError,
     ReqtableError,
@@ -16,7 +18,7 @@ from .core import (
     build_report_data,
     extract_comments_csv,
     load_config,
-    read_csv_table,
+    read_csv_source,
 )
 from .html_report import render_report
 
@@ -24,7 +26,7 @@ from .html_report import render_report
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description="Generate an offline requirements table or diff report.")
     result.add_argument("input", nargs="?", help="CSV input for snapshot mode")
-    result.add_argument("--old", help="old/baseline CSV for diff mode")
+    result.add_argument("--old", help="old/baseline CSV for diff mode, or git:REV[:PATH] to read it from a git revision")
     result.add_argument("--new", help="new/current CSV for diff mode")
     result.add_argument("--extract-comments", metavar="REPORT.html", help="extract comments from a generated report")
     result.add_argument("-o", "--output", help="output HTML or CSV path")
@@ -68,6 +70,41 @@ def _overrides(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _git(directory: Path, *args: str) -> bytes:
+    try:
+        completed = subprocess.run(["git", "-C", str(directory), *args], capture_output=True)
+    except OSError as exc:
+        raise InputError(f"cannot run git: {exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise InputError(f"git {args[0]} failed: {detail}")
+    return completed.stdout
+
+
+def git_source(spec: str, default_path: str, config: dict[str, object]) -> CsvSource:
+    """Resolve git:REV[:PATH]; PATH defaults to the --new file's path."""
+    rev, _, given = spec[len("git:"):].partition(":")
+    if not rev:
+        raise ConfigError("--old git: needs a revision, as git:REV or git:REV:PATH")
+    path = Path(given or default_path)
+    try:
+        # --filters applies the repo's eol/attribute rules, as for a checked-out file.
+        blob = _git(path.parent, "cat-file", "--filters", f"{rev}:./{path.name}")
+        short = _git(path.parent, "rev-parse", "--short", f"{rev}^{{commit}}").decode().strip()
+    except InputError as exc:
+        raise InputError(f"cannot read {path} at {rev}: {exc}") from exc
+    encoding = config["csv"]["encoding"]  # type: ignore[index]
+    label = f"{path.name} @ {rev} ({short})"
+    try:
+        return CsvSource(label, blob.decode(encoding), path)
+    except (UnicodeError, LookupError) as exc:
+        raise InputError(f"{label}: cannot decode as {encoding}: {exc}") from exc
+
+
+def file_source(path: str) -> CsvSource:
+    return CsvSource(str(Path(path)), None, Path(path))
+
+
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.print_default_config:
@@ -93,13 +130,14 @@ def run(argv: list[str] | None = None) -> int:
     if diff_mode:
         if not args.old or not args.new or args.input:
             raise ConfigError("diff mode requires --old and --new and no positional input")
-        old = read_csv_table(args.old, config)
-        new = read_csv_table(args.new, config)
+        old_source = git_source(args.old, args.new, config) if args.old.startswith("git:") else file_source(args.old)
+        old = read_csv_source(old_source, config)
+        new = read_csv_source(file_source(args.new), config)
     else:
         if not args.input:
             raise ConfigError("snapshot mode requires an input CSV")
         old = None
-        new = read_csv_table(args.input, config)
+        new = read_csv_source(file_source(args.input), config)
     data = build_report_data(new, config, Path(args.output).name, old=old)
     for warning in data["meta"].get("warnings", []):
         print(f"warning: {warning}", file=sys.stderr)
