@@ -13,6 +13,8 @@ ReqTable should support system breakdown, requirement allocation, and traceabili
 | **Owner** | One system element is accountable for the requirement as a whole. | At most one. It may be the common parent of the allocated subsystems. |
 | **Derived from** | A lower-level requirement carries forward an obligation from an upstream requirement. | Zero or more upstream requirements. Derivation forms a directed acyclic graph. |
 | **Source refs** | A requirement traces to an embedded need or a source record, such as a standard or contract clause. A need may also cite a source record. | Zero or more origins. |
+| **Verified by** | A requirement is verified by one or more `Test` records. | Zero or more tests. |
+| **Test plan** | A `Test` belongs to a `Test plan`. This is a separate column from **Part of**, which builds the system tree. | At most one plan. |
 
 The system hierarchy is a tree for the pilot. A shared requirement has one ID, statement, and set of comments. It appears in every allocated subsystem view, and edits in any of those views update the same row. Create distinct child requirements when the subsystems have distinct obligations to verify. One requirement can contribute to more than one upstream obligation, and one upstream requirement can flow down into several child requirements.
 
@@ -27,7 +29,7 @@ Traceability is opt-in so existing flat reports, including files with a project-
 | Column | Use |
 | --- | --- |
 | `ID` | Stable record identifier using the configured ID column. |
-| `Type` | `System`, `Requirement`, `Need`, `Source`, `Term`, `Value`, or `Field`. A subsystem uses the same type as a top-level system. |
+| `Type` | `System`, `Requirement`, `Need`, `Source`, `Term`, `Value`, `Field`, `Test`, or `Test plan`. A subsystem uses the same type as a top-level system. |
 | `Name` | Display label for a system, need, or source record. |
 | `Requirement` | Requirement statement. A need can use the same column for its wording. |
 | `Part of` | Parent system ID for a subsystem. |
@@ -35,7 +37,9 @@ Traceability is opt-in so existing flat reports, including files with a project-
 | `Owner` | Optional accountable system ID on a requirement row. |
 | `Derived from` | Parent requirement IDs on a requirement row. |
 | `Source refs` | IDs of in-file origin records. |
-| `Reference` | External document, revision, and clause or section on a source record. The report can display this citation offline. |
+| `Verified by` | `Test` IDs on a requirement row. |
+| `Test plan` | One `Test plan` ID on a `Test` row. |
+| `Reference` | External document, revision, and clause or section on a source record, or the link to a test or test plan (a test-management tool or a repo file). Markdown links to HTTP, HTTPS and mailto targets render as links. The report can display this citation offline. |
 | `Origin` | Optional `Self-derived` marker for a requirement whose source is a design decision. |
 | `Rationale` | Explanation on the child, including why a self-derived requirement is needed. |
 

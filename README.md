@@ -203,6 +203,16 @@ In Develop mode, editing a column that has `Value` records suggests exactly the 
 
 Renaming a value in its **Name** cell asks `Rename “Should” to “Recommended” in 39 rows that use it?`. Choose OK to rewrite those cells in the same step, so one **Undo** restores the name and the rows. Choose Cancel to change only the name, and the rows then show findings. Matching is exact and case-sensitive on the whole cell, or on each semicolon-separated segment in a `Multiple` column. Value and Field records are never rewritten. Renaming a `Field` record, or changing a value's **Field**, does not update any rows.
 
+### Tests
+
+Requirements can point at the tests that verify them. A `Test plan` record groups tests, and a `Test` record is one test, script or checklist. Both are rows in the same CSV, with a **Name**, an optional description in **Requirement** and a **Reference** for the external link, for example a test-management tool URL or a Markdown link to a file in the repository. Only HTTP, HTTPS and mailto links render as links. Other targets show as text.
+
+Open **Tests** to list every `Test plan` and `Test` record in table order, with ID, Type, Name, Test plan, Verification Method, Reference and Requirement columns. In Develop mode, **Add test plan…** and **Add test…** take an ID, Name and description, and **Add test…** offers the existing plans. Edit the other fields in the grid.
+
+A requirement's **Verified by** column lists `Test` IDs. In its **Links** panel, choose **Link test…** to pick tests. A test's **Test plan** column holds at most one `Test plan` ID, set with **Set test plan…**. The panel shows the reverse links as **Verifies** on a test and **Tests** on a plan. The dedicated **Test plan** column keeps **Part of** for the Systems tree. Deleting a test or plan clears the links that point at it, and the confirmation lists them.
+
+The tests' **Verification Method** is checked against the table's `Value` records like any other row, so an undefined method shows a trace finding. **Trace findings** also reports links to missing or wrongly typed records.
+
 ## Review comments
 
 Enter reviewer initials in the report, then select or hover a non-ID cell to reveal its `+` control. A nearby quick-comment popup keeps the latest comment visible, permits its author to edit it, and can open the full comments sidebar. Numbered red indicators mark cells with comments. Reviewer colors are derived consistently from initials. The resizable sidebar supports browsing, searching, inline editing, deleting, and navigating to a cell without closing. Saving or cancelling an inline edit returns to the same browse or single-cell view.
