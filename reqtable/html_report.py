@@ -87,7 +87,15 @@ const arrowSteps={
 };
 const keyboardMode=$("#keyboard-mode");
 function vimKeys(){return !developMode()||keyboardMode.value==="vim";}
-keyboardMode.addEventListener("change",()=>{pendingG=null;restoreSelectedCell();});
+function syncKeyboardShortcuts(){
+  document.querySelectorAll(".spreadsheet-shortcut").forEach(label=>label.hidden=vimKeys());
+}
+keyboardMode.addEventListener("change",()=>{
+  pendingG=null;
+  syncKeyboardShortcuts();
+  restoreSelectedCell();
+});
+syncKeyboardShortcuts();
 function tabNeighbor(cell,backward){
   const sibling=backward?"previousElementSibling":"nextElementSibling";
   const neighbor=cell[sibling];
@@ -127,10 +135,10 @@ document.addEventListener("keydown",e=>{
     enterTableFromFilter(e.target);
     return;
   }
-  if(e.target.matches("input,textarea,select")||e.target.isContentEditable||e.altKey)return;
+  if(e.target.matches("input,textarea,select")||e.target.isContentEditable)return;
   const modified=e.ctrlKey||e.metaKey;
-  if(!modified&&e.key==="?"){e.preventDefault();showHelp();return;}
-  if(!modified&&e.key==="/"){
+  if(!modified&&!e.altKey&&e.key==="?"){e.preventDefault();showHelp();return;}
+  if(!modified&&!e.altKey&&e.key==="/"){
     e.preventDefault();
     if(!review.hidden&&!state.commentContext){$("#comment-search").focus();$("#comment-search").select();}
     else focusSelectedFilter();
@@ -141,6 +149,8 @@ document.addEventListener("keydown",e=>{
   let row=+cell.dataset.rowIndex,column=+cell.dataset.columnIndex;
   const develop=developMode(),vim=vimKeys(),key=e.key.toLowerCase(),step=Object.hasOwn(arrowSteps,e.key)&&arrowSteps[e.key];
   const lastColumn=visibleColumns().length-1;
+  if(develop&&!vim&&e.target===cell&&!state.editingCell&&handleSpreadsheetRowShortcut(e))return;
+  if(e.altKey)return;
   if(modified){
     if(e.shiftKey)return;
     if(develop&&step&&e.target===cell){
@@ -340,6 +350,20 @@ function addRequirement(position){
     cell=focusRequirement(id);
   }
   if(cell)startCellEdit(cell,true);
+}
+function handleSpreadsheetRowShortcut(event){
+  const command=event.ctrlKey||event.metaKey;
+  const direction=event.key==="ArrowUp"?-1:event.key==="ArrowDown"?1:0;
+  let action;
+  if(event.shiftKey&&direction&&command!==event.altKey){
+    action=command?(direction<0?"add-above":"add-below"):(direction<0?"move-up":"move-down");
+  }else if(command&&!event.shiftKey&&!event.altKey&&["Backspace","Delete"].includes(event.key)){
+    action="delete-requirement";
+  }
+  if(!action)return false;
+  event.preventDefault();
+  if(!event.repeat)$(`#${action}`).click();
+  return true;
 }
 function moveRequirement(delta){
   const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id),target=index+delta;
@@ -630,7 +654,7 @@ TEMPLATE = r"""<!doctype html>
 <body><main class="page"><header class="report-header"><div><h1>__TITLE__</h1><div class="meta" id="metadata">__META__</div><div class="summary"><span id="document-mode" class="badge mode-badge __DOCUMENT_MODE__">__DOCUMENT_MODE_LABEL__</span>__SUMMARY__</div></div><div class="save-area"><span class="comments-only"><label for="reviewer-initials">Reviewer initials</label> <input id="reviewer-initials" maxlength="16" value="__INITIALS__"></span><span id="dirty-indicator" class="dirty" hidden>Unsaved changes</span><span id="save-status" class="meta" aria-live="polite"></span></div></header>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
-<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above</button><button id="add-below">Add below</button><button id="move-up">Move up</button><button id="move-down">Move down</button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement</button><button id="undo-edit" disabled>Undo</button><button id="redo-edit" disabled>Redo</button></div></details>
+<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd class="spreadsheet-shortcut">Ctrl/Cmd+Shift+↑</kbd></button><button id="add-below">Add below <kbd class="spreadsheet-shortcut">Ctrl/Cmd+Shift+↓</kbd></button><button id="move-up">Move up <kbd class="spreadsheet-shortcut">Alt/Option+Shift+↑</kbd></button><button id="move-down">Move down <kbd class="spreadsheet-shortcut">Alt/Option+Shift+↓</kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd class="spreadsheet-shortcut">Ctrl/Cmd+Backspace</kbd></button><button id="undo-edit" disabled>Undo</button><button id="redo-edit" disabled>Redo</button></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only" aria-pressed="false">Show changes since save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="show-help">Keyboard help</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button><div id="hidden-filter-warning" class="meta"></div></div></details>
