@@ -81,6 +81,8 @@ Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the
 
 Click an ID cell to select the row, then Shift+click another ID or use Shift+Up/Down to select a block. Drag any selected row’s grip to move the whole block in its existing order.
 
+In Spreadsheet mode, use Shift+Up/Down from any cell to select consecutive requirements, then Alt/Option+Shift+Up/Down to move them together. Use the normal view in source order with no filters. The selection follows the moved rows, and one Undo reverses each move.
+
 ## Use as a Git diff tool
 
 The included `examples/reqtable-git-diff` wrapper generates an offline HTML comparison and opens it with the platform's default browser. Point `REQTABLE_PYZ` at the built zipapp and set the unique ID column if it is not `ID`:

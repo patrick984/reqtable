@@ -556,11 +556,26 @@ function handleSpreadsheetRowShortcut(event){
   return true;
 }
 function moveRequirement(delta){
-  const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id),target=index+delta;
-  reorderRequirement(index,target);
+  if(!developMode()||state.editingCell)return;
+  const {top,bottom}=selectionBounds();
+  if(top===bottom){
+    const id=selectedRequirementId();
+    const index=state.currentRows.findIndex(row=>rowId(row)===id);
+    reorderRequirement(index,index+delta);
+    return;
+  }
+  if(!canDragRows()){
+    alert("To move several rows, use the normal view in source order with no filters.");
+    return;
+  }
+  const movePosition=position=>({...position,row:position.row+delta});
+  const selection={...rangeSelection,anchor:movePosition(rangeSelection.anchor),
+    extent:movePosition(rangeSelection.extent)};
+  reorderRequirement(top,top+delta,bottom-top+1,selection);
 }
-function reorderRequirement(index,target,count=1){
-  if(index<0||target<0||target>state.currentRows.length-count||index===target)return;
+function reorderRequirement(index,target,count=1,selection=null){
+  if(index<0||index+count>state.currentRows.length||target<0
+      ||target>state.currentRows.length-count||index===target)return;
   const id=rowId(state.currentRows[index]);
   const column=visibleColumns()[state.focus.column]?.name;
   remember();
@@ -569,7 +584,10 @@ function reorderRequirement(index,target,count=1){
   state.sort=null;
   updateDirty();
   render();
-  focusRequirement(id,column);
+  if(selection){
+    rangeSelection=selection;
+    focusGridCell(selection.extent.row,selection.extent.column,true);
+  }else focusRequirement(id,column);
 }
 function renameRequirement(){if(!developMode())return;const oldId=selectedRequirementId(),row=oldId&&findCurrentRow(oldId);if(!row){alert("Select a current requirement before renaming it.");return;}const proposed=prompt(`Rename requirement ${oldId}:`,oldId);if(proposed===null)return;const id=validateNewId(proposed,oldId);if(!id||id===oldId)return;remember();row[data.meta.idColumn]=id;for(const comment of state.comments)if(comment.requirementId===oldId)comment.requirementId=id;if(state.commentContext?.rid===oldId)state.commentContext.rid=id;const column=visibleColumns()[state.focus.column]?.name;updateDirty();render();focusRequirement(id,column);}
 function deleteRequirement(){if(!developMode())return;const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);if(index<0){alert("Select a current requirement before deleting it.");return;}const commentCount=state.comments.filter(c=>c.requirementId===id).length,message=commentCount?`Delete requirement ${id} and its ${commentCount} attached comment${commentCount===1?'':'s'}?`:`Delete requirement ${id}?`;if(!confirm(message))return;remember();state.currentRows.splice(index,1);state.comments=state.comments.filter(c=>c.requirementId!==id);updateDirty();render();}
