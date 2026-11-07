@@ -51,6 +51,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "csv_column": "Comments",
         "csv_format": "json",
     },
+    "quality": {"requirement_column": None, "required_columns": [], "obligation": "shall"},
 }
 
 
@@ -103,6 +104,15 @@ def load_config(path: str | None, overrides: dict[str, Any] | None = None) -> di
 
 
 def validate_config(config: dict[str, Any]) -> None:
+    quality = config["quality"]
+    for field in ("requirement_column", "obligation"):
+        value = quality[field]
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ConfigError(f"quality.{field} must be null or a non-empty string")
+    if not isinstance(quality["required_columns"], list) or not all(
+        isinstance(column, str) and column.strip() for column in quality["required_columns"]
+    ):
+        raise ConfigError("quality.required_columns must be an array of non-empty column names")
     if config["id_column"] is not None and not isinstance(config["id_column"], str):
         raise ConfigError("id_column must be null or a string")
     if not isinstance(config["title"], str):
@@ -390,6 +400,14 @@ def build_report_data(
     old: CsvTable | None = None,
 ) -> dict[str, Any]:
     columns = effective_columns(old, new, config)
+    quality = config["quality"]
+    quality_columns = set(quality["required_columns"])
+    if quality["requirement_column"] is not None:
+        quality_columns.add(quality["requirement_column"])
+    invalid_quality_columns = quality_columns.difference(set(new.headers) - {config["id_column"]})
+    if invalid_quality_columns:
+        names = ", ".join(sorted(invalid_quality_columns))
+        raise ConfigError(f"quality columns must be non-ID columns in the current CSV: {names}")
     markdown_columns = config["columns"]["markdown"]
     markdown_set = set(columns if markdown_columns is None else markdown_columns)
     for name in markdown_set:
@@ -487,6 +505,7 @@ def build_report_data(
             "commentsColumn": config["comments"]["csv_column"],
             "commentsFormat": config["comments"]["csv_format"],
             "csvDelimiter": config["csv"]["delimiter"],
+            "quality": quality,
         },
         "columns": column_data,
         "rows": rows,
