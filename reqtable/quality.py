@@ -153,7 +153,7 @@ function renderQualityPanel(){
     for(const [column,issues] of fields){
       const active=quality.activeCell?.id===id&&quality.activeCell.column===column;
       const rowHidden=!displayed.has(id);
-      const hidden=rowHidden||state.hidden.has(column);
+      const hidden=rowHidden||!visibleColumns().some(item=>item.name===column);
       const card=document.createElement("article");
       card.className="comment-card quality-card";
       card.classList.toggle("quality-active",active);
@@ -258,6 +258,7 @@ function jumpToQualityCell(id,column,hidden,issue){
   quality.activeCell={id,column};
   if(hidden){
     const rowVisible=[...tableBody.rows].some(row=>row.dataset.rowId===id);
+    trace?.reveal(id,column);
     state.hidden.delete(column);
     if(!rowVisible){
       state.filters.clear();
@@ -265,7 +266,6 @@ function jumpToQualityCell(id,column,hidden,issue){
       state.commentsOnly=false;
       state.statuses=new Set(["added","removed","changed","unchanged"]);
       quality.revealId=id;
-      trace?.reveal(id);
     }
     render();
   }else renderQualityPanel();

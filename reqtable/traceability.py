@@ -132,71 +132,184 @@ function traceIncomingChanges(rows,oldId,newId){
 
 TRACE_UI_JS = r"""
 const trace=(()=>{
-  const panel=$("#trace-panel"),tree=$("#trace-tree"),detail=$("#trace-record");
-  const editor=$("#trace-editor"),picker=$("#trace-picker"),status=$("#trace-status");
-  let index, system="", descendants=true, selected=null, pending=null, revealed=null;
-  let scope=new Set(), editedRecord=null, linkEdit=null;
+  const panel=$("#trace-panel"),detail=$("#trace-record"),tree=$("#trace-tree");
+  const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
+  const viewBar=$("#trace-views"),systemSelect=$("#trace-system"),status=$("#trace-status");
+  const wrap=$(".table-wrap"),systemsPage=$("#trace-systems");
+  const requirementsDefaults=new Set([data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria"]);
+  const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
+  const relationshipColumns=new Set([...Object.keys(traceFields),"Type","Reference","Origin","Rationale"]);
+  const labels={
+    "Part of":["Parent system","Move to…"],
+    "Allocated to":["Applies to","Allocate to…"],
+    "Owner":["Owner","Set owner…"],
+    "Derived from":["Parent requirements","Link parent requirement…"],
+    "Source refs":["Needs and sources","Link need or source…"],
+  };
+  let index,view="requirements",system="",unallocated=false,descendants=true;
+  let selected=null,selectedSystem=null,revealed=null,pending=null,previous=null;
+  let scope=new Set(),recordEdit=null,linkEdit=null,deleteEdit=null;
+
   const label=record=>record.row.Name?.trim()||record.id;
   const caption=record=>label(record)===record.id?record.id:`${label(record)} (${record.id})`;
   const writable=()=>developMode()&&!state.editingCell;
   const visible=id=>[...tableBody.rows].some(row=>row.dataset.rowId===id);
-  const link=(id,label)=>`<button type="button" class="trace-link" data-trace-jump="${escapeHtml(id)}">${escapeHtml(label)}</button>`;
+  const children=record=>record.incoming.filter(edge=>edge.field==="Part of").map(edge=>edge.record);
+  const link=(id,text)=>`<button type="button" class="trace-link" data-trace-jump="${escapeHtml(id)}">${escapeHtml(text)}</button>`;
   const focusControl=(container,attribute,value)=>{
     [...container.querySelectorAll(`[${attribute}]`)].find(button=>button.getAttribute(attribute)===value)?.focus();
   };
 
+  function columnAvailable(name){
+    if(view==="requirements")return !relationshipColumns.has(name);
+    if(view==="sources")return sourceColumns.has(name);
+    return true;
+  }
+  function defaultHidden(){
+    return new Set(data.columns.filter(({name,hidden})=>name!==data.meta.idColumn
+      &&(hidden||(view==="requirements"&&!requirementsDefaults.has(name)))).map(({name})=>name));
+  }
+  const viewStates=new Map();
+  const collapsed=new Set();
+  function switchView(next,reveal=null){
+    if(view===next)return false;
+    viewStates.set(view,{hidden:state.hidden,filters:state.filters,valueFilters:state.valueFilters,
+      sort:state.sort,focus:state.focus,scroll:[wrap.scrollLeft,wrap.scrollTop],
+      commentsOnly:state.commentsOnly,qualityOnly:quality.only});
+    view=next;
+    const saved=viewStates.get(next);
+    state.hidden=saved?.hidden??defaultHidden();
+    state.filters=saved?.filters??new Map();
+    state.valueFilters=saved?.valueFilters??new Map();
+    state.sort=saved?.sort??null;
+    state.focus=saved?.focus??{row:0,column:0};
+    state.commentsOnly=saved?.commentsOnly??false;
+    quality.only=saved?.qualityOnly??false;
+    revealed=reveal;
+    pending=null;
+    closeValueFilter();
+    wrap.hidden=view==="systems";
+    render();
+    [wrap.scrollLeft,wrap.scrollTop]=saved?.scroll??[0,0];
+    return true;
+  }
+  function canNavigate(){
+    if(!state.editingCell){
+      status.textContent="";
+      return true;
+    }
+    status.textContent="Apply or cancel the cell edit before changing views or editing links.";
+    return false;
+  }
+  function selectView(next){
+    if(view===next||!canNavigate())return;
+    previous=null;
+    close();
+    switchView(next);
+  }
   function matches(row){
-    if(!system)return true;
+    if(view==="all")return true;
+    if(view==="systems")return false;
     const record=index.records.get(row.id);
+    const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
+    if(view==="sources")return type==="Need"||type==="Source";
+    if(type!=="Requirement")return false;
+    if(!system&&!unallocated)return true;
     const allocated=record?(record.outgoing.get("Allocated to")??[]).map(target=>target.id)
       :traceIds(row.cells["Allocated to"]?.old);
-    const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
-    return type==="Requirement"&&allocated.some(id=>scope.has(id));
+    return unallocated?!allocated.length:allocated.some(id=>scope.has(id));
   }
   function refresh(){
     index=buildTraceIndex(state.currentRows,rowId);
     if(index.records.get(system)?.type!=="System")system="";
     if(revealed&&!index.records.has(revealed)&&!data.rows.some(row=>row.id===revealed))revealed=null;
     scope=new Set();
-    const root=index.records.get(system);
-    const queue=root?[root]:[];
+    const queue=system?[index.records.get(system)]:[];
     for(let i=0;i<queue.length;i++){
       const record=queue[i];
       if(scope.has(record.id))continue;
       scope.add(record.id);
-      if(descendants)for(const edge of record.incoming)if(edge.field==="Part of")queue.push(edge.record);
+      if(descendants)queue.push(...children(record));
     }
-    if(!panel.hidden)renderTree();
+    renderWorkspace();
+    if(!panel.hidden)renderIssues();
   }
   function filters(){
     const result=[];
-    if(system)result.push([`System: ${caption(index.records.get(system))}${descendants?" and subsystems":""}`,
-      ()=>{system="";}]);
+    if(view==="requirements"){
+      if(system)result.push([`System: ${caption(index.records.get(system))}${descendants?" and subsystems":""}`,
+        ()=>{system="";}]);
+      if(unallocated)result.push(["Unallocated requirements",()=>{unallocated=false;}]);
+    }
     if(revealed)result.push([`Revealed record: ${revealed}`,()=>{revealed=null;}]);
     return result;
   }
-  function reset(){system="";revealed=null;pending=null;}
-  function renderTree(){
-    const visit=new Set();
-    const children=record=>record.incoming.filter(edge=>edge.field==="Part of").map(edge=>edge.record);
-    const options=[`<li><button type="button" data-trace-system="" aria-pressed="${!system}">All records</button></li>`];
-    const addBranch=root=>{
+  function reset(){system="";unallocated=false;revealed=null;pending=null;}
+  function systemEntries(respectCollapse=false){
+    const visited=new Set(),entries=[];
+    const starts=[...index.roots,...index.systems.filter(record=>!record.outgoing.get("Part of")?.length),...index.systems];
+    for(const root of starts){
       const stack=[[root,0]];
       while(stack.length){
         const [record,depth]=stack.pop();
-        if(visit.has(record.id))continue;
-        visit.add(record.id);
-        options.push(`<li style="--trace-depth:${Math.min(depth,8)}">
-          <button type="button" data-trace-system="${escapeHtml(record.id)}" aria-pressed="${system===record.id}">${escapeHtml(caption(record))}</button>
-          <button type="button" data-trace-inspect="${escapeHtml(record.id)}" aria-label="Inspect ${escapeHtml(caption(record))}">↗</button>
-        </li>`);
+        if(visited.has(record.id))continue;
+        visited.add(record.id);
+        entries.push([record,depth]);
         for(const child of children(record).reverse())stack.push([child,depth+1]);
       }
-    };
-    for(const root of [...index.roots,...index.systems])addBranch(root);
-    tree.innerHTML=options.join("");
-    $("#trace-descendants").checked=descendants;
-    $("#trace-descendants").disabled=!system;
+    }
+    if(!respectCollapse)return entries;
+    let collapsedDepth=Infinity;
+    return entries.filter(([record,depth])=>{
+      if(depth>collapsedDepth)return false;
+      collapsedDepth=collapsed.has(record.id)?depth:Infinity;
+      return true;
+    });
+  }
+  function renderWorkspace(){
+    for(const button of viewBar.querySelectorAll("[data-trace-view]")){
+      button.setAttribute("aria-pressed",String(button.dataset.traceView===view));
+    }
+    const inSystems=view==="systems";
+    wrap.hidden=inSystems;
+    systemsPage.hidden=!inSystems;
+    $("#columns-menu").hidden=inSystems;
+    $("#filter-menu").hidden=inSystems;
+    $("#trace-scope").hidden=view!=="requirements";
+    $("#trace-view-add").hidden=!developMode()||view!=="requirements";
+    $("#trace-source-actions").hidden=!developMode()||view!=="sources";
+    $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
+    if(view==="requirements"){
+      const options=[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
+      for(const [record,depth] of systemEntries())options.push(new Option("  ".repeat(Math.min(depth,8))+caption(record),"system:"+record.id));
+      systemSelect.replaceChildren(...options);
+      systemSelect.value=unallocated?"unallocated":system?"system:"+system:"all";
+      $("#trace-descendants").checked=descendants;
+      $("#trace-descendants").disabled=!system;
+    }
+    if(inSystems)renderTree();
+  }
+  function renderTree(){
+    const entries=systemEntries(true);
+    if(!entries.some(([record])=>record.id===selectedSystem))selectedSystem=entries[0]?.[0].id??null;
+    tree.innerHTML=entries.length?entries.map(([record,depth])=>{
+      const count=record.incoming.filter(edge=>edge.field==="Allocated to").length;
+      const expanded=!collapsed.has(record.id);
+      const toggle=children(record).length?`<button type="button" data-trace-collapse="${escapeHtml(record.id)}"
+        aria-label="${expanded?"Collapse":"Expand"} ${escapeHtml(label(record))}" aria-expanded="${expanded}">${expanded?"▾":"▸"}</button>`:'<span class="trace-tree-leaf"></span>';
+      return `<li style="--trace-depth:${Math.min(depth,8)}">
+        ${toggle}
+        <button type="button" data-trace-system="${escapeHtml(record.id)}" aria-pressed="${selectedSystem===record.id}">${escapeHtml(caption(record))}</button>
+        <span class="meta">${count} allocated</span></li>`;
+    }).join(""):"<li>No systems yet.</li>";
+    const record=index.records.get(selectedSystem),actions=$("#trace-system-actions");
+    actions.hidden=!record;
+    $("#trace-system-name").textContent=record?caption(record):"";
+    const parent=record?.outgoing.get("Part of")?.[0];
+    $("#trace-system-parent").textContent=record?(parent?`Parent system: ${caption(parent)}`:"Top-level system"):"";
+    $("#trace-system-edit").hidden=!developMode();
+  }
+  function renderIssues(){
     $("#trace-findings").querySelector("summary").textContent=`Trace findings (${index.issues.length})`;
     $("#trace-issues").innerHTML=index.issues.length?index.issues.map(({id,field,message})=>
       `<li>${id?link(id,id)+" · ":""}<strong>${escapeHtml(field)}</strong><br>${escapeHtml(message)}</li>`
@@ -205,63 +318,66 @@ const trace=(()=>{
   function renderDetail(){
     if(panel.hidden)return;
     const record=index.records.get(selected);
-    const reveal=pending?`<div class="trace-reveal">${escapeHtml(pending)} is outside the current view.
+    const reveal=pending?`<div class="trace-reveal">${escapeHtml(pending)} is outside the current filters.
       <button type="button" id="trace-reveal">Reveal in grid</button></div>`:"";
+    $("#trace-back").hidden=!previous;
     if(!record){
-      detail.innerHTML=reveal+"<p>Select a current record in the grid to inspect its links.</p>";
+      detail.innerHTML=reveal+"<p>Select a current record to inspect its links.</p>";
       return;
     }
     const {id,row,type}=record;
     const incomingLabels={"Part of":"Subsystems","Allocated to":"Allocated requirements","Owner":"Owned requirements",
-      "Derived from":"Downstream requirements","Source refs":"Cited by"};
+      "Derived from":"Child requirements","Source refs":"Referenced by"};
     const sections=[];
     for(const [field,rule] of Object.entries(traceFields)){
       const ids=[...new Set(traceIds(row[field]))];
       if(!rule.from.includes(type)&&!ids.length)continue;
+      const [heading,action]=labels[field];
       const targets=ids.map(targetId=>{
         const target=index.records.get(targetId);
-        const remove=writable()?` <button type="button" class="trace-remove" data-trace-remove="${escapeHtml(field)}"
-          data-trace-target="${escapeHtml(targetId)}" aria-label="Remove ${escapeHtml(field)} link to ${escapeHtml(targetId)}">×</button>`:"";
+        const remove=writable()? ` <button type="button" class="trace-remove" data-trace-remove="${escapeHtml(field)}"
+          data-trace-target="${escapeHtml(targetId)}" aria-label="Remove ${escapeHtml(heading)} link to ${escapeHtml(targetId)}">×</button>`:"";
         return `<li>${target?link(targetId,caption(target)):escapeHtml(targetId)+" (missing)"}${remove}</li>`;
       });
-      const edit=writable()&&rule.from.includes(type)?` <button type="button" data-trace-pick="${escapeHtml(field)}"
-        aria-label="Choose ${escapeHtml(field)} target">${rule.single&&ids.length?"Change":"Add"}…</button>`:"";
-      sections.push(`<section><h4>${escapeHtml(field)}${edit}</h4>${targets.length?`<ul>${targets.join("")}</ul>`:'<p class="meta">None</p>'}</section>`);
+      const edit=writable()&&rule.from.includes(type)?` <button type="button" data-trace-pick="${escapeHtml(field)}">${action}</button>`:"";
+      sections.push(`<section><h4>${heading}</h4>${targets.length?`<ul>${targets.join("")}</ul>`:'<p class="meta">None</p>'}${edit}</section>`);
     }
     for(const [field,heading] of Object.entries(incomingLabels)){
       const links=record.incoming.filter(edge=>edge.field===field);
-      if(links.length)sections.push(`<section><h4>${heading}</h4><ul>${links.map(({record:source})=>
-        `<li>${link(source.id,caption(source))}</li>`).join("")}</ul></section>`);
-      else if(field==="Derived from"&&type==="Requirement")sections.push('<section><h4>Downstream requirements</h4><p class="meta">None</p></section>');
+      const addChild=field==="Derived from"&&type==="Requirement"&&writable()
+        ?'<button type="button" id="trace-add-child">Add child requirement…</button>':"";
+      if(links.length||addChild||(field==="Derived from"&&type==="Requirement")){
+        const list=links.length?`<ul>${links.map(({record:source})=>`<li>${link(source.id,caption(source))}</li>`).join("")}</ul>`:'<p class="meta">None</p>';
+        sections.push(`<section><h4>${heading}</h4>${list}${addChild}</section>`);
+      }
     }
     const origin=row.Origin?.trim()||(traceIds(row["Source refs"]).length||traceIds(row["Derived from"]).length?"":"No origin recorded");
     const notes=[row.Requirement,row.Reference,type==="Requirement"?origin:"",row.Rationale].filter(Boolean);
     detail.innerHTML=reveal+`<h3 tabindex="-1">${escapeHtml(caption(record))}</h3><p class="meta">${escapeHtml(type)}</p>`
-      +notes.map(note=>`<p class="trace-note">${escapeHtml(note)}</p>`).join("")
-      +(type==="System"&&writable()?'<button type="button" id="trace-edit-system">Edit system…</button>':"")
-      +(visible(id)?"":link(id,"Locate in grid"))+sections.join("");
+      +notes.map(note=>`<p class="trace-note">${escapeHtml(note)}</p>`).join("")+sections.join("");
   }
   function syncSelection(id,force=false){
+    if(view==="systems")id=selectedSystem;
     if(id===selected&&!force)return;
     selected=id;
     pending=null;
     renderDetail();
   }
-  function navigate(id){
-    if(state.editingCell){
-      status.textContent="Apply or cancel the cell edit before navigating.";
-      return;
-    }
-    if(!visible(id)){
-      pending=id;
-      renderDetail();
-      $("#trace-reveal").focus();
-      return;
-    }
-    pending=null;
-    if(matchMedia("(max-width:900px)").matches)close();
-    focusRequirement(id,data.meta.idColumn);
+  function recordView(id){
+    const record=index.records.get(id),type=record?.type;
+    if(type==="System")return "systems";
+    if(type==="Need"||type==="Source")return "sources";
+    return type==="Requirement"?"requirements":"all";
+  }
+  function openPanel(id){
+    closeReview();
+    closeQuality();
+    panel.hidden=false;
+    $("#open-trace").setAttribute("aria-expanded","true");
+    renderIssues();
     syncSelection(id,true);
+    renderLayout();
+    (detail.querySelector("h3")??$("#trace-title")).focus({preventScroll:true});
   }
   function close(){
     if(panel.hidden)return;
@@ -269,210 +385,473 @@ const trace=(()=>{
     $("#open-trace").setAttribute("aria-expanded","false");
     renderLayout();
   }
-  function open(){
-    if(state.editingCell)return;
-    if(!panel.hidden){close();restoreSelectedCell();return;}
-    closeReview();
-    closeQuality();
-    panel.hidden=false;
-    $("#open-trace").setAttribute("aria-expanded","true");
-    refresh();
-    syncSelection(selectedRequirementId(),true);
-    renderLayout();
-    $("#trace-title").focus();
+  function focusRecord(id){
+    if(view==="systems"){
+      const seen=new Set([id]);
+      let parent=index.records.get(id)?.outgoing.get("Part of")?.[0];
+      while(parent&&!seen.has(parent.id)){
+        seen.add(parent.id);
+        collapsed.delete(parent.id);
+        parent=parent.outgoing.get("Part of")?.[0];
+      }
+      selectedSystem=id;
+      renderTree();
+    }else focusRequirement(id,data.meta.idColumn);
+    syncSelection(id,true);
+    (detail.querySelector("h3")??$("#trace-title")).focus({preventScroll:true});
   }
-  function changeScope(id){
-    if(state.editingCell){
-      status.textContent="Apply or cancel the cell edit before switching systems.";
+  function navigate(id){
+    if(!canNavigate())return;
+    const destination=recordView(id);
+    if(destination===view&&!visible(id)&&view!=="systems"){
+      pending=id;
+      renderDetail();
+      $("#trace-reveal").focus();
       return;
     }
-    status.textContent="";
-    const current=selectedRequirementId(),column=visibleColumns()[state.focus.column]?.name;
-    system=id;
-    revealed=null;
-    render();
-    // Preserve the current record across subsystem views when it belongs to both.
-    const row=current&&[...tableBody.rows].find(row=>row.dataset.rowId===current);
+    if(selected!==id||destination!==view){
+      previous={id:selected,view,system,unallocated,descendants,revealed};
+    }
+    switchView(destination);
+    if(view!=="systems"&&!visible(id)){revealed=id;render();}
+    focusRecord(id);
+  }
+  function goBack(){
+    if(!previous||!canNavigate())return;
+    const origin=previous;
+    previous=null;
+    ({system,unallocated,descendants}=origin);
+    if(!switchView(origin.view,origin.revealed)){
+      revealed=origin.revealed;
+      render();
+    }
+    if(origin.id)focusRecord(origin.id);
+    else openPanel(selectedRequirementId());
+  }
+  function restoreGridSelection(id,column){
+    const row=id&&[...tableBody.rows].find(row=>row.dataset.rowId===id);
     const cell=[...row?.cells??[]].find(cell=>cell.dataset.column===column);
-    if(cell)state.focus.row=+cell.dataset.rowIndex;
-    else state.focus.row=0;
+    state.focus.row=cell?+cell.dataset.rowIndex:0;
     setRovingFocus();
   }
-  function updateLink(field,value){
-    const record=index.records.get(selected);
+  function changeScope(id,onlyUnallocated=false){
+    const current=selectedRequirementId(),column=visibleColumns()[state.focus.column]?.name;
+    system=id;
+    unallocated=onlyUnallocated;
+    revealed=null;
+    if(!switchView("requirements"))render();
+    restoreGridSelection(current,column);
+  }
+  function updateLink(record,field,value){
     if(!writable()||!record||record.row[field]===value)return;
-    const id=record.id;
     remember();
     record.row[field]=value;
     updateDirty();
     render();
-    syncSelection(id,true);
-    focusControl(detail,"data-trace-pick",field);
+    if(view==="systems")focusRecord(record.id);
+    else syncSelection(record.id,true);
+    if(!panel.hidden)focusControl(detail,"data-trace-pick",field);
+    else if(view==="systems")focusControl(tree,"data-trace-system",record.id);
   }
   function showCandidates(){
-    const {id,field}=linkEdit,record=index.records.get(id);
+    const {id,field,checked}=linkEdit,record=index.records.get(id);
     const query=$("#trace-query").value.trim().toLocaleLowerCase();
-    const results=[...index.records.values()].filter(target=>caption(target).toLocaleLowerCase().includes(query)
-      &&traceCanLink(record,field,target));
-    $("#trace-candidates").innerHTML=results.length?results.map(target=>
-      `<li><button type="button" data-trace-target="${escapeHtml(target.id)}">${escapeHtml(caption(target))}</button></li>`
+    const matches=text=>text.toLocaleLowerCase().includes(query);
+    const targets=[...index.records.values()].filter(target=>matches(caption(target))
+      &&(checked?.has(target.id)||traceCanLink(record,field,target)));
+    const names=new Map(targets.map(target=>[target.id,caption(target)]));
+    if(checked){
+      for(const id of checked){
+        const target=index.records.get(id);
+        if(!target&&matches(id))names.set(id,`${id} (missing)`);
+      }
+    }
+    $("#trace-candidates").innerHTML=names.size?[...names].map(([id,name])=>checked
+      ?`<li><label><input type="checkbox" data-trace-target="${escapeHtml(id)}" ${checked.has(id)?"checked":""}> ${escapeHtml(name)}</label></li>`
+      :`<li><button type="button" data-trace-target="${escapeHtml(id)}">${escapeHtml(name)}</button></li>`
     ).join(""):"<li>No eligible targets match.</li>";
   }
-  function editLink(field){
-    if(!writable()||!index.records.has(selected))return;
-    linkEdit={id:selected,field};
-    $("#trace-picker-title").textContent=field;
+  function editLink(field,id=selected){
+    if(!writable()||!index.records.has(id))return;
+    const checked=field==="Allocated to"?new Set(traceIds(index.records.get(id).row[field])):null;
+    linkEdit={id,field,checked};
+    $("#trace-picker-title").textContent=labels[field][1].replace("…","");
     $("#trace-query").value="";
+    $("#trace-picker-apply").hidden=!checked;
     showCandidates();
     picker.showModal();
   }
-  function editRecord(record=null){
+  function editRecord(type,{record=null,parent=null}={}){
     if(!writable())return;
-    editedRecord=record;
-    $("#trace-editor-title").textContent=record?"Edit system":"Add trace record";
-    $("#trace-record-id").value=record?.id??"";
+    recordEdit={type,record,parent};
+    $("#trace-editor-title").textContent=record?"Rename system":parent?(type==="System"?"Add subsystem":"Add child requirement"):`Add ${type.toLowerCase()}`;
+    $("#trace-record-id").value=record?.id??(type==="Requirement"?nextRequirementId():"");
     $("#trace-record-id").readOnly=!!record;
-    $("#trace-record-type").value=record?.type??"System";
-    $("#trace-record-type").disabled=!!record;
     $("#trace-record-name").value=record?.row.Name??"";
+    $("#trace-record-name").required=type!=="Requirement";
+    $("#trace-record-name-field").hidden=type==="Requirement";
+    $("#trace-record-content").value="";
+    $("#trace-record-content").required=type==="Requirement";
+    $("#trace-record-content-field").hidden=type==="System";
+    $("#trace-record-content-label").textContent=type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
     editor.showModal();
+  }
+  function optionList(select,choices,empty){
+    select.replaceChildren(new Option(empty,""),...choices.map(record=>new Option(caption(record),record.id)));
+  }
+  function openDeletion(id){
+    if(!writable())return;
+    const record=index.records.get(id);
+    if(record?.type!=="System")return;
+    const changes=traceIncomingChanges(state.currentRows,id,null).filter(change=>change.row!==record.row);
+    const fields=["Part of","Allocated to","Owner"];
+    deleteEdit={id,changes};
+    $("#trace-delete-title").textContent=`Delete ${caption(record)}?`;
+    const comments=state.comments.filter(comment=>comment.requirementId===id).length;
+    $("#trace-delete-impact").textContent=`This affects ${changes.length} incoming links and deletes ${comments} attached comments.`;
+    let described=0;
+    for(const [i,field] of fields.entries()){
+      const group=$("#trace-delete-group-"+i),select=group.querySelector("select");
+      const related=changes.filter(change=>change.field===field&&traceFields[field].from.includes(traceType(change.row)));
+      described+=related.length;
+      const eligible=index.systems.filter(target=>target!==record&&(
+        field!=="Part of"||related.every(change=>traceCanLink(index.records.get(rowId(change.row)),field,target))));
+      group.hidden=!related.length;
+      group.querySelector("span").textContent=`${related.length} ${["direct subsystems","requirement allocations","requirement owners"][i]}`;
+      optionList(select,eligible,["Make top-level","Remove this allocation","Clear owner"][i]);
+      if(field==="Part of"){
+        const parent=record.outgoing.get(field)?.[0];
+        if(eligible.includes(parent))select.value=parent.id;
+      }
+    }
+    $("#trace-delete-other").textContent=described<changes.length?"Other invalid references to this system will also be cleared.":"";
+    deletion.showModal();
   }
   function clearCopy(clone){
     clone.querySelector("#trace-panel").hidden=true;
+    clone.querySelector(".table-wrap").hidden=false;
+    clone.querySelector("#trace-systems").hidden=true;
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
-    for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status"]){
+    for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system"]){
       clone.querySelector("#"+id).replaceChildren();
     }
-    for(const id of ["trace-editor","trace-picker","trace-findings"]){
+    for(const id of ["trace-editor","trace-picker","trace-delete","trace-findings"]){
       clone.querySelector("#"+id).removeAttribute("open");
     }
   }
 
-  $("#open-trace").addEventListener("click",open);
-  for(const dialog of [editor,picker]){
-    dialog.addEventListener("keydown",event=>event.stopPropagation());
-  }
-  $("#close-trace").addEventListener("click",()=>{close();restoreSelectedCell();});
-  $("#trace-add-record").addEventListener("click",()=>editRecord());
+  state.hidden=defaultHidden();
+  wrap.hidden=false;
+  viewBar.addEventListener("click",event=>{
+    const button=event.target.closest("[data-trace-view]");
+    if(button)selectView(button.dataset.traceView);
+  });
+  systemSelect.addEventListener("change",()=>{
+    if(!canNavigate()){renderWorkspace();return;}
+    const value=systemSelect.value;
+    changeScope(value.startsWith("system:")?value.slice(7):"",value==="unallocated");
+  });
   $("#trace-descendants").addEventListener("change",event=>{
-    if(state.editingCell){event.target.checked=descendants;return;}
+    if(!canNavigate()){event.target.checked=descendants;return;}
     descendants=event.target.checked;
     changeScope(system);
   });
+  $("#trace-view-add").addEventListener("click",()=>{if(canNavigate())addRequirement("end");});
+  $("#trace-need-add").addEventListener("click",()=>editRecord("Need"));
+  $("#trace-source-add").addEventListener("click",()=>editRecord("Source"));
+  $("#trace-system-add").addEventListener("click",()=>editRecord("System"));
+  $("#trace-subsystem-add").addEventListener("click",()=>editRecord("System",{parent:selectedSystem}));
+  $("#trace-system-rename").addEventListener("click",()=>editRecord("System",{record:index.records.get(selectedSystem)}));
+  $("#trace-system-move").addEventListener("click",()=>editLink("Part of",selectedSystem));
+  $("#trace-system-delete").addEventListener("click",()=>openDeletion(selectedSystem));
+  $("#trace-system-requirements").addEventListener("click",()=>{
+    if(!canNavigate())return;
+    close();
+    changeScope(selectedSystem);
+    systemSelect.focus();
+  });
+  $("#trace-system-links").addEventListener("click",()=>openPanel(selectedSystem));
+  tree.addEventListener("click",event=>{
+    const toggle=event.target.closest("[data-trace-collapse]");
+    if(toggle){
+      const id=toggle.dataset.traceCollapse;
+      if(collapsed.has(id))collapsed.delete(id);
+      else collapsed.add(id);
+      renderTree();
+      syncSelection(selectedSystem);
+      focusControl(tree,"data-trace-collapse",id);
+      return;
+    }
+    const button=event.target.closest("[data-trace-system]");
+    if(!button)return;
+    selectedSystem=button.dataset.traceSystem;
+    renderTree();
+    syncSelection(selectedSystem);
+    focusControl(tree,"data-trace-system",selectedSystem);
+  });
+  $("#open-trace").addEventListener("click",()=>{
+    if(!canNavigate())return;
+    if(panel.hidden)openPanel(view==="systems"?selectedSystem:selectedRequirementId());
+    else {close();restoreSelectedCell();}
+  });
+  tableBody.addEventListener("click",event=>{
+    const button=event.target.closest("[data-trace-row]");
+    if(!button||!canNavigate())return;
+    event.stopPropagation();
+    previous=null;
+    restoreGridSelection(button.dataset.traceRow,data.meta.idColumn);
+    openPanel(button.dataset.traceRow);
+  });
+  for(const dialog of [editor,picker,deletion])dialog.addEventListener("keydown",event=>event.stopPropagation());
+  $("#close-trace").addEventListener("click",()=>{
+    close();
+    if(view==="systems")focusControl(tree,"data-trace-system",selectedSystem);
+    else restoreSelectedCell();
+  });
+  $("#trace-back").addEventListener("click",goBack);
   panel.addEventListener("click",event=>{
     const button=event.target.closest("button");
     if(!button)return;
-    const {traceSystem,traceJump,traceInspect,tracePick,traceRemove,traceTarget}=button.dataset;
-    if(traceSystem!==undefined){
-      changeScope(traceSystem);
-      focusControl(tree,"data-trace-system",traceSystem);
-    }else if(traceInspect!==undefined){
-      if(!state.editingCell){
-        syncSelection(traceInspect,true);
-        $("#trace-record h3")?.focus();
-      }
-    }else if(traceJump!==undefined)navigate(traceJump);
+    const {traceJump,tracePick,traceRemove,traceTarget}=button.dataset;
+    const record=index.records.get(selected);
+    if(traceJump!==undefined)navigate(traceJump);
     else if(tracePick)editLink(tracePick);
-    else if(traceRemove)updateLink(traceRemove,traceIds(index.records.get(selected).row[traceRemove])
+    else if(traceRemove&&record)updateLink(record,traceRemove,traceIds(record.row[traceRemove])
       .filter(id=>id!==traceTarget).join("; "));
-    else if(button.id==="trace-edit-system")editRecord(index.records.get(selected));
-    else if(button.id==="trace-reveal"&&pending){
-      if(state.editingCell)return;
+    else if(button.id==="trace-add-child")editRecord("Requirement",{parent:selected});
+    else if(button.id==="trace-reveal"&&pending&&canNavigate()){
       const id=pending;
+      previous={id:selected,view,system,unallocated,descendants,revealed};
       revealed=id;
       render();
-      navigate(id);
+      focusRecord(id);
     }
   });
   $("#trace-query").addEventListener("input",showCandidates);
   $("#trace-picker-cancel").addEventListener("click",()=>picker.close());
+  $("#trace-picker-apply").addEventListener("click",()=>{
+    const {id,field,checked}=linkEdit;
+    picker.close();
+    updateLink(index.records.get(id),field,[...checked].join("; "));
+  });
+  $("#trace-candidates").addEventListener("change",event=>{
+    const input=event.target.closest("input[data-trace-target]");
+    if(!input||!linkEdit?.checked)return;
+    if(input.checked)linkEdit.checked.add(input.dataset.traceTarget);
+    else linkEdit.checked.delete(input.dataset.traceTarget);
+  });
   $("#trace-candidates").addEventListener("click",event=>{
-    const targetId=event.target.closest("[data-trace-target]")?.dataset.traceTarget;
+    const targetId=event.target.closest("button[data-trace-target]")?.dataset.traceTarget;
     if(!targetId||!linkEdit)return;
     const {id,field}=linkEdit,record=index.records.get(id),target=index.records.get(targetId);
     if(!writable()||!record||!target||!traceCanLink(record,field,target))return;
     picker.close();
-    selected=id;
     const value=traceFields[field].single?targetId:[...traceIds(record.row[field]),targetId].join("; ");
-    updateLink(field,value);
+    updateLink(record,field,value);
   });
   $("#trace-editor-cancel").addEventListener("click",()=>editor.close());
   $("#trace-record-form").addEventListener("submit",event=>{
     event.preventDefault();
     if(!writable())return;
-    const name=$("#trace-record-name").value.trim();
-    if(!name){$("#trace-record-name").focus();return;}
-    const id=editedRecord?.id??validateNewId($("#trace-record-id").value);
+    const {type,record,parent}=recordEdit;
+    const id=record?.id??validateNewId($("#trace-record-id").value);
+    const name=$("#trace-record-name").value.trim(),content=$("#trace-record-content").value.trim();
     if(!id)return;
-    if(editedRecord?.row.Name===name){editor.close();return;}
-    remember();
-    if(editedRecord)editedRecord.row.Name=name;
-    else state.currentRows.push({...newRequirement(id),Type:$("#trace-record-type").value,Name:name});
+    if(type==="Requirement"?!content:!name){
+      $(type==="Requirement"?"#trace-record-content":"#trace-record-name").focus();
+      return;
+    }
     editor.close();
+    if(record?.row.Name===name)return;
+    remember();
+    if(record)record.row.Name=name;
+    else{
+      const row={...newRequirement(id),Type:type,Name:name};
+      if(type==="System"&&parent)row["Part of"]=parent;
+      if(type==="Requirement"){
+        row["Derived from"]=parent;
+        if(system)row["Allocated to"]=system;
+      }
+      if(type!=="System")row[type==="Source"?"Reference":"Requirement"]=content;
+      state.currentRows.push(row);
+    }
     updateDirty();
-    render();
-    syncSelection(id,true);
-    (detail.querySelector("h3")??$("#trace-title")).focus();
+    const destination=type==="System"?"systems":type==="Requirement"?"requirements":"sources";
+    if(type==="System")selectedSystem=id;
+    if(!switchView(destination))render();
+    if(view!=="systems"&&!visible(id)){revealed=id;render();}
+    focusRecord(id);
+    if(panel.hidden&&view==="systems")focusControl(tree,"data-trace-system",id);
   });
-  return {refresh,matches,filters,reset,syncSelection,close,clearCopy,
-    revealed:id=>id===revealed, scoped:()=>!!system||!!revealed,
-    rename:(oldId,newId)=>{if(system===oldId)system=newId;if(revealed===oldId)revealed=newId;},
+  $("#trace-delete-cancel").addEventListener("click",()=>deletion.close());
+  $("#trace-delete-form").addEventListener("submit",event=>{
+    event.preventDefault();
+    if(!writable())return;
+    const {id,changes}=deleteEdit;
+    const targets=Object.fromEntries(["Part of","Allocated to","Owner"].map((field,i)=>
+      [field,$("#trace-delete-group-"+i+" select").value]));
+    const updated=changes.map(change=>{
+      const {row,field,value}=change,target=targets[field];
+      if(!target||!traceFields[field].from.includes(traceType(row)))return change;
+      const ids=traceFields[field].single?[target]:[...new Set([...traceIds(value),target])];
+      return {...change,value:ids.join("; ")};
+    });
+    deletion.close();
+    deleteRecord(id,updated);
+    if(view==="systems")focusControl(tree,"data-trace-system",selectedSystem);
+  });
+
+  return {refresh,matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+    revealed:id=>view!=="systems"&&id===revealed,
+    scoped:()=>view==="systems"||view==="sources"||(view==="requirements"&&(!!system||unallocated))||!!revealed,
+    rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
+    entry:()=>view==="requirements"||view==="all",
+    systemsView:()=>view==="systems",
+    gridSummary:count=>{
+      if(view==="systems")return `${index.systems.length} systems`;
+      if(view==="sources")return `${count} needs and sources`;
+      if(view==="all")return `${count} of ${data.rows.length} records`;
+      return `${count} requirements`;
+    },
+    rowButton:row=>{
+      if(!index.records.has(row.id))return "";
+      const record=index.records.get(row.id);
+      const text=view==="sources"?`Links (${record.incoming.filter(edge=>edge.field==="Source refs").length})`:"Links";
+      return ` <button type="button" class="trace-row-link" data-trace-row="${escapeHtml(row.id)}" aria-label="Links for ${escapeHtml(row.id)}">${text}</button>`;
+    },
+    rename:(oldId,newId)=>{
+      if(system===oldId)system=newId;
+      if(selectedSystem===oldId)selectedSystem=newId;
+      if(collapsed.delete(oldId))collapsed.add(newId);
+      if(revealed===oldId)revealed=newId;
+    },
     incomingChanges:(oldId,newId)=>traceIncomingChanges(state.currentRows,oldId,newId),
     isRequirement:row=>traceType(row)==="Requirement",
-    allocate:row=>{if(system)row["Allocated to"]=system;},
-    reveal:id=>{if(system)revealed=id;},
+    allocate:row=>{if(view==="requirements"&&system)row["Allocated to"]=system;},
+    reveal:(id,column)=>{
+      const destination=recordView(id);
+      if(view!=="all"&&view!==destination)switchView(destination==="systems"?"all":destination);
+      if(view==="systems"||(column&&!columnAvailable(column)))switchView("all");
+      revealed=id;
+    },
     panel};
 })();
 """
 
-TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace-panel">Systems and traceability</button>'
+TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace-panel">Record links and trace findings</button>'
+
+TRACE_WORKSPACE = """
+<section id="trace-workspace" aria-label="Traceability workspace">
+  <nav id="trace-views" aria-label="Record views">
+    <button type="button" data-trace-view="requirements" aria-pressed="true">Requirements</button>
+    <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
+    <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
+    <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
+  </nav>
+  <div id="trace-scope">
+    <label>System <select id="trace-system"><option>All requirements</option></select></label>
+    <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
+  </div>
+  <button id="trace-view-add" type="button" hidden>Add requirement…</button>
+  <span id="trace-source-actions" hidden>
+    <button id="trace-need-add" type="button">Add need…</button>
+    <button id="trace-source-add" type="button">Add source…</button>
+  </span>
+  <p id="trace-status" class="meta" role="status"></p>
+</section>
+"""
+
+TRACE_SYSTEMS = """
+<section id="trace-systems" aria-label="System hierarchy" hidden>
+  <div>
+    <h2>System hierarchy</h2>
+    <button type="button" id="trace-system-add" hidden>Add system…</button>
+    <ul id="trace-tree" aria-label="Systems"></ul>
+  </div>
+  <div id="trace-system-actions" hidden>
+    <h2 id="trace-system-name" tabindex="-1"></h2>
+    <p class="meta" id="trace-system-parent"></p>
+    <div class="trace-actions">
+      <button type="button" id="trace-system-requirements">View allocated requirements</button>
+      <button type="button" id="trace-system-links">View links</button>
+    </div>
+    <div class="trace-actions" id="trace-system-edit" hidden>
+      <button type="button" id="trace-subsystem-add">Add subsystem…</button>
+      <button type="button" id="trace-system-rename">Rename…</button>
+      <button type="button" id="trace-system-move">Move to…</button>
+      <button type="button" id="trace-system-delete">Delete system…</button>
+    </div>
+  </div>
+</section>
+"""
 
 TRACE_HTML = """
 <aside id="trace-panel" class="review-panel" hidden aria-labelledby="trace-title">
-  <div class="review-head"><h2 id="trace-title" tabindex="-1">Systems and traceability</h2><button id="close-trace">Close</button></div>
+  <div class="review-head"><h2 id="trace-title" tabindex="-1">Record links</h2><button id="close-trace">Close</button></div>
   <div class="review-body">
-    <h3>Systems</h3>
-    <ul id="trace-tree" aria-label="System views"></ul>
-    <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
-    <button type="button" id="trace-add-record" class="develop-only">Add trace record…</button>
-    <p class="meta" id="trace-status" role="status"></p>
-    <details id="trace-findings"><summary>Trace findings</summary><ul id="trace-issues"></ul></details>
+    <button type="button" id="trace-back" hidden>Back to previous record</button>
     <div id="trace-record"></div>
+    <details id="trace-findings"><summary>Trace findings</summary><ul id="trace-issues"></ul></details>
   </div>
 </aside>
 <dialog id="trace-picker" class="help-dialog" aria-labelledby="trace-picker-title">
   <div class="help-head"><h2 id="trace-picker-title">Choose target</h2><button type="button" id="trace-picker-cancel">Cancel</button></div>
   <div class="help-body"><label for="trace-query">Search by ID or name</label>
     <input type="search" id="trace-query" autofocus><ul id="trace-candidates" aria-label="Eligible targets"></ul>
+    <button type="button" id="trace-picker-apply" class="primary" hidden>Apply allocations</button>
   </div>
 </dialog>
 <dialog id="trace-editor" class="help-dialog" aria-labelledby="trace-editor-title">
   <form id="trace-record-form">
-    <div class="help-head"><h2 id="trace-editor-title">Add trace record</h2><button type="button" id="trace-editor-cancel">Cancel</button></div>
+    <div class="help-head"><h2 id="trace-editor-title">Add record</h2><button type="button" id="trace-editor-cancel">Cancel</button></div>
     <div class="help-body">
-      <label>Type <select id="trace-record-type"><option>System</option><option>Need</option><option>Source</option></select></label>
       <label>ID <input id="trace-record-id" required></label>
-      <label>Name <input id="trace-record-name" required></label>
+      <label id="trace-record-name-field">Name <input id="trace-record-name"></label>
+      <label id="trace-record-content-field"><span id="trace-record-content-label"></span>
+        <textarea id="trace-record-content" rows="3"></textarea></label>
       <button type="submit" class="primary">Apply</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="trace-delete" class="help-dialog" aria-labelledby="trace-delete-title">
+  <form id="trace-delete-form">
+    <div class="help-head"><h2 id="trace-delete-title">Delete system?</h2><button type="button" id="trace-delete-cancel">Cancel</button></div>
+    <div class="help-body">
+      <p id="trace-delete-impact"></p>
+      <label id="trace-delete-group-0"><span></span><select></select></label>
+      <label id="trace-delete-group-1"><span></span><select></select></label>
+      <label id="trace-delete-group-2"><span></span><select></select></label>
+      <p class="meta" id="trace-delete-other"></p>
+      <button type="submit" class="primary">Delete system</button>
     </div>
   </form>
 </dialog>
 """
 
 TRACE_CSS = """
-#trace-panel {width:min(380px,100vw)}
-#trace-panel h3 {font-size:1em;margin:8px 0 4px}
-#trace-tree, #trace-record ul, #trace-candidates {list-style:none;padding:0;margin:4px 0 8px}
-#trace-tree li {display:flex;gap:4px;padding-inline-start:calc(var(--trace-depth,0) * .8rem);margin-bottom:4px}
-#trace-tree button:first-child {flex:1;text-align:start;overflow-wrap:anywhere}
-#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
+#trace-workspace {display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:5px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+#trace-views,#trace-scope,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+#trace-views button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
+#trace-system {max-width:min(24ch,60vw)}
+#trace-status {flex-basis:100%;margin:0}
 #trace-status:empty {display:none}
-#trace-add-record {display:block;margin:8px 0}
-#trace-add-record[hidden] {display:none}
-#trace-record {border-top:1px solid var(--line);margin-top:10px;padding-top:4px;overflow-wrap:anywhere}
-#trace-record h4 {font-size:inherit;margin:0;display:flex;align-items:center;justify-content:space-between;gap:6px}
-#trace-record section {border-top:1px solid var(--line);padding:6px 0}
+#trace-systems {display:grid;grid-template-columns:minmax(14rem,1fr) minmax(16rem,1fr);gap:16px;padding:14px 18px;overflow:auto}
+#trace-systems h2 {font-size:1.08em;margin:0 0 8px}
+#trace-system-actions {align-self:start;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
+.trace-actions+.trace-actions {margin-top:8px}
+#trace-tree,#trace-record ul,#trace-candidates {list-style:none;padding:0;margin:4px 0 8px}
+#trace-tree li {display:flex;align-items:center;gap:6px;padding-inline-start:calc(var(--trace-depth,0) * .8rem);margin-bottom:4px}
+#trace-tree [data-trace-system] {flex:1;text-align:start;overflow-wrap:anywhere}
+#trace-tree [data-trace-collapse],.trace-tree-leaf {width:26px;flex:none}
+#trace-tree .meta {white-space:nowrap}
+.trace-row-link {font-size:.83em;padding:0 4px;margin-inline-start:3px;color:var(--accent)}
+#trace-panel {width:min(380px,100vw)}
+#trace-panel h3 {font-size:1.05em;margin:8px 0 4px}
+#trace-record {margin:8px 0;overflow-wrap:anywhere}
+#trace-record h4 {font-size:inherit;margin:0}
+#trace-record section {border-top:1px solid var(--line);padding:7px 0}
 #trace-record p {margin:4px 0}
+#trace-record li {margin-bottom:3px}
 .trace-link {text-align:start;color:var(--accent);overflow-wrap:anywhere}
 .trace-note {white-space:pre-wrap}
 .trace-remove {min-width:24px}
@@ -481,8 +860,10 @@ TRACE_CSS = """
 #trace-issues {padding-inline-start:20px;overflow-wrap:anywhere}
 #trace-issues li {margin-bottom:6px}
 #trace-query {display:block;width:100%}
-#trace-candidates button {width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
-#trace-record-form label {display:grid;gap:3px;margin-bottom:10px}
+#trace-candidates button,#trace-candidates label {display:block;width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
+#trace-record-form label,#trace-delete-form label {display:grid;gap:3px;margin-bottom:10px}
+#trace-systems[hidden],#trace-scope[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
-@media print {#trace-panel {display:none}}
+@media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
+@media print {#trace-workspace,#trace-panel,.trace-row-link,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
 """

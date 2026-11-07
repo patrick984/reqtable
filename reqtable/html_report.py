@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from .quality import QUALITY_JS
-from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_UI_JS
+from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
 
 CSS = r"""
@@ -173,12 +173,15 @@ function localTimestamp(){const d=new Date(),off=-d.getTimezoneOffset(),sign=off
 function displayTimestamp(value){const d=new Date(value);if(Number.isNaN(d.getTime()))return value;const pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;}
 function filenameTimestamp(){const d=new Date(),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;}
 function reviewerColor(initials){let hash=0;for(const ch of initials.toLocaleUpperCase())hash=(hash*31+ch.codePointAt(0))>>>0;return `hsl(${hash%360} 68% 48%)`;}
-function visibleColumns(){return data.columns.filter(c=>!state.hidden.has(c.name));}function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell.old:cell.new)??"";}function commentsFor(rid,column){return state.comments.filter(c=>c.requirementId===rid&&c.column===column);}
+function availableColumns(){return trace?data.columns.filter(c=>trace.columnAvailable(c.name)):data.columns;}
+function visibleColumns(){return availableColumns().filter(c=>!state.hidden.has(c.name));}
+function defaultHiddenColumns(){return trace?.defaultHidden()??new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));}
+function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell.old:cell.new)??"";}function commentsFor(rid,column){return state.comments.filter(c=>c.requirementId===rid&&c.column===column);}
 
 function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
 function commentCard(c,actions=""){const stamp=displayTimestamp(c.modified||c.created);return `<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(stamp)}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><div class="markdown">${renderCommentMarkdown(c.text)}</div>${actions}</article>`;}
 
-function dataCell(row,column,ri,ci,canDrag){const tag=column.name===data.meta.idColumn?"th":"td",scope=tag==="th"?' scope="row"':"";const grip=tag==="th"&&row.id&&developMode();return `<${tag}${scope} ${grip?'class="row-with-grip"':""} tabindex="-1" data-grid-cell data-row-index="${ri}" data-column-index="${ci}" data-column="${escapeHtml(column.name)}">${grip?rowGrip(canDrag):""}${renderCell(row,column)}</${tag}>`;}
+function dataCell(row,column,ri,ci,canDrag){const tag=column.name===data.meta.idColumn?"th":"td",scope=tag==="th"?' scope="row"':"";const grip=tag==="th"&&row.id&&developMode();const links=tag==="th"?trace?.rowButton(row)??"":"";return `<${tag}${scope} ${grip?'class="row-with-grip"':""} tabindex="-1" data-grid-cell data-row-index="${ri}" data-column-index="${ci}" data-column="${escapeHtml(column.name)}">${grip?rowGrip(canDrag):""}${renderCell(row,column)}${links}</${tag}>`;}
 
 function rowGrip(enabled){
   const title=enabled?"Drag to reorder requirement":"Reordering needs the normal view in source order with no filters";
@@ -224,7 +227,7 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
 }
 
 
-function filterActive(column){return Boolean(state.filters.get(column)||state.valueFilters.get(column)?.size);}function renderColumnChooser(){const box=$("#column-list");box.innerHTML=data.columns.map(c=>`<label><input type="checkbox" data-column-toggle="${escapeHtml(c.name)}" ${state.hidden.has(c.name)?'':'checked'}> ${escapeHtml(c.label)}</label>`).join("");const hiddenFiltered=data.columns.filter(c=>state.hidden.has(c.name)&&filterActive(c.name)).length;$("#hidden-filter-warning").textContent=hiddenFiltered?`${hiddenFiltered} hidden column filter${hiddenFiltered===1?' is':'s are'} active`:"";}function renderStatusControls(){document.querySelectorAll("[data-status]").forEach(el=>el.checked=state.statuses.has(el.dataset.status));}function cycleSort(column){if(!state.sort||state.sort.column!==column)state.sort={column,direction:1};else if(state.sort.direction===1)state.sort.direction=-1;else state.sort=null;render();}
+function filterActive(column){return Boolean(state.filters.get(column)||state.valueFilters.get(column)?.size);}function renderColumnChooser(){const box=$("#column-list");box.innerHTML=availableColumns().map(c=>`<label><input type="checkbox" data-column-toggle="${escapeHtml(c.name)}" ${state.hidden.has(c.name)?'':'checked'}> ${escapeHtml(c.label)}</label>`).join("");const hiddenFiltered=data.columns.filter(c=>state.hidden.has(c.name)&&filterActive(c.name)).length;$("#hidden-filter-warning").textContent=hiddenFiltered?`${hiddenFiltered} hidden column filter${hiddenFiltered===1?' is':'s are'} active`:"";}function renderStatusControls(){document.querySelectorAll("[data-status]").forEach(el=>el.checked=state.statuses.has(el.dataset.status));}function cycleSort(column){if(!state.sort||state.sort.column!==column)state.sort={column,direction:1};else if(state.sort.direction===1)state.sort.direction=-1;else state.sort=null;render();}
 function renderActiveFilters(){
   const details=$("#active-filters"),summary=details.querySelector("summary");
   const filters=trace?.filters()??[];
@@ -250,7 +253,7 @@ function renderActiveFilters(){
     }
     if(available.length<statuses.length)filters.push([quality.revealId===null?"This report excludes unchanged rows":"Unchanged rows are excluded except for the revealed requirement"]);
   }
-  const active=filters.length>0;
+  const active=filters.length>0&&!trace?.systemsView();
   details.closest(".toolbar").classList.toggle("has-active-filters",active);
   details.hidden=!active;
   if(!active)details.open=false;
@@ -301,14 +304,14 @@ document.addEventListener("change",e=>{if(e.target.matches("[data-column-toggle]
     [...document.querySelectorAll("[data-column-toggle]")].find(input=>input.dataset.columnToggle===column)?.focus();
   }
 }if(e.target.matches("[data-status]")){e.target.checked?state.statuses.add(e.target.dataset.status):state.statuses.delete(e.target.dataset.status);render();}if(e.target.matches("[data-value-filter]")){const column=e.target.dataset.valueFilter,chosen=new Set([...valuePopover.querySelectorAll("[data-value-filter]")].filter(x=>x.checked).map(x=>x.value));if(chosen.size)state.valueFilters.set(column,chosen);else state.valueFilters.delete(column);state.filters.delete(column);renderHead();renderBodyOnly();requestAnimationFrame(()=>{const input=[...document.querySelectorAll("[data-filter]")].find(x=>x.dataset.filter===column);if(input)showValueFilter(input);});}});
-$("#view-toggle").addEventListener("click",()=>{state.view=state.view==="unified"?"side-by-side":"unified";render();});$("#changes-only").addEventListener("click",()=>{state.statuses=new Set(["added","removed","changed"]);render();});$("#comments-only-rows").addEventListener("click",()=>{state.commentsOnly=!state.commentsOnly;renderBodyOnly();});$("#clear-filters").addEventListener("click",()=>{state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;quality.only=false;trace?.reset();render();});$("#reset-view").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);quality.only=false;quality.revealId=null;trace?.reset();state.view=data.options.initialView;state.sort=null;state.widths=new Map(data.columns.map(c=>[c.name,configuredPixels(c)]));render();});$("#show-all-columns").addEventListener("click",()=>{state.hidden.clear();closeHeaderPopups();render();});$("#default-columns").addEventListener("click",()=>{state.hidden=new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));closeHeaderPopups();render();});document.querySelectorAll("details.popup-menu").forEach(details=>details.addEventListener("toggle",()=>{if(details.open)closeHeaderPopups(details);}));
+$("#view-toggle").addEventListener("click",()=>{state.view=state.view==="unified"?"side-by-side":"unified";render();});$("#changes-only").addEventListener("click",()=>{state.statuses=new Set(["added","removed","changed"]);render();});$("#comments-only-rows").addEventListener("click",()=>{state.commentsOnly=!state.commentsOnly;renderBodyOnly();});$("#clear-filters").addEventListener("click",()=>{state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;quality.only=false;trace?.reset();render();});$("#reset-view").addEventListener("click",()=>{state.hidden=defaultHiddenColumns();state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);quality.only=false;quality.revealId=null;trace?.reset();state.view=data.options.initialView;state.sort=null;state.widths=new Map(data.columns.map(c=>[c.name,configuredPixels(c)]));render();});$("#show-all-columns").addEventListener("click",()=>{state.hidden.clear();closeHeaderPopups();render();});$("#default-columns").addEventListener("click",()=>{state.hidden=defaultHiddenColumns();closeHeaderPopups();render();});document.querySelectorAll("details.popup-menu").forEach(details=>details.addEventListener("toggle",()=>{if(details.open)closeHeaderPopups(details);}));
 $("#browse-comments").addEventListener("click",()=>{if(!review.hidden){closeReview();return;}showAllComments(true);});$("#close-review").addEventListener("click",closeReview);$("#back-comments").addEventListener("click",()=>showAllComments(true));function closeReview(){review.hidden=true;$("#browse-comments").setAttribute("aria-expanded","false");}function resetReviewFilters(){$("#reviewer-filter").value="";$("#comment-column-filter").value="";$("#comment-status-filter").value="";populateReviewFilters();}
 function populateReviewFilters(){const setOptions=(el,values,label)=>{const current=el.value;el.innerHTML=`<option value="">${label}</option>`+[...values].sort().map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");el.value=current;};setOptions($("#reviewer-filter"),new Set(state.comments.map(c=>c.initials)),"All reviewers");setOptions($("#comment-column-filter"),new Set(data.columns.filter(c=>c.name!==data.meta.idColumn).map(c=>c.name)),"All columns");}
 function showAllComments(focusSearch=false){trace?.close();closeQuality();state.commentContext=null;state.editingId=null;review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel();if(focusSearch)requestAnimationFrame(()=>$("#comment-search").focus());}function openComments(rid,column,focusEditor=false){if(column===data.meta.idColumn)return;trace?.close();closeQuality();state.commentContext={rid,column};state.editingId=null;$("#comment-search").value="";resetReviewFilters();review.hidden=false;$("#browse-comments").setAttribute("aria-expanded","true");renderReviewPanel(focusEditor);}
 function renderReviewPanel(focusEditor=false){populateReviewFilters();const reviewBody=$(".review-body"),previousScroll=reviewBody.scrollTop,context=state.commentContext,q=($("#comment-search").value||"").toLocaleLowerCase(),reviewer=$("#reviewer-filter").value,column=$("#comment-column-filter").value,status=$("#comment-status-filter").value,statusMap=new Map(data.rows.map(r=>[r.id,r.status]));let list=state.comments.filter(c=>!context||(c.requirementId===context.rid&&c.column===context.column));list=list.filter(c=>(!reviewer||c.initials===reviewer)&&(!column||c.column===column)&&(!status||statusMap.get(c.requirementId)===status)&&`${c.text}\n${c.initials}\n${c.requirementId}\n${c.column}\n${c.created}\n${c.modified||''}`.toLocaleLowerCase().includes(q)).sort((a,b)=>a.created.localeCompare(b.created));const cellCount=new Set(state.comments.map(c=>`${c.requirementId}\u0000${c.column}`)).size;$("#review-title").textContent=context?`Comments: ${context.rid} / ${context.column}`:"All comments";$("#back-comments").hidden=!context;$("#comment-counts").textContent=`${state.comments.length} comments across ${cellCount} cells · ${list.length} shown`;let body=list.map(c=>c.id===state.editingId?`<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(displayTimestamp(c.modified||c.created))}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><form class="inline-comment-editor" data-inline-comment-id="${escapeHtml(c.id)}"><label class="sr-only" for="inline-comment-text-${escapeHtml(c.id)}">Edit comment</label><textarea id="inline-comment-text-${escapeHtml(c.id)}" required>${escapeHtml(c.text)}</textarea><div class="comment-editor-actions"><button class="primary" type="submit">Save changes</button><button type="button" data-cancel-inline-edit>Cancel</button></div></form></article>`:commentCard(c,`<div class="comment-actions"><button data-go-comment="${escapeHtml(c.id)}">Go to cell</button><button data-edit-comment="${escapeHtml(c.id)}">Edit</button><button data-delete-comment="${escapeHtml(c.id)}">Delete</button></div>`)).join("");if(!list.length)body='<div class="empty-state">No comments match.</div>';const editor=context&&!state.editingId?`<form id="comment-form" class="comment-editor"><label for="comment-text">New comment</label><textarea id="comment-text" required></textarea><div class="comment-editor-actions"><button class="primary" type="submit">Add comment</button></div></form>`:"";$("#comment-list").innerHTML=body+editor;reviewBody.scrollTop=previousScroll;const form=$("#comment-form");if(form)form.addEventListener("submit",saveComment);document.querySelectorAll(".inline-comment-editor").forEach(el=>el.addEventListener("submit",saveInlineComment));document.querySelectorAll("[data-cancel-inline-edit]").forEach(el=>el.addEventListener("click",cancelInlineEdit));if(focusEditor)requestAnimationFrame(()=>$(".inline-comment-editor textarea,#comment-text")?.focus());}
 function reviewerInitials(){return $("#reviewer-initials").value.trim();}function validInitials(s){return s.length>=1&&s.length<=16&&![...s].some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);}function loadReviewerInitials(){try{return localStorage.getItem("reqtable-reviewer-initials")||"";}catch{return "";}}function persistReviewerInitials(){const initials=reviewerInitials();if(!validInitials(initials))return;try{localStorage.setItem("reqtable-reviewer-initials",initials);}catch{}}
 function restoreSidebarFocus(id){requestAnimationFrame(()=>{const button=[...document.querySelectorAll("[data-edit-comment]")].find(x=>x.dataset.editComment===id);(button||$("#comment-search"))?.focus();});}function cancelInlineEdit(){const id=state.editingId;state.editingId=null;renderReviewPanel();restoreSidebarFocus(id);}function saveInlineComment(e){e.preventDefault();const id=e.currentTarget.dataset.inlineCommentId,c=state.comments.find(x=>x.id===id),text=e.currentTarget.querySelector("textarea").value.trim(),initials=reviewerInitials();if(!c||!text)return;if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");return;}if(developMode())remember();c.text=text;c.initials=initials;c.modified=localTimestamp();state.editingId=null;persistReviewerInitials();setDirty(true);render();renderReviewPanel();restoreSidebarFocus(id);}function saveComment(e){e.preventDefault();const text=$("#comment-text").value.trim();if(!text||!state.commentContext)return;if(!addComment(text,state.commentContext.rid,state.commentContext.column))return;render();renderReviewPanel();restoreSelectedCell();}function deleteComment(id){if(!confirm("Delete this comment?"))return;if(developMode())remember();state.comments=state.comments.filter(c=>c.id!==id);setDirty(true);render();renderReviewPanel();restoreSelectedCell();}
-function goToComment(c){trace?.reveal(c.requirementId);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
+function goToComment(c){trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
 function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");}function filenameInitials(s){return s.replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^[-_]+|[-_]+$/g,"");}
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...document.querySelectorAll("[data-grid-cell]")];}
@@ -590,8 +593,14 @@ ${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-l
 }else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;}
-function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} ${trace?"records":"requirements"}`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();}
-function syncModeUi(){document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();}
+function syncModeUi(){
+  if(trace){
+    for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
+    for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
+    for(const id of ["rename-requirement","delete-requirement"])$("#"+id).disabled=trace.systemsView();
+  }
+  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
@@ -639,6 +648,7 @@ function focusRequirement(id,column){
   return cell;
 }
 function addRequirement(position){
+  if(state.editingCell||(trace&&!trace.entry()))return;
   const selected=state.currentRows.findIndex(row=>rowId(row)===selectedRequirementId());
   if(selected<0&&position!=="end"){alert("Select a current requirement first.");return;}
   const proposed=prompt(`New requirement ID (${data.meta.idColumn}):`,nextRequirementId());
@@ -653,14 +663,14 @@ function addRequirement(position){
   state.sort=null;
   updateDirty();
   render();
-  let cell=focusRequirement(id);
+  let cell=focusRequirement(id,trace?"Requirement":undefined);
   if(!cell){
     state.filters.clear();
     state.valueFilters.clear();
     state.commentsOnly=false;
     state.statuses.add(state.unsavedDiff||data.meta.mode==="diff"?"added":"unchanged");
     render();
-    cell=focusRequirement(id);
+    cell=focusRequirement(id,trace?"Requirement":undefined);
   }
   if(cell)startCellEdit(cell,true);
 }
@@ -686,13 +696,13 @@ function handleSpreadsheetRowShortcut(event){
 function moveRequirement(delta,repeat=false){
   if(!developMode()||state.editingCell)return;
   if(trace?.scoped()){
-    if(!repeat)alert("Open All records and clear any revealed record before reordering.");
+    if(!repeat)alert("Use All requirements or All fields and clear the system filter before reordering.");
     return;
   }
   const {top,bottom}=selectionBounds();
   if(top===bottom){
     const id=selectedRequirementId();
-    const index=state.currentRows.findIndex(row=>rowId(row)===id);
+    const index=(trace?.rowOrderIds()??state.currentRows.map(rowId)).indexOf(id);
     reorderRequirement(index,index+delta,1,null,true);
     return;
   }
@@ -706,17 +716,18 @@ function moveRequirement(delta,repeat=false){
   reorderRequirement(top,top+delta,bottom-top+1,selection,true);
 }
 function reorderRequirement(index,target,count=1,selection=null,keepGrid=false){
-  if(index<0||index+count>state.currentRows.length||target<0
-      ||target>state.currentRows.length-count||index===target)return;
-  const id=rowId(state.currentRows[index]);
+  const order=trace?.rowOrderIds();
+  const length=order?.length??state.currentRows.length;
+  if(index<0||index+count>length||target<0||target>length-count||index===target)return;
+  const id=order?.[index]??rowId(state.currentRows[index]);
   const column=visibleColumns()[state.focus.column]?.name;
   const moveInPlace=keepGrid&&Math.abs(target-index)===1&&canDragRows();
+  const ids=order&&new Set(order);
   remember();
-  const rows=state.currentRows.splice(index,count);
-  state.currentRows.splice(target,0,...rows);
+  moveRowsInOrder(state.currentRows,rowId,ids,index,target,count);
   state.sort=null;
   if(moveInPlace){
-    moveRenderedRows(index,target,count,selection);
+    moveRenderedRows(index,target,count,selection,ids);
     updateDirty();
     syncModeUi();
     return;
@@ -728,7 +739,18 @@ function reorderRequirement(index,target,count=1,selection=null,keepGrid=false){
     focusGridCell(selection.extent.row,selection.extent.column,true);
   }else focusRequirement(id,column);
 }
-function moveRenderedRows(index,target,count,selection){
+function moveRowsInOrder(rows,identify,ids,index,target,count){
+  if(!ids){
+    rows.splice(target,0,...rows.splice(index,count));
+    return;
+  }
+  const slots=[];
+  rows.forEach((row,i)=>{if(ids.has(identify(row)))slots.push(i);});
+  const ordered=slots.map(slot=>rows[slot]);
+  ordered.splice(target,0,...ordered.splice(index,count));
+  slots.forEach((slot,i)=>{rows[slot]=ordered[i];});
+}
+function moveRenderedRows(index,target,count,selection,ids){
   const delta=target-index;
   const first=Math.min(index,target);
   const last=Math.max(index,target)+count-1;
@@ -736,10 +758,10 @@ function moveRenderedRows(index,target,count,selection){
   const rows=tableBody.rows;
   if(delta<0) tableBody.insertBefore(rows[first],rows[last+1]??null);
   else tableBody.insertBefore(rows[last],rows[first]);
-  const moved=data.rows.splice(index,count);
-  data.rows.splice(target,0,...moved);
+  moveRowsInOrder(data.rows,row=>row.id,ids,index,target,count);
+  if(ids)data.rows.forEach((row,index)=>{row.sourceOrder=index;});
   for(let row=first;row<=last;row++){
-    data.rows[row].sourceOrder=row;
+    if(!ids)data.rows[row].sourceOrder=row;
     for(const cell of rows[row].cells)cell.dataset.rowIndex=row;
   }
   if(selection)rangeSelection=selection;
@@ -778,6 +800,10 @@ function deleteRequirement(){
   const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);
   const kind=trace?"record":"requirement";
   if(index<0){alert(`Select a current ${kind} before deleting it.`);return;}
+  if(trace&&traceType(state.currentRows[index])==="System"){
+    trace.openDeletion(id);
+    return;
+  }
   const commentCount=state.comments.filter(c=>c.requirementId===id).length;
   const links=(trace?.incomingChanges(id,null)??[]).filter(change=>rowId(change.row)!==id);
   const comments=commentCount?` and its ${commentCount} attached comment${commentCount===1?"":"s"}`:"";
@@ -786,6 +812,11 @@ function deleteRequirement(){
       +links.map(({row,field})=>`${rowId(row)} · ${field}`).join("\n")
     :"";
   if(!confirm(`Delete ${kind} ${id}${comments}?${affected}`))return;
+  deleteRecord(id,links);
+}
+function deleteRecord(id,links){
+  const index=state.currentRows.findIndex(row=>rowId(row)===id);
+  if(index<0)return;
   remember();
   for(const change of links)change.row[change.field]=change.value;
   state.currentRows.splice(index,1);
@@ -1241,7 +1272,7 @@ function finishRowDrag(event){
   rowDragPreview.hidden=true;
   rowDrag=null;
   if(event.type!=="pointerup"||!target?.isConnected||!canDragRows()||state.editingCell)return;
-  const ids=state.currentRows.map(rowId);
+  const ids=trace?.rowOrderIds()??state.currentRows.map(rowId);
   const source=ids.indexOf(sources[0].dataset.rowId),targetId=target.dataset.rowId;
   const insertion=targetId===""?ids.length:ids.indexOf(targetId);
   const count=sources.length;
@@ -1527,7 +1558,7 @@ TEMPLATE = r"""<!doctype html>
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
 <details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
-<details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
+<details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
 <details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong>
 <details id="active-filters" class="popup-menu" hidden>
@@ -1536,6 +1567,8 @@ TEMPLATE = r"""<!doctype html>
   </summary>
   <div class="popover"><strong>Active filters</strong><ul id="active-filter-list"></ul></div>
 </details></section>
+__TRACE_WORKSPACE__
+__TRACE_SYSTEMS__
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="row-drag-preview" aria-hidden="true" hidden></div>
 <div id="table-context-menu" class="popover" role="group" aria-label="Requirement actions" hidden></div>
@@ -1617,6 +1650,8 @@ def render_report(data: dict[str, Any]) -> str:
     return (
         TEMPLATE.replace("__TRACE_MENU__", TRACE_MENU if traceability else "")
         .replace("__TRACE_HTML__", TRACE_HTML if traceability else "")
+        .replace("__TRACE_WORKSPACE__", TRACE_WORKSPACE if traceability else "")
+        .replace("__TRACE_SYSTEMS__", TRACE_SYSTEMS if traceability else "")
         .replace("__TITLE__", title)
         .replace("__DOCUMENT_MODE_LABEL__", "Develop mode" if document_mode == "develop" else "Review mode")
         .replace("__DOCUMENT_MODE__", document_mode)

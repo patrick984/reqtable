@@ -8,7 +8,7 @@ import subprocess
 import unittest
 
 from reqtable.core import build_report_data, extract_comments_csv, load_config, read_csv_table
-from reqtable.html_report import render_report
+from reqtable.html_report import JS, render_report
 from reqtable.traceability import TRACE_MODEL_JS
 from tests.test_core import TempFiles
 
@@ -31,7 +31,7 @@ class TraceCsvTests(TempFiles):
         flat = build_report_data(table, config, "flat.html")
         self.assertEqual(flat["source"]["new"]["headers"], table.headers)
         self.assertFalse(flat["options"]["traceability"])
-        self.assertNotIn('id="open-trace"', render_report(flat))
+        self.assertNotIn('id="trace-workspace"', render_report(flat))
 
         config = load_config(None, {"id_column": "Key", "csv.delimiter": ";", "traceability": True})
         pilot = build_report_data(table, config, "pilot.html")
@@ -40,7 +40,10 @@ class TraceCsvTests(TempFiles):
         self.assertNotIn("Comments", pilot["source"]["new"]["headers"])
         self.assertEqual(pilot["comments"], [{"id": "imported-0", "requirementId": "R", **note}])
         report = render_report(pilot)
-        self.assertIn('id="open-trace"', report)
+        self.assertIn('data-trace-view="requirements" aria-pressed="true"', report)
+        self.assertIn('data-trace-view="systems"', report)
+        self.assertIn('data-trace-view="sources"', report)
+        self.assertIn('data-trace-view="all"', report)
 
         report_path = self.write("pilot.html", report)
         output_path = self.root / "saved.csv"
@@ -55,6 +58,17 @@ class TraceModelTests(unittest.TestCase):
     def run_js(self, assertions):
         subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
                        + TRACE_MODEL_JS + assertions, text=True, check=True)
+
+    def test_reordering_requirements_keeps_systems_and_sources_in_place(self):
+        movement = "function moveRowsInOrder(" + JS.split("function moveRowsInOrder(", 1)[1]
+        self.run_js(movement.split("function moveRenderedRows(", 1)[0] + r"""
+const records=["SYS","R1","R2","NEED","R3","SOURCE","R4"];
+const requirements=new Set(["R1","R2","R3","R4"]);
+moveRowsInOrder(records,id=>id,requirements,0,2,2);
+assert.deepEqual(records,["SYS","R3","R4","NEED","R1","SOURCE","R2"]);
+moveRowsInOrder(records,id=>id,requirements,2,0,2);
+assert.deepEqual(records,["SYS","R1","R2","NEED","R3","SOURCE","R4"]);
+""")
 
     def test_canonical_records_and_picker_constraints(self):
         self.run_js(r"""

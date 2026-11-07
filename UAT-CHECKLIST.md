@@ -124,10 +124,10 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 
 Generate the Develop and Review reports using the `--traceability` commands in the [README](README.md#systems-and-traceability-pilot). Work on a copy of the CSV when testing saves.
 
-1. Open **View → Systems and traceability**. Select Python generator and Browser report in turn. Edit `REQ-003` in one view and confirm the other view shows the same edit. Select ReqTable with **Include subsystems** enabled and confirm `REQ-003` appears once.
-2. Inspect `REQ-003` and follow the proposed need and both child requirements. Follow a hidden target and confirm **Reveal in grid** retains the system filter. Remove the reveal via **Active filters**.
-3. Use the system inspect button to edit a name and try the **Part of** picker. Verify a system and its descendants are excluded from its candidate list. Search for a parent requirement by ID or name and confirm that the picker excludes targets that would form a cycle.
-4. Enter a missing or wrong-type link directly in the grid. Confirm **Trace findings** identifies it, then repair it using the picker or remove control.
+1. Confirm **Requirements** opens with the core writing columns. Use the **System** selector to show Python generator and Browser report in turn. Edit `REQ-003` in one scope and confirm the other shows the same edit. Select ReqTable with **Include subsystems** enabled and confirm `REQ-003` appears once.
+2. Open **Links** for `REQ-003` and follow the proposed need into **Needs & Sources**. Return with **Back to previous record**. From the Python generator scope, follow the browser child and confirm **Reveal in grid** retains that scope. Remove the reveal via **Active filters**.
+3. In **Systems**, add a subsystem under a selected parent and rename it. Use **Move to…** and verify the picker excludes the system and its descendants. Delete a system with allocations and owners, choose where to reassign each, and verify one Undo restores the system and its links.
+4. Use **Allocate to…** to change several systems in one edit. Use **Add child requirement…** and verify the parent link. Enter a missing or wrong-type link in **All fields**, then confirm **Trace findings** identifies it and repair it from the Links panel.
 5. Rename `REQ-003` and confirm both child references and an attached comment follow it. Cancel its deletion and confirm nothing changes. Confirm deletion, then undo and verify the record, links and comment return together.
 6. In Chromium, use **Save CSV As…** and regenerate a report from the saved file with `--traceability`. Verify the edits, graph and any JSON comments survive. With networking disabled, open the Review report, navigate a trace, and save and reopen an HTML copy.
-7. Generate a flat report without `--traceability` and confirm the systems menu is absent and ordinary columns, including any project-specific `Type`, retain their meaning.
+7. Open the Review report and confirm the tabs and Links are available. Generate a flat report without `--traceability` and confirm it uses the ordinary grid and preserves any project-specific `Type` column.
