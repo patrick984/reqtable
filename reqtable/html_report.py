@@ -70,6 +70,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 .cell-editor-expanded textarea {resize:none}
 .cell-editor-label {font-weight:600;overflow-wrap:anywhere}
 #quality-panel {width:min(360px,100vw)}
+#quality-panel .review-body > .comment-actions {margin-bottom:5px}
 #quality-count {margin:8px 0}
 .quality-dismissed-toggle {display:block; margin-top:5px}
 .quality-issue {padding:6px 0; border-top:1px solid var(--line)}
