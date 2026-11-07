@@ -1,0 +1,5 @@
+ID,Requirement,Priority
+R1,The report shall open offline.,Must
+R2,The report shall show every requirement.,Must
+R3,The report shall support comments.,Should
+R4,The report shall export a review copy.,Should

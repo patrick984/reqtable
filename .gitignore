@@ -5,3 +5,4 @@ __pycache__/
 /reqtable.pyz
 /requirements-uat.html
 /requirements-uat-develop.html
+/.verify-runs/
