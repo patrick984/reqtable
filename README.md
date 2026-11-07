@@ -172,6 +172,31 @@ The browser underlines registered Title Case phrases and uppercase acronyms in r
 
 Click an underlined term or focus it and press Enter to read its definition in place. Press Escape to close it and return focus to the term. Links are calculated from the glossary in the open report, so the feature works offline and the prose in the CSV stays plain.
 
+### Allowed values
+
+A column such as **Priority** or **Verification Method** can be limited to values defined in the same table, the way glossary terms are. Add a `Value` record for each allowed value and, optionally, a `Field` record that describes the column. This needs `--traceability` and is advisory. ReqTable still accepts any cell, and **Trace findings** reports each one that is not defined.
+
+A `Value` record uses **Field** for the column it belongs to, **Name** for the allowed value, and **Definition** to explain it. Optional **Aliases** (semicolon-separated) list replaced spellings, and **Reference** can link to an external explanation. A `Field` record uses **Name** for the column, **Definition** to describe it, and **Multiple** (`Yes` or blank) to allow several semicolon-separated values in one cell.
+
+```csv
+ID,Type,Name,Field,Multiple,Aliases,Definition,Priority,Verification Method
+FIELD-VM,Field,Verification Method,,Yes,,How the requirement is shown to be met.,,
+VAL-PRIORITY-MUST,Value,Must,Priority,,,Required for the release.,,
+VAL-PRIORITY-SHOULD,Value,Should,Priority,,,Expected but not blocking.,,
+VAL-VM-BROWSER,Value,Manual browser test,Verification Method,,Manual verification,A person checks the report in a browser.,,
+REQ-1,,,,,,,Shoud,Manual verification; Automated test
+```
+
+A column is checked only when it has at least one `Value` record. Trace findings then report, on any other record with a non-empty cell:
+
+- a value that is not defined, such as `Shoud`
+- a replaced spelling, with the defined value to use instead
+- a spelling that differs from a defined value only in case
+- a duplicate value in a `Multiple` cell
+- more than one value in a column that allows one
+
+Findings also report invalid `Value` and `Field` records: a missing or unknown **Field**, a reserved column (the ID column, `Type`, `Field`, `Multiple` or a link column), a missing **Name** or **Definition**, duplicate names or clashing aliases within one field, two `Field` records for one column, and a **Multiple** other than `Yes` or `No`. Value and Field records appear in **All fields** and stay out of the Requirements view.
+
 ## Review comments
 
 Enter reviewer initials in the report, then select or hover a non-ID cell to reveal its `+` control. A nearby quick-comment popup keeps the latest comment visible, permits its author to edit it, and can open the full comments sidebar. Numbered red indicators mark cells with comments. Reviewer colors are derived consistently from initials. The resizable sidebar supports browsing, searching, inline editing, deleting, and navigating to a cell without closing. Saving or cancelling an inline edit returns to the same browse or single-cell view.

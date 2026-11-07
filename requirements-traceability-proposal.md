@@ -27,7 +27,7 @@ Traceability is opt-in so existing flat reports, including files with a project-
 | Column | Use |
 | --- | --- |
 | `ID` | Stable record identifier using the configured ID column. |
-| `Type` | `System`, `Requirement`, `Need`, or `Source`. A subsystem uses the same type as a top-level system. |
+| `Type` | `System`, `Requirement`, `Need`, `Source`, `Term`, `Value`, or `Field`. A subsystem uses the same type as a top-level system. |
 | `Name` | Display label for a system, need, or source record. |
 | `Requirement` | Requirement statement. A need can use the same column for its wording. |
 | `Part of` | Parent system ID for a subsystem. |
@@ -42,6 +42,23 @@ Traceability is opt-in so existing flat reports, including files with a project-
 Use semicolon-separated ID lists in the multi-value fields and trim whitespace around each ID. Traceable IDs therefore cannot contain semicolons. Use normal CSV quoting when a field contains the configured CSV delimiter. A top-level requirement can cite a user requirement, stakeholder need, or standard through embedded records. For a small project, include the relevant wording in the file. For an external document, keep a named source record with its precise citation and any locally available context.
 
 Keep existing requirement columns such as Category, Priority, Acceptance Criteria, Verification Method, and Source Section. The pilot can add structured links alongside the existing Source Section citations.
+
+## Allowed values
+
+A column is limited to values defined in the table itself when it has at least one `Value` record. Checks need traceability and are advisory: they appear in Trace findings and never block editing.
+
+| Record | Columns | Use |
+| --- | --- | --- |
+| `Value` | `Field`, `Name`, `Definition`, optional `Aliases`, optional `Reference` | `Field` names the constrained column, `Name` is the allowed value, `Aliases` are semicolon-separated replaced spellings, and `Reference` is an external link. |
+| `Field` | `Name`, `Definition`, `Multiple` | `Name` is the column it describes. `Multiple` is blank, `No` or `Yes` (case-insensitive); `Yes` allows semicolon-separated values. A `Field` record for a column without `Value` records only documents it. |
+
+Rules, per constrained column, on every record that is not a `Value` or `Field`:
+
+- Each non-empty cell is one value, or several semicolon-separated values when `Multiple` is `Yes`.
+- A part that equals a `Value` name passes. A part equal to an alias, or to a name apart from case, is reported with the defined name to use. Any other part is reported as undefined.
+- A repeated part in a `Multiple` cell is reported.
+
+Record rules: a `Value` needs a `Field` naming an existing, non-reserved column, a `Name` and a `Definition`. Names are unique within a field (case-insensitive) and an alias cannot equal another value's name or alias in the same field. A `Field` needs a `Name` that is an existing, non-reserved column, with at most one `Field` record per column. Reserved columns are the ID column, `Type`, `Field`, `Multiple` and the link columns. The link columns do not apply to `Value` and `Field` records.
 
 ## Original ReqTable pilot
 
