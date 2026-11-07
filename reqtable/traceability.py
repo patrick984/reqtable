@@ -610,8 +610,9 @@ const trace=(()=>{
     $("#trace-term-aliases").value="";
     $("#trace-term-single-word").checked=false;
     editor.showModal();
-    if(type==="Term")$("#trace-record-name").focus();
     if(type==="Value")$("#trace-value-field").focus();
+    else if(!$("#trace-record-id").disabled&&!$("#trace-record-id-field").hidden)$("#trace-record-id").focus();
+    else $("#trace-record-name").focus();
   }
   function fillValueFields(){
     const names=valueFieldNames(data.source.new.headers,data.meta.idColumn);
