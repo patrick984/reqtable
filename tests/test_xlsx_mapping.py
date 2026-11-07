@@ -6,12 +6,17 @@ import csv
 import io
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
 
 from reqtable.cli import main
+from reqtable.traceability import TRACE_MODEL_JS
+from reqtable.values import VALUE_RENAME_JS
+from reqtable.xlsx import _slug
 
 FIXTURE = Path(__file__).parent / "fixtures" / "excel-sample.xlsx"
 MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -74,6 +79,61 @@ def requirements_workbook(path: Path, glossary: list[list[str]] | None = None) -
     with zipfile.ZipFile(path, "w") as archive:
         for name, body in parts.items():
             archive.writestr(name, body)
+
+
+def lookup_workbook(path: Path, tests_cell: str = "T-1, T-2", method: str = "Manual verification") -> None:
+    """Hand-built workbook (synthetic, not Excel output) with real tables, lookup sheets and a tests table."""
+    sheets = {
+        "Reqs": ("Reqs", [["Req ID", "Text", "Priority", "Tests"],
+                          ["R-1", "Export CSV.", "Must", tests_cell], ["R-2", "List tables.", "Should", "T-3"]]),
+        "Priorities": (None, [["Value", "Meaning"], ["Must", "Needed for release."], ["Should", "Wanted for release."]]),
+        "Lists": (None, [["Field", "Value", "Meaning", "Old spellings"],
+                         ["Verification Method", "Manual browser test", "A person drives the report.", "Manual verification, Browser check"],
+                         ["Verification Method", "Automated test", "A script checks it.", ""]]),
+        "TestCases": ("TestCases", [["Test ID", "Title", "Plan", "Method"],
+                                    ["T-1", "Export check", "P-1", "Automated test"], ["T-2", "Export UI", "P-1", method],
+                                    ["T-3", "List check", "P-1", "Automated test"]]),
+        "Plans": ("Plans", [["Plan ID", "Title"], ["P-1", "UAT plan"]]),
+        "Systems": (None, [["System"], ["Reqtable"]]),
+        "Fields": (None, [["Column", "Meaning"], ["Verification Method", "How a test checks a requirement."]]),
+    }
+    names = list(sheets)
+    workbook = "".join(f'<sheet name="{n}" sheetId="{i}" r:id="rId{i}"/>' for i, n in enumerate(names, 1))
+    parts = {
+        "xl/workbook.xml": f'<workbook xmlns="{MAIN_NS}" xmlns:r="{REL_NS}"><sheets>{workbook}</sheets></workbook>',
+        "xl/_rels/workbook.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(f'<Relationship Id="rId{i}" Type="worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(names) + 1))
+        + "</Relationships>",
+    }
+    for i, name in enumerate(names, 1):
+        table, grid = sheets[name]
+        parts[f"xl/worksheets/sheet{i}.xml"] = _sheet_xml(grid)
+        if table:
+            end = f"{chr(64 + len(grid[0]))}{len(grid)}"
+            parts[f"xl/worksheets/_rels/sheet{i}.xml.rels"] = (
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                f'<Relationship Id="rId1" Type="table" Target="../tables/table{i}.xml"/></Relationships>'
+            )
+            parts[f"xl/tables/table{i}.xml"] = f'<table xmlns="{MAIN_NS}" name="{table}" displayName="{table}" ref="A1:{end}"/>'
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, body in parts.items():
+            archive.writestr(name, body)
+
+
+LOOKUP_SOURCES = [
+    {"table": "Reqs", "columns": {"Req ID": "ID", "Text": "Requirement", "Tests": "Verified by"},
+     "lists": {"Verified by": ","}},
+    {"sheet": "Priorities", "type": "Value", "set": {"Field": "Priority"},
+     "columns": {"Value": "Name", "Meaning": "Definition"}, "id_prefix": "VAL-"},
+    {"sheet": "Lists", "type": "Value", "columns": {"Value": "Name", "Meaning": "Definition", "Old spellings": "Aliases"},
+     "lists": {"Aliases": ","}, "id_prefix": "VAL-"},
+    {"sheet": "Fields", "type": "Field", "set": {"Multiple": "Yes"},
+     "columns": {"Column": "Name", "Meaning": "Definition"}, "id_prefix": "FIELD-"},
+    {"table": "TestCases", "type": "Test",
+     "columns": {"Test ID": "ID", "Title": "Name", "Plan": "Test plan", "Method": "Verification Method"}},
+    {"sheet": "Systems", "type": "System", "columns": {"System": "Name"}, "id_prefix": "SYS-"},
+    {"table": "Plans", "type": "Test plan", "columns": {"Plan ID": "ID", "Title": "Name"}},
+]
 
 
 class MappingCase(unittest.TestCase):
@@ -251,6 +311,124 @@ class SyntheticMappingTests(MappingCase):
         code, err, _ = self.report(self.workbook, self.SOURCES, "--traceability")
         self.assertEqual(code, 3)
         self.assertIn("duplicate ID 'T-A-1'", err)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class LookupListTests(MappingCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.workbook = self.root / "lookups.xlsx"
+        lookup_workbook(self.workbook)
+
+    def findings(self, data: dict) -> list[str]:
+        source = data["source"]["new"]
+        script = (
+            "const rows=" + json.dumps(source["rows"]) + ";\n" + TRACE_MODEL_JS
+            + "const index=buildTraceIndex(rows,row=>row.ID,{headers:" + json.dumps(source["headers"])
+            + ',idColumn:"ID"});console.log(JSON.stringify(index.issues.map(i=>`${i.id}|${i.field}|${i.message}`)));'
+        )
+        return json.loads(subprocess.run(["node"], input=script, text=True, check=True, capture_output=True).stdout)
+
+    def rows(self, data: dict) -> dict:
+        return {row["ID"]: row for row in data["source"]["new"]["rows"]}
+
+    def test_lookup_lists_and_tests_import_cleanly(self) -> None:
+        code, err, data = self.report(self.workbook, LOOKUP_SOURCES, "--traceability")
+        self.assertEqual(code, 0, err)
+        rows = self.rows(data)
+        self.assertEqual(list(rows), [
+            "R-1", "R-2", "VAL-PRIORITY-MUST", "VAL-PRIORITY-SHOULD",
+            "VAL-VERIFICATION-METHOD-MANUAL-BROWSER-TEST", "VAL-VERIFICATION-METHOD-AUTOMATED-TEST",
+            "FIELD-VERIFICATION-METHOD", "T-1", "T-2", "T-3", "SYS-REQTABLE", "P-1",
+        ])
+        self.assertEqual(rows["R-1"]["Verified by"], "T-1; T-2")
+        self.assertEqual(rows["R-2"]["Verified by"], "T-3")
+        must = rows["VAL-PRIORITY-MUST"]
+        self.assertEqual((must["Type"], must["Field"], must["Name"]), ("Value", "Priority", "Must"))
+        self.assertEqual(rows["VAL-VERIFICATION-METHOD-MANUAL-BROWSER-TEST"]["Aliases"], "Manual verification; Browser check")
+        self.assertEqual((rows["FIELD-VERIFICATION-METHOD"]["Type"], rows["FIELD-VERIFICATION-METHOD"]["Multiple"]), ("Field", "Yes"))
+        self.assertEqual((rows["T-1"]["Type"], rows["T-1"]["Test plan"]), ("Test", "P-1"))
+        self.assertEqual(rows["P-1"]["Type"], "Test plan")
+
+    def test_only_the_alias_spelling_is_flagged_and_rerun_is_identical(self) -> None:
+        code, err, first = self.report(self.workbook, LOOKUP_SOURCES, "--traceability")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.findings(first), [
+            "T-2|Verification Method|“Manual verification” is a replaced spelling; use “Manual browser test”."
+        ])
+        _, _, again = self.report(self.workbook, LOOKUP_SOURCES, "--traceability")
+        self.assertEqual(first["source"]["new"]["rows"], again["source"]["new"]["rows"])
+        lookup_workbook(self.workbook, method="Manual browser test")
+        code, err, fixed = self.report(self.workbook, LOOKUP_SOURCES, "--traceability")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.findings(fixed), [])
+
+    def test_generated_value_ids_match_the_browser_add_value_rule(self) -> None:
+        samples = [("Priority", "Must"), ("Verification Method", "Manual browser test"), ("Due date", "A/B (v2)!")]
+        script = VALUE_RENAME_JS + "console.log(JSON.stringify(%s.map(([f,n])=>valueRecordId(f,n,new Set()))));" % json.dumps(samples)
+        browser = json.loads(subprocess.run(["node"], input=script, text=True, check=True, capture_output=True).stdout)
+        self.assertEqual(browser, [f"VAL-{_slug(f)}-{_slug(n)}" for f, n in samples])
+
+    def test_combined_import_exports_csv_that_reports_the_same_rows(self) -> None:
+        exported = self.root / "combined.csv"
+        code, _, err = run_cli(str(self.workbook), "-c", self.config(LOOKUP_SOURCES), "--traceability", "-o", str(exported))
+        self.assertEqual(code, 0, err)
+        direct = self.root / "direct.html"
+        again = self.root / "again.html"
+        run_cli(str(self.workbook), "-c", self.config(LOOKUP_SOURCES), "--traceability", "-o", str(direct))
+        code, _, err = run_cli(str(exported), "--id-column", "ID", "--traceability", "-o", str(again))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(report_data(direct)["source"]["new"]["rows"], report_data(again)["source"]["new"]["rows"])
+
+    def test_lists_split_on_newlines_and_leave_other_columns_alone(self) -> None:
+        requirements_workbook(self.workbook, [["Term", "Meaning"], ["Alpha", "One, two"], ["Beta", "x"]])
+        grid = {"sheet": "Terms", "columns": {"Term": "Name", "Meaning": "Definition"}, "id_prefix": "T-"}
+        sources = [{"sheet": "Reqs", "columns": {"Req ID": "ID", "Owner": "Aliases"}, "lists": {"Aliases": "newline"}}, grid]
+        code, err, data = self.report(self.workbook, sources)
+        self.assertEqual(code, 0, err)
+        rows = self.rows(data)
+        self.assertEqual(rows["T-ALPHA"]["Definition"], "One, two")
+        self.assertEqual(rows["R-1"]["Aliases"], "Ann")
+
+    def test_set_and_list_errors_name_the_columns(self) -> None:
+        cases = {
+            "id_from": [{"sheet": "Priorities", "type": "Value", "id_prefix": "V-", "id_from": ["Nope"],
+                         "columns": {"Value": "Name"}}],
+            "lists": [{"sheet": "Priorities", "lists": {"Nope": ","}, "columns": {"Value": "ID"}}],
+        }
+        for key, sources in cases.items():
+            with self.subTest(key=key):
+                code, err, _ = self.report(self.workbook, sources, "--traceability")
+                self.assertEqual(code, 2)
+                self.assertIn("'Nope'", err)
+                self.assertIn("columns:", err)
+                self.assertIn("Meaning", err)
+        bad = [
+            [{"sheet": "Reqs", "type": "Term", "set": {"Type": "Term"}}],
+            [{"sheet": "Reqs", "lists": {"Tests": 1}}],
+            [{"sheet": "Reqs", "lists": {"Tests": ""}}],
+            [{"sheet": "Reqs", "set": {"Owner": 1}}],
+            [{"sheet": "Reqs", "id_from": "Name", "id_prefix": "X-"}],
+            [{"sheet": "Reqs", "id_from": ["Name"]}],
+        ]
+        for sources in bad:
+            with self.subTest(sources=sources):
+                code, err, _ = self.report(self.workbook, sources, "--traceability")
+                self.assertEqual(code, 2)
+                self.assertIn("xlsx.sources[0]", err)
+
+    def test_value_with_no_field_or_name_cannot_build_an_id(self) -> None:
+        lookup_workbook(self.workbook)
+        sources = [{"sheet": "Priorities", "type": "Value", "id_prefix": "VAL-"}]
+        code, err, _ = self.report(self.workbook, sources, "--traceability")
+        self.assertEqual(code, 2, err)
+        self.assertIn("'Field'", err)
+
+    def test_template_never_emits_the_new_keys(self) -> None:
+        code, out, err = run_cli("--xlsx-mapping-template", str(self.workbook))
+        self.assertEqual(code, 0, err)
+        for source in json.loads(out)["xlsx"]["sources"]:
+            self.assertFalse({"set", "id_from", "lists"} & set(source))
 
 
 if __name__ == "__main__":
