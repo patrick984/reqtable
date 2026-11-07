@@ -52,7 +52,8 @@ class TraceCsvTests(TempFiles):
         self.assertIn('id="glossary-definition"', report)
         self.assertIn('data-trace-view="tests"', report)
         self.assertLess(report.index('data-trace-view="glossary"'), report.index('data-trace-view="tests"'))
-        self.assertLess(report.index('data-trace-view="tests"'), report.index('data-trace-view="all"'))
+        self.assertLess(report.index('data-trace-view="tests"'), report.index('data-trace-view="verification"'))
+        self.assertLess(report.index('data-trace-view="verification"'), report.index('data-trace-view="all"'))
         for name in ("Verified by", "Test plan"):
             self.assertIn(name, pilot["source"]["new"]["headers"])
 

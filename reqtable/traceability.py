@@ -222,9 +222,18 @@ const trace=(()=>{
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };
+  const verificationColumns=()=>[data.meta.idColumn,"Requirement","Verification Method","Verification Level","Verified by","Compliance"];
+  const verificationLayout={
+    defaults:new Map([[data.meta.idColumn,110],["Requirement",320],["Verification Method",130],["Verification Level",130],["Verified by",300],["Compliance",130]]),
+    flexible:new Set(["Requirement"]),
+    overrides:new Map(),
+  };
   const listViews={
     sources:{types:["Need","Source"],columns:sourceColumns,layout:sourceLayout,summary:count=>`${count} needs and sources`},
-    tests:{types:testTypes,get columns(){return new Set(testColumnOrder());},layout:testLayout,summary:count=>`${count} test records`},
+    tests:{types:testTypes,get columns(){return new Set(testColumnOrder());},layout:testLayout,order:testColumnOrder,summary:count=>`${count} test records`},
+    verification:{types:["Requirement"],systemScope:true,get columns(){return new Set(verificationColumns());},order:verificationColumns,
+      layout:verificationLayout,summary:count=>`${count} requirements`,
+      cells:{"Verification Method":methodCell,"Verified by":verifiedByCell},strip:verificationStrip},
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
@@ -258,6 +267,49 @@ const trace=(()=>{
   const focusControl=(container,attribute,value)=>{
     [...container.querySelectorAll(`[${attribute}]`)].find(button=>button.getAttribute(attribute)===value)?.focus();
   };
+
+  const usesScope=()=>view==="requirements"||!!listViews[view]?.systemScope;
+  function methodCell(record){
+    const rule=index.values.get("Verification Method");
+    if(!rule)return null;
+    const cell=record.row["Verification Method"]??"";
+    const marks=verificationMethodMarks(rule,cell);
+    const extra=(rule.multiple?traceIds(cell):[cell.trim()]).filter(part=>part&&!rule.values.has(part)&&!rule.aliases.has(part));
+    const listed=[...marks.filter(mark=>mark.filled).map(mark=>mark.name),...extra];
+    const slots=marks.map(mark=>`<span class="vcrm-slot${mark.filled?" on":""}" aria-hidden="true">${escapeHtml(mark.letter)}</span>`).join("");
+    return `<span class="vcrm-methods" role="img" aria-label="Methods: ${escapeHtml(listed.join(", ")||"none")}">${slots}</span>`
+      +extra.map(part=>` <span class="vcrm-extra">${escapeHtml(part)}</span>`).join("");
+  }
+  function verifiedByCell(record){
+    const ids=[...new Set(traceIds(record.row["Verified by"]))];
+    if(!ids.length)return null;
+    return ids.map(id=>{
+      const test=index.records.get(id);
+      if(test?.type!=="Test")return `<span class="vcrm-test">${escapeHtml(id)}</span>`;
+      const result=verificationState(index.values,"Result",test.row.Result);
+      const tone=result?"vcrm-result-"+result.toLowerCase().replace(/[^a-z0-9]+/g,"-"):"vcrm-result-none";
+      return `<span class="vcrm-test">${escapeHtml(label(test))} <span class="vcrm-result ${tone}">${escapeHtml(result||"No result")}</span></span>`;
+    }).join("");
+  }
+  function verificationStrip(records){
+    const compliance=record=>verificationState(index.values,"Compliance",record.row.Compliance);
+    const count=test=>records.filter(test).length;
+    const states=data.source.new.headers.includes("Compliance")?verificationStates.Compliance.states:[];
+    return [...states.map(name=>[name,count(record=>compliance(record)===name)]),
+      ["No compliance",count(record=>!compliance(record))],
+      ["No method",count(record=>!record.row["Verification Method"]?.trim())],
+      ["No linked tests",count(record=>!(record.outgoing.get("Verified by")??[]).length)]];
+  }
+  function paintStrip(){
+    const box=$("#trace-verification-summary"),items=listViews[view]?.strip?.([...tableBody.rows]
+      .map(row=>index.records.get(row.dataset.rowId)).filter(Boolean));
+    box.hidden=!items;
+    box.replaceChildren(...(items??[]).map(([name,count])=>{
+      const item=document.createElement("span");
+      item.textContent=`${name} ${count}`;
+      return item;
+    }));
+  }
 
   function columnAvailable(name){
     if(view==="requirements")return !traceMetadata.has(name);
@@ -316,9 +368,9 @@ const trace=(()=>{
     if(view==="systems")return false;
     const record=index.records.get(row.id);
     const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
-    if(listViews[view])return listViews[view].types.includes(type);
     if(view==="glossary")return glossaryKinds[glossaryKind].types.includes(type);
-    if(type!=="Requirement")return false;
+    if(!(listViews[view]?.types??["Requirement"]).includes(type))return false;
+    if(listViews[view]&&!listViews[view].systemScope)return true;
     if(!system&&!unallocated)return true;
     const allocated=record?(record.outgoing.get("Allocated to")??[]).map(target=>target.id)
       :traceIds(row.cells["Allocated to"]?.old);
@@ -343,7 +395,7 @@ const trace=(()=>{
   }
   function filters(){
     const result=[];
-    if(view==="requirements"){
+    if(usesScope()){
       if(system)result.push([`System: ${caption(index.records.get(system))}${descendants?" and subsystems":""}`,
         ()=>{system="";}]);
       if(unallocated)result.push(["Unallocated requirements",()=>{unallocated=false;}]);
@@ -382,7 +434,7 @@ const trace=(()=>{
     systemsPage.hidden=!inSystems;
     $("#columns-menu").hidden=inSystems;
     $("#filter-menu").hidden=inSystems;
-    $("#trace-scope").hidden=view!=="requirements";
+    $("#trace-scope").hidden=!usesScope();
     selectedLinks.hidden=inSystems;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
@@ -395,7 +447,7 @@ const trace=(()=>{
     $("#trace-term-add").hidden=!developMode()||!inGlossary||glossaryKind!=="terms";
     $("#trace-value-add").hidden=!developMode()||!inGlossary||glossaryKind!=="values";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
-    if(view==="requirements"){
+    if(usesScope()){
       const options=[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
       for(const [record,depth] of systemEntries())options.push(new Option("  ".repeat(Math.min(depth,8))+caption(record),"system:"+record.id));
       systemSelect.replaceChildren(...options);
@@ -519,7 +571,7 @@ const trace=(()=>{
   function viewForType(type){
     if(type==="System")return "systems";
     if(type==="Term"||type==="Value"||type==="Field")return "glossary";
-    if(type==="Requirement")return "requirements";
+    if(type==="Requirement")return listViews[view]?.systemScope?view:"requirements";
     return Object.keys(listViews).find(name=>listViews[name].types.includes(type))??"all";
   }
   const recordView=id=>viewForType(index.records.get(id)?.type);
@@ -720,7 +772,7 @@ const trace=(()=>{
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
     clone.querySelector("#trace-selected-links").setAttribute("aria-expanded","false");
     for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system",
-      "trace-system-name","trace-system-parent","trace-delete-impact","trace-delete-other"]){
+      "trace-system-name","trace-system-parent","trace-verification-summary","trace-delete-impact","trace-delete-other"]){
       clone.querySelector("#"+id).replaceChildren();
     }
     clone.querySelector("#trace-delete-title").textContent="Delete system?";
@@ -933,8 +985,13 @@ const trace=(()=>{
   return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
-      :view==="tests"?testColumnOrder().indexOf(name):0,
+      :listViews[view]?.order?.().indexOf(name)??0,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
+    cellDisplay:(id,column)=>{
+      const record=index.records.get(id);
+      return record&&listViews[view]?.cells?.[column]?.(record)||null;
+    },
+    paintStrip,
     revealed:id=>view!=="systems"&&id===revealed,
     scoped:()=>view==="systems"||view==="glossary"||!!listViews[view]||(view==="requirements"&&(!!system||unallocated))||!!revealed,
     rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
@@ -982,6 +1039,7 @@ TRACE_WORKSPACE = """
     <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
     <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
     <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
+    <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
     <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
   </nav>
   <div id="trace-scope">
@@ -1005,6 +1063,7 @@ TRACE_WORKSPACE = """
     <button id="trace-test-add" type="button">Add test…</button>
   </span>
   <p id="trace-status" class="meta" role="status"></p>
+  <p id="trace-verification-summary" class="meta" hidden></p>
 </section>
 """
 
@@ -1103,6 +1162,17 @@ TRACE_CSS = """
 #trace-tree [data-trace-system] {flex:1;min-width:0;text-align:start;overflow-wrap:anywhere}
 #trace-tree [data-trace-collapse],.trace-tree-leaf {width:26px;flex:none}
 #trace-tree .meta {white-space:nowrap;text-align:end;font-variant-numeric:tabular-nums}
+#trace-verification-summary {display:flex;flex-wrap:wrap;gap:2px 14px;flex-basis:100%;margin:0}
+#trace-verification-summary[hidden] {display:none}
+.vcrm-methods {display:inline-flex;gap:3px;vertical-align:middle}
+.vcrm-slot {display:inline-grid;place-items:center;width:20px;height:20px;border:1px dashed var(--line);border-radius:4px;color:var(--muted);font-size:.8em;font-weight:700}
+.vcrm-slot.on {border:1px solid var(--accent);background:var(--accent);color:var(--panel)}
+.vcrm-test {display:block;margin-bottom:3px}
+.vcrm-result {display:inline-block;padding:0 6px;border:1px solid var(--line);border-radius:9px;font-size:.85em;background:var(--panel);color:var(--text)}
+.vcrm-result-passed {background:var(--add);border-color:var(--addStrong)}
+.vcrm-result-failed {background:var(--remove);border-color:var(--removeStrong)}
+.vcrm-result-blocked {background:var(--changed)}
+.vcrm-result-none {border-style:dashed;color:var(--muted)}
 .trace-row-marker {position:absolute;inset-block-start:5px;inset-inline-end:4px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 #trace-panel {width:min(380px,100vw)}
 #trace-panel h3 {font-size:1.05em;margin:8px 0 4px}
