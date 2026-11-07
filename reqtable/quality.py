@@ -143,24 +143,37 @@ function paintQualityMarkers(){
     }
   }
 }
+function qualityCardTitle(card,id,column,text,hidden){
+  const title=document.createElement("h3");
+  const jump=document.createElement("button");
+  jump.type="button";
+  jump.className="quality-card-jump";
+  jump.textContent=text;
+  jump.setAttribute("aria-label",`Go to ${text}`);
+  title.append(jump);
+  card.append(title);
+  card.addEventListener("click",event=>{
+    const action=event.target.closest("button");
+    if(!action||action===jump)jumpToQualityCell(id,column,hidden);
+  });
+}
 function renderQualityPanel(){
   if(qualityPanel.hidden)return;
   const list=$("#quality-findings"),body=list.parentElement,scroll=body.scrollTop;
   const displayed=new Set([...tableBody.rows].map(row=>row.dataset.rowId));
+  const columns=new Set(visibleColumns().map(column=>column.name));
   let count=0;
   const cards=[];
   for(const [id,fields] of quality.findings){
     for(const [column,issues] of fields){
       const active=quality.activeCell?.id===id&&quality.activeCell.column===column;
       const rowHidden=!displayed.has(id);
-      const hidden=rowHidden||!visibleColumns().some(item=>item.name===column);
+      const hidden=rowHidden||!columns.has(column);
       const card=document.createElement("article");
       card.className="comment-card quality-card";
       card.classList.toggle("quality-active",active);
-      const title=document.createElement("h3");
       const label=data.columns.find(item=>item.name===column)?.label??column;
-      title.textContent=`${id} · ${label}`;
-      card.append(title);
+      qualityCardTitle(card,id,column,`${id} · ${label}`,hidden);
       if(rowHidden){
         const note=document.createElement("p");
         note.className="meta";
@@ -199,10 +212,10 @@ function renderQualityPanel(){
     for(const record of quality.dismissed??[]){
       const card=document.createElement("article");
       card.className="comment-card quality-dismissed";
-      const title=document.createElement("strong");
       const name=qualityRules[record.rule][0];
       const evidence=record.phrase?`${name} · “${record.phrase}”`:name;
-      title.textContent=`${record.id} · ${record.column} · ${evidence} (dismissed)`;
+      qualityCardTitle(card,record.id,record.column,`${record.id} · ${record.column} · ${evidence} (dismissed)`,
+        !displayed.has(record.id)||!columns.has(record.column));
       const reason=document.createElement("p");
       reason.textContent=record.reason;
       const restore=document.createElement("button");
@@ -215,7 +228,7 @@ function renderQualityPanel(){
         render();
         $("#quality-show-dismissed").focus();
       });
-      card.append(title,reason,restore);
+      card.append(reason,restore);
       cards.push(card);
     }
   }

@@ -66,6 +66,9 @@ CSS = r"""
 tr.row-drag-source>td,tr.row-drag-source>th{background:var(--selected)}
 tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell-editor-expanded {position:fixed;z-index:65;padding:10px;background:var(--panel);border:1px solid var(--accent);border-radius:6px;box-shadow:var(--shadow);max-height:calc(100vh - 16px);overflow:auto}
+.cell-editor-expanded textarea {resize:none}
+.cell-editor-label {font-weight:600;overflow-wrap:anywhere}
 #quality-panel {width:min(360px,100vw)}
 #quality-count {margin:8px 0}
 .quality-dismissed-toggle {display:block; margin-top:5px}
@@ -74,7 +77,10 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 #quality-settings-form label {display:block; margin-bottom:8px}
 #quality-settings-form fieldset {border:1px solid var(--line); margin-bottom:12px}
 #quality-dismiss-reason {display:block; width:100%; margin:6px 0}
-.quality-card h3 {font-size:1em; margin:0}
+.quality-card h3,.quality-dismissed h3 {font-size:1em; margin:0}
+.quality-card,.quality-dismissed {cursor:pointer}
+.quality-card-jump {background:transparent;border:0;padding:0;font-weight:700;color:var(--accent);text-align:start}
+.quality-card-jump:hover {text-decoration:underline}
 .quality-card p {margin:6px 0 10px}
 .quality-card.quality-active {border-color:var(--accent); background:var(--selected)}
 .quality-phrase {text-decoration:underline wavy var(--quality); text-underline-offset:3px}
@@ -594,19 +600,30 @@ function restoreDeletedRequirement(){
   render();
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
-function renderCell(row,column){const cell=row.cells[column.name],count=commentsFor(row.id,column.name).length,editing=state.editingCell&&state.editingCell.rid===row.id&&state.editingCell.column===column.name;if(editing){const value=state.editingCell.draft??valueFor(row,column.name);return `<form class="cell-editor" data-cell-editor data-row-id="${escapeHtml(row.id)}" data-column="${escapeHtml(column.name)}"><textarea aria-label="Edit ${escapeHtml(column.label)}">
-${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-label="Suggested values" hidden></div><div class="cell-editor-actions"><button class="apply-edit" type="submit" aria-label="Apply" title="Apply">✓</button><button class="cancel-edit" type="button" data-cancel-cell-edit aria-label="Cancel" title="Cancel">✕</button></div></form>`;}let content;if(row.id!==""&&diffActive()&&state.view==="side-by-side"&&(cell.changed||cell.old===null||cell.new===null)){content=`<div class="split"><div class="pane"><span class="pane-label">Old</span>${cell.old===null?'<div class="missing">Not present</div>':cell.oldHtml}</div><div class="pane"><span class="pane-label">New</span>${cell.new===null?'<div class="missing">Not present</div>':cell.newHtml}</div></div>`;}else if(row.id===""){
+function renderCellEditor(id,column,value,expanded){
+  const heading=expanded?`<div class="cell-editor-label">${escapeHtml(column.label)} · ${escapeHtml(id||"New requirement")}</div>`:"";
+  return `<form class="cell-editor${expanded?" cell-editor-expanded":""}" data-cell-editor data-row-id="${escapeHtml(id)}" data-column="${escapeHtml(column.name)}">${heading}<textarea aria-label="Edit ${escapeHtml(column.label)}">
+${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-label="Suggested values" hidden></div><div class="cell-editor-actions"><button class="apply-edit" type="submit" aria-label="Apply" title="Apply">✓</button><button class="cancel-edit" type="button" data-cancel-cell-edit aria-label="Cancel" title="Cancel">✕</button></div></form>`;
+}
+function renderCell(row,column){
+  const cell=row.cells[column.name],count=commentsFor(row.id,column.name).length;
+  const edit=state.editingCell;
+  const editor=edit?.rid===row.id&&edit.column===column.name
+    ?renderCellEditor(row.id,column,edit.draft??valueFor(row,column.name),edit.expanded):"";
+  if(editor&&!edit.expanded)return editor;
+  let content;if(row.id!==""&&diffActive()&&state.view==="side-by-side"&&(cell.changed||cell.old===null||cell.new===null)){content=`<div class="split"><div class="pane"><span class="pane-label">Old</span>${cell.old===null?'<div class="missing">Not present</div>':cell.oldHtml}</div><div class="pane"><span class="pane-label">New</span>${cell.new===null?'<div class="missing">Not present</div>':cell.newHtml}</div></div>`;}else if(row.id===""){
   if(column.name===data.meta.idColumn)content='<button type="button" class="entry-add" tabindex="-1" data-add-entry aria-label="Add requirement" title="Add requirement">+</button>';
   else if(column.name.toLowerCase()==="requirement"&&data.source.new.headers.includes(column.name)){
     content='<span class="entry-hint">Type to add a requirement…</span>';
   }else content="";
 }else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
-return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
+return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>${editor}`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;
   const idWidth=widths[cols.findIndex(column=>column.name===data.meta.idColumn)];
   table.classList.toggle("compact-row-ids",idWidth<=110);
+  positionCellEditor();
 }
-function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();}
+function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();positionCellEditor();}
 function syncModeUi(){
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
@@ -848,6 +865,22 @@ function columnSuggestions(column){
   }
   return [...values].sort((a,b)=>a.localeCompare(b));
 }
+function positionCellEditor(){
+  if(!state.editingCell?.expanded)return;
+  const form=tableBody.querySelector(".cell-editor-expanded");
+  if(!form)return;
+  const cell=form.closest("[data-grid-cell]").getBoundingClientRect();
+  const bounds=$(".table-wrap").getBoundingClientRect(),margin=8;
+  const leftEdge=Math.max(margin,bounds.left+margin);
+  const rightEdge=Math.min(document.documentElement.clientWidth,bounds.right)-margin;
+  const width=Math.max(0,Math.min(360,rightEdge-leftEdge));
+  form.style.width=`${width}px`;
+  form.style.left=`${Math.max(leftEdge,Math.min(cell.left,rightEdge-width))}px`;
+  form.style.top=`${Math.max(margin,Math.min(cell.top+margin,innerHeight-form.offsetHeight-margin))}px`;
+}
+window.addEventListener("resize",positionCellEditor);
+window.addEventListener("scroll",positionCellEditor);
+$(".table-wrap").addEventListener("scroll",positionCellEditor);
 function updateCellSuggestions(form){
   const list=form.querySelector(".cell-suggestions");
   const value=form.querySelector("textarea").value;
@@ -865,14 +898,20 @@ function updateCellSuggestions(form){
     return button;
   }));
   list.hidden=!matches.length;
+  positionCellEditor();
 }
 function startCellEdit(cell,selectAll=false,initialText){
   const rid=cell?.closest("tr")?.dataset.rowId,column=cell?.dataset.column;
   if(!developMode()||state.editingCell||column===data.meta.idColumn||!data.source.new.headers.includes(column)||(rid!==""&&!findCurrentRow(rid)))return;
   rangeSelection=null;
   paintSelection();
-  state.editingCell={rid,column,suggestions:columnSuggestions(column)};
-  cell.innerHTML=renderCell({id:rid,cells:{[column]:{new:findCurrentRow(rid)?.[column]??""}}},visibleColumns()[+cell.dataset.columnIndex]);
+  const expanded=cell.getBoundingClientRect().width<220;
+  state.editingCell={rid,column,expanded,suggestions:columnSuggestions(column)};
+  const editor=renderCellEditor(rid,visibleColumns()[+cell.dataset.columnIndex],findCurrentRow(rid)?.[column]??"",expanded);
+  if(expanded)cell.insertAdjacentHTML("beforeend",editor);
+  else cell.innerHTML=editor;
+  ensureCellVisible(cell);
+  positionCellEditor();
   const textarea=cell.querySelector("textarea");
   textarea.focus({preventScroll:true});
   if(initialText!==undefined){
@@ -880,7 +919,6 @@ function startCellEdit(cell,selectAll=false,initialText){
     state.editingCell.draft=initialText;
   }else if(selectAll)textarea.select();
   updateCellSuggestions(textarea.form);
-  ensureCellVisible(cell);
   return true;
 }
 function cancelCellEdit(){

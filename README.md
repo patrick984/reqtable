@@ -90,6 +90,8 @@ In both modes, Enter or F2 opens a cell for editing. While editing, Tab and Shif
 
 While editing in Spreadsheet mode, Enter commits and moves down, Shift+Enter commits and moves up, and Alt/Option+Enter inserts a newline. Clicking another cell commits the edit and selects that cell. F2 opens the existing value with the caret at the end.
 
+Narrow cells open a wider editor anchored to the selected cell. It fits within the grid's visible width and uses the same shortcuts and suggestions as the inline editor.
+
 With a grid cell focused in Spreadsheet mode, Ctrl/Cmd+Shift+Up or Down adds a requirement above or below. Alt/Option+Shift+Up or Down moves the selected requirement. Ctrl/Cmd+Backspace or Delete opens the delete confirmation. The Edit menu shows shortcuts for the active keyboard mode. Press Alt/Option+/ to search available menu commands, then use the arrow keys and Enter to run one.
 
 Committing an edit removes trailing whitespace and blank lines. Columns with up to 50 distinct nonempty values, each a single line of at most 60 characters, suggest existing values as you type. Click a suggestion or use Down Arrow and Enter to select it and commit the edit. You can also enter a new value.
@@ -100,7 +102,7 @@ Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the
 
 Click an ID cell to select the row, then Shift+click another ID or use Shift+Up/Down to select a block. Drag any selected row’s grip to move the whole block in its existing order.
 
-In Develop mode, choose **View → Check requirement quality** to scan all current requirements, including filtered rows. The sidebar shows the flagged wording and a suggestion. **Edit wording** opens the cell editor with the exact match selected. Select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
+In Develop mode, choose **View → Check requirement quality** to scan all current requirements, including filtered rows. The sidebar shows the flagged wording and a suggestion. Click a finding card or activate its title to focus the relevant cell. **Edit wording** opens the cell editor with the exact match selected. Select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
 
 Open **Quality settings** in the sidebar to choose the statement column, required fields, obligation keyword and enabled checks. The defaults recognize `Requirement` or `Requirement Text` and use `shall`. A blank keyword turns off obligation checks. Set initial values in the generator configuration with `quality.requirement_column`, `quality.required_columns` and `quality.obligation`.
 
