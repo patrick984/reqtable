@@ -544,9 +544,14 @@ function addRequirement(position){
 function handleSpreadsheetRowShortcut(event){
   const command=event.ctrlKey||event.metaKey;
   const direction=event.key==="ArrowUp"?-1:event.key==="ArrowDown"?1:0;
+  if(event.shiftKey&&direction&&event.altKey&&!command){
+    event.preventDefault();
+    moveRequirement(direction,event.repeat);
+    return true;
+  }
   let action;
-  if(event.shiftKey&&direction&&command!==event.altKey){
-    action=command?(direction<0?"add-above":"add-below"):(direction<0?"move-up":"move-down");
+  if(event.shiftKey&&direction&&command&&!event.altKey){
+    action=direction<0?"add-above":"add-below";
   }else if(command&&!event.shiftKey&&!event.altKey&&["Backspace","Delete"].includes(event.key)){
     action="delete-requirement";
   }
@@ -555,7 +560,7 @@ function handleSpreadsheetRowShortcut(event){
   if(!event.repeat)$(`#${action}`).click();
   return true;
 }
-function moveRequirement(delta){
+function moveRequirement(delta,repeat=false){
   if(!developMode()||state.editingCell)return;
   const {top,bottom}=selectionBounds();
   if(top===bottom){
@@ -565,7 +570,7 @@ function moveRequirement(delta){
     return;
   }
   if(!canDragRows()){
-    alert("To move several rows, use the normal view in source order with no filters.");
+    if(!repeat)alert("To move several rows, use the normal view in source order with no filters.");
     return;
   }
   const movePosition=position=>({...position,row:position.row+delta});
