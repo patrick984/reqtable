@@ -73,6 +73,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 #quality-count {margin:8px 0}
 .quality-dismissed-toggle {display:block; margin-top:5px}
 .quality-issue {padding:6px 0; border-top:1px solid var(--line)}
+.quality-issue:last-child {padding-bottom:0}
 .quality-dismissed {opacity:.8}
 #quality-settings-form label {display:block; margin-bottom:8px}
 #quality-settings-form fieldset {border:1px solid var(--line); margin-bottom:12px}
@@ -460,7 +461,7 @@ document.addEventListener("keydown",e=>{
     cell.querySelector(".comment-button")?.click();
     return;
   }else if(develop&&!vim&&e.target===cell&&[...e.key].length===1){
-    if(startCellEdit(cell,false,e.key))e.preventDefault();
+    if(startCellEdit(cell,{initialText:e.key}))e.preventDefault();
     return;
   }else return;
   e.preventDefault();
@@ -702,7 +703,7 @@ function addRequirement(position){
     render();
     cell=focusRequirement(id,trace?"Requirement":undefined);
   }
-  if(cell)startCellEdit(cell,true);
+  if(cell)startCellEdit(cell,{selection:"all"});
 }
 function handleSpreadsheetRowShortcut(event){
   const command=event.ctrlKey||event.metaKey;
@@ -900,13 +901,14 @@ function updateCellSuggestions(form){
   list.hidden=!matches.length;
   positionCellEditor();
 }
-function startCellEdit(cell,selectAll=false,initialText){
+function startCellEdit(cell,{selection="start",initialText}={}){
   const rid=cell?.closest("tr")?.dataset.rowId,column=cell?.dataset.column;
   if(!developMode()||state.editingCell||column===data.meta.idColumn||!data.source.new.headers.includes(column)||(rid!==""&&!findCurrentRow(rid)))return;
   rangeSelection=null;
   paintSelection();
   const expanded=cell.getBoundingClientRect().width<220;
-  state.editingCell={rid,column,expanded,suggestions:columnSuggestions(column)};
+  const suggestions=columnSuggestions(column);
+  state.editingCell={rid,column,expanded,suggestions};
   const editor=renderCellEditor(rid,visibleColumns()[+cell.dataset.columnIndex],findCurrentRow(rid)?.[column]??"",expanded);
   if(expanded)cell.insertAdjacentHTML("beforeend",editor);
   else cell.innerHTML=editor;
@@ -917,7 +919,20 @@ function startCellEdit(cell,selectAll=false,initialText){
   if(initialText!==undefined){
     textarea.value=initialText;
     state.editingCell.draft=initialText;
-  }else if(selectAll)textarea.select();
+  }else{
+    if(selection==="auto"){
+      const name=column.trim().toLowerCase();
+      const categorical=["category","priority","verification method","type"].includes(name);
+      const narrative=["requirement","requirement text","acceptance criteria","rationale"].includes(name)
+        ||column===state.qualityReview.settings.requirement_column;
+      selection=!narrative&&(categorical||(expanded&&suggestions.length))?"all":"end";
+    }
+    if(selection==="all")textarea.select();
+    else if(selection==="end"){
+      const end=textarea.value.length;
+      textarea.setSelectionRange(end,end);
+    }
+  }
   updateCellSuggestions(textarea.form);
   return true;
 }
@@ -1357,7 +1372,12 @@ tableBody.addEventListener("click",event=>{
   }
 });
 for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteRequirement);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",saveReportCopy);
-document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{const cell=event.target.closest("[data-grid-cell]");if(cell&&developMode()&&!event.target.closest("form,button,a")){startCellEdit(cell);}},true);document.addEventListener("click",event=>{if(event.detail===3&&event.target.matches("[data-cell-editor] textarea")){event.preventDefault();event.target.select();}if(event.target.closest("[data-cancel-cell-edit]")){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}},true);document.addEventListener("keydown",event=>{const editor=event.target.closest("[data-cell-editor]");if(editor){
+document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
+  const cell=event.target.closest("[data-grid-cell]");
+  if(cell&&developMode()&&!event.target.closest("form,button,a")){
+    if(startCellEdit(cell,{selection:"auto"}))event.preventDefault();
+  }
+},true);document.addEventListener("click",event=>{if(event.detail===3&&event.target.matches("[data-cell-editor] textarea")){event.preventDefault();event.target.select();}if(event.target.closest("[data-cancel-cell-edit]")){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}},true);document.addEventListener("keydown",event=>{const editor=event.target.closest("[data-cell-editor]");if(editor){
   event.stopImmediatePropagation();
   if(event.isComposing)return;
   const suggestions=editor.querySelector(".cell-suggestions");
@@ -1398,13 +1418,7 @@ document.addEventListener("submit",event=>{const form=event.target.closest("[dat
   const addButton=event.key==="Enter"&&cell.querySelector("[data-add-entry]");
   if(addButton){
     if(!event.repeat)addButton.click();
-  }else{
-    const caretAtEnd=event.key==="F2"&&!vimKeys();
-    if(startCellEdit(cell,!caretAtEnd)&&caretAtEnd){
-      const textarea=cell.querySelector("textarea");
-      textarea.setSelectionRange(textarea.value.length,textarea.value.length);
-    }
-  }
+  }else startCellEdit(cell,{selection:event.key==="F2"?"auto":"all"});
 }},true);
 function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
 function syncReviewerLabel(){
