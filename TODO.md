@@ -5,3 +5,4 @@
 - [x] XLSX column mapping: merge a separate glossary table (Name, Definition, Aliases) into Term rows and map differently named columns, via a saved JSON mapping.
 - [x] Move undo/redo to top of edit menu, add copy/past/delete.
 - [x] Update requirements-uat.csv to add any missing glossary terms.
+- [ ] Verification Method and Priority values should be constrained to definitions stored in the table (similar to the glossary).
