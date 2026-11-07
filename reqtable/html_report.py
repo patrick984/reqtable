@@ -39,7 +39,6 @@ CSS = r"""
 #row-drag-preview span{display:block;font-size:.85em;color:var(--muted)}
 tr.row-drag-source>td,tr.row-drag-source>th{background:var(--selected)}
 tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
-tr.drop-after>td,tr.drop-after>th{box-shadow:inset 0 -3px var(--accent)}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 """
 
@@ -788,11 +787,11 @@ function startRowDragPreview(){
   rowDragPreview.hidden=false;
   rowDrag.source.classList.add("row-drag-source");
 }
-function showRowDrop(row,after){
-  rowDrag.target?.classList.remove("drop-before","drop-after");
+function showRowDrop(row){
+  if(rowDrag.target===row)return;
+  rowDrag.target?.classList.remove("drop-before");
   rowDrag.target=row;
-  rowDrag.after=after;
-  row?.classList.add(after?"drop-after":"drop-before");
+  row?.classList.add("drop-before");
 }
 tableBody.addEventListener("pointerdown",event=>{
   const grip=event.target.closest(".row-grip");
@@ -801,7 +800,7 @@ tableBody.addEventListener("pointerdown",event=>{
   grip.setPointerCapture(event.pointerId);
   const source=grip.closest("tr");
   rowDrag={pointerId:event.pointerId,id:source.dataset.rowId,source,
-    x:event.clientX,y:event.clientY,target:null,after:false};
+    x:event.clientX,y:event.clientY,target:null};
 });
 tableBody.addEventListener("pointermove",event=>{
   if(rowDrag?.pointerId!==event.pointerId)return;
@@ -819,19 +818,21 @@ tableBody.addEventListener("pointermove",event=>{
   const row=document.elementFromPoint(event.clientX,event.clientY)?.closest("tr[data-row-id]");
   const target=row&&tableBody.contains(row)?row:null;
   const bounds=target?.getBoundingClientRect();
-  showRowDrop(target,!!target?.dataset.rowId&&event.clientY>bounds.top+bounds.height/2);
+  // The space after a requirement is the same boundary as the top of the next row.
+  const belowMidpoint=!!target?.dataset.rowId&&event.clientY>bounds.top+bounds.height/2;
+  showRowDrop(belowMidpoint?target.nextElementSibling:target);
 });
 function finishRowDrag(event){
   if(rowDrag?.pointerId!==event.pointerId)return;
-  const {id,target,after,source:sourceRow}=rowDrag;
-  showRowDrop(null,false);
+  const {id,target,source:sourceRow}=rowDrag;
+  showRowDrop(null);
   sourceRow.classList.remove("row-drag-source");
   rowDragPreview.hidden=true;
   rowDrag=null;
   if(event.type!=="pointerup"||!target?.isConnected||!canDragRows()||state.editingCell)return;
   const ids=state.currentRows.map(rowId);
   const source=ids.indexOf(id),targetId=target.dataset.rowId;
-  const insertion=targetId===""?ids.length:ids.indexOf(targetId)+Number(after);
+  const insertion=targetId===""?ids.length:ids.indexOf(targetId);
   reorderRequirement(source,insertion-Number(source<insertion));
 }
 for(const event of ["pointerup","pointercancel","lostpointercapture"]){
