@@ -1,13 +1,14 @@
 """Offline traceability model and report controls for opted-in CSVs."""
 
 from .glossary import GLOSSARY_COLUMNS, GLOSSARY_MODEL_JS, GLOSSARY_UI_JS
+from .values import VALUE_COLUMNS, VALUE_MODEL_JS
 
 TRACE_COLUMNS = (
     "Type", "Name", "Requirement", "Part of", "Allocated to", "Owner",
-    "Derived from", "Source refs", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS,
+    "Derived from", "Source refs", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
 )
 
-TRACE_MODEL_JS = GLOSSARY_MODEL_JS + r"""
+TRACE_MODEL_JS = GLOSSARY_MODEL_JS + VALUE_MODEL_JS + r"""
 const traceFields={
   "Part of": {from:["System"],to:["System"],single:true},
   "Allocated to": {from:["Requirement"],to:["System"]},
@@ -25,7 +26,8 @@ function traceIds(value){
 function traceTargetTypes(field,type){
   return field==="Source refs"&&type!=="Requirement"?["Source"]:traceFields[field].to;
 }
-function buildTraceIndex(rows,identify){
+function buildTraceIndex(rows,identify,schema={}){
+  const headers=schema.headers??[...new Set(rows.flatMap(row=>Object.keys(row)))];
   const records=new Map(rows.map(row=>{
     const id=identify(row);
     return [id,{id,row,type:traceType(row),outgoing:new Map(),incoming:[]}];
@@ -37,7 +39,7 @@ function buildTraceIndex(rows,identify){
     const {id,row,type}=record;
     if(id.includes(";"))issue(id,"ID","A traceable ID cannot contain a semicolon.");
     if(type==="System")systems.push(record);
-    if(!["System","Requirement","Need","Source","Term"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
+    if(!["System","Requirement","Need","Source","Term","Value","Field"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
     if(type==="Requirement"&&row.Origin?.trim()==="Self-derived"&&!row.Rationale?.trim()){
       issue(id,"Rationale","Explain why this self-derived requirement is needed.");
     }
@@ -95,7 +97,8 @@ function buildTraceIndex(rows,identify){
     }
   }
   const glossary=buildGlossary(records.values(),issue);
-  return {records,systems,roots,issues,glossary};
+  const values=buildValueRules(records.values(),headers,schema.idColumn,issue);
+  return {records,systems,roots,issues,glossary,values};
 }
 function traceCanLink(record,field,target){
   const rule=traceFields[field];
@@ -237,7 +240,7 @@ const trace=(()=>{
   }
   function refresh(){
     glossaryPopover.close();
-    index=buildTraceIndex(state.currentRows,rowId);
+    index=buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn});
     if(index.records.get(system)?.type!=="System")system="";
     if(revealed&&!index.records.has(revealed)&&!data.rows.some(row=>row.id===revealed))revealed=null;
     scope=new Set();
