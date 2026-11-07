@@ -406,11 +406,8 @@ function updateCellSuggestions(form){
     button.tabIndex=-1;
     button.textContent=value;
     button.addEventListener("click",()=>{
-      const textarea=form.querySelector("textarea");
-      textarea.value=value;
-      state.editingCell.draft=value;
-      list.hidden=true;
-      textarea.focus({preventScroll:true});
+      form.querySelector("textarea").value=value;
+      applyCellEdit(form);
     });
     return button;
   }));
