@@ -813,8 +813,14 @@ tableBody.addEventListener("pointerdown",event=>{
     event.preventDefault();
   }
 });
+function gridClipboardEvent(){
+  // Chromium can target a paragraph inside the focused cell after a mouse click.
+  // Check focus instead so text editors and other controls keep native clipboard behavior.
+  const cell=document.activeElement;
+  return developMode()&&!state.editingCell&&cell?.matches("[data-grid-cell]")&&tableBody.contains(cell);
+}
 function copySelection(event){
-  if(!developMode()||state.editingCell||!event.target.matches("[data-grid-cell]")||!event.clipboardData)return;
+  if(!gridClipboardEvent()||!event.clipboardData)return;
   const {top,bottom,left,right}=selectionBounds();
   const columns=visibleColumns().slice(left,right+1);
   const rows=sortedRows().slice(top,bottom+1);
@@ -852,7 +858,7 @@ function parseClipboardBlock(text){
   return rows;
 }
 function pasteSelection(event){
-  if(!developMode()||state.editingCell||!event.target.matches("[data-grid-cell]")||!event.clipboardData?.types.includes("text/plain"))return;
+  if(!gridClipboardEvent()||!event.clipboardData?.types.includes("text/plain"))return;
   event.preventDefault();
   let block;
   try{block=parseClipboardBlock(event.clipboardData.getData("text/plain"));}
