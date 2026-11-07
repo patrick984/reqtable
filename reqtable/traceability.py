@@ -144,6 +144,11 @@ const trace=(()=>{
     data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
   ]);
   const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
+  const sourceLayout={
+    defaults:new Map([[data.meta.idColumn,100],["Type",84],["Name",168],["Requirement",240],["Reference",260]]),
+    flexible:new Set(["Requirement","Reference"]),
+    overrides:new Map(),
+  };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const glossaryColumns=new Set([data.meta.idColumn,"Name",...glossaryFields]);
   const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Rationale",...glossaryFields]);
@@ -742,6 +747,7 @@ const trace=(()=>{
   });
 
   return {refresh,matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+    columnLayout:()=>view==="sources"?sourceLayout:null,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
     scoped:()=>["systems","sources","glossary"].includes(view)||(view==="requirements"&&(!!system||unallocated))||!!revealed,
