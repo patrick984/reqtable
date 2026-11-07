@@ -38,7 +38,12 @@ CSS = r"""
   left:auto; right:0; width:max-content; min-width:0;
   max-width:min(28rem,calc(100vw - 36px)); padding:8px 12px; overflow-wrap:anywhere;
 }
-#active-filter-list {margin:4px 0 0; padding-inline-start:1.25em}
+#active-filter-list {display:grid; gap:4px; margin:4px 0 0; padding:0; list-style:none}
+#active-filter-list li {display:flex; align-items:flex-start; justify-content:space-between; gap:8px}
+#active-filter-list .remove-filter {
+  display:grid; place-items:center; flex:none; width:22px; height:22px;
+  padding:0; border:1px solid var(--line); border-radius:4px; line-height:1;
+}
 #table-context-menu{position:fixed;top:auto;left:auto;z-index:80;padding:4px;min-width:180px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px)}
 #table-context-menu[hidden]{display:none}
 #table-context-menu button{display:block;width:100%;text-align:left;border:0}
@@ -183,32 +188,55 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
 function filterActive(column){return Boolean(state.filters.get(column)||state.valueFilters.get(column)?.size);}function renderColumnChooser(){const box=$("#column-list");box.innerHTML=data.columns.map(c=>`<label><input type="checkbox" data-column-toggle="${escapeHtml(c.name)}" ${state.hidden.has(c.name)?'':'checked'}> ${escapeHtml(c.label)}</label>`).join("");const hiddenFiltered=data.columns.filter(c=>state.hidden.has(c.name)&&filterActive(c.name)).length;$("#hidden-filter-warning").textContent=hiddenFiltered?`${hiddenFiltered} hidden column filter${hiddenFiltered===1?' is':'s are'} active`:"";}function renderStatusControls(){document.querySelectorAll("[data-status]").forEach(el=>el.checked=state.statuses.has(el.dataset.status));}function cycleSort(column){if(!state.sort||state.sort.column!==column)state.sort={column,direction:1};else if(state.sort.direction===1)state.sort.direction=-1;else state.sort=null;render();}
 function renderActiveFilters(){
   const details=$("#active-filters"),summary=details.querySelector("summary");
-  const descriptions=[];
+  const filters=[];
   for(const column of data.columns){
     if(!filterActive(column.name))continue;
     const label=column.label+(state.hidden.has(column.name)?" (hidden column)":"");
     const query=state.filters.get(column.name),values=state.valueFilters.get(column.name);
-    if(query)descriptions.push(`${label} contains “${query}”`);
-    if(values?.size)descriptions.push(`${label} is ${[...values].map(value=>`“${value}”`).join(" or ")}`);
+    if(query)filters.push([`${label} contains “${query}”`,()=>state.filters.delete(column.name)]);
+    if(values?.size)filters.push([
+      `${label} is ${[...values].map(value=>`“${value}”`).join(" or ")}`,
+      ()=>state.valueFilters.delete(column.name)
+    ]);
   }
-  if(state.commentsOnly)descriptions.push("Rows with comments only");
+  if(state.commentsOnly)filters.push(["Rows with comments only",()=>{state.commentsOnly=false;}]);
   if(diffActive()){
     const statuses=["added","removed","changed","unchanged"];
-    const shown=statuses.filter(status=>state.statuses.has(status)
-      &&(status!=="unchanged"||state.unsavedDiff||data.options.includeUnchanged));
-    if(shown.length<statuses.length){
-      descriptions.push(shown.length?`Status: ${shown.join(", ")}`:"Status: no statuses selected");
+    const available=statuses.filter(status=>status!=="unchanged"||state.unsavedDiff||data.options.includeUnchanged);
+    const shown=available.filter(status=>state.statuses.has(status));
+    if(shown.length<available.length){
+      filters.push([shown.length?`Status: ${shown.join(", ")}`:"Status: no statuses selected",
+        ()=>{state.statuses=new Set(statuses);}]);
     }
+    if(available.length<statuses.length)filters.push(["This report excludes unchanged rows"]);
   }
-  const active=descriptions.length>0;
+  const active=filters.length>0;
   details.closest(".toolbar").classList.toggle("has-active-filters",active);
   details.hidden=!active;
   if(!active)details.open=false;
-  summary.title=descriptions.join("\n");
-  summary.setAttribute("aria-label",`Active filters (${descriptions.length})`);
-  $("#active-filter-list").replaceChildren(...descriptions.map(description=>{
+  summary.title=filters.map(([description])=>description).join("\n");
+  summary.setAttribute("aria-label",`Active filters (${filters.length})`);
+  const list=$("#active-filter-list");
+  list.replaceChildren(...filters.map(([description,remove],index)=>{
     const item=document.createElement("li");
-    item.textContent=description;
+    const label=document.createElement("span");
+    label.textContent=description;
+    item.append(label);
+    if(remove){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="remove-filter";
+      button.textContent="×";
+      button.setAttribute("aria-label",`Remove filter: ${description}`);
+      button.addEventListener("click",event=>{
+        event.stopPropagation();
+        remove();
+        render();
+        const next=list.children[index]?.querySelector("button")??list.querySelector("button");
+        (next??(details.hidden?$("#clear-filters").closest("details").querySelector("summary"):summary)).focus();
+      });
+      item.append(button);
+    }
     return item;
   }));
 }
@@ -1249,6 +1277,7 @@ function renderCommandResults(){
   const terms=commandQuery.value.toLocaleLowerCase().trim().split(/\s+/);
   commandResults.replaceChildren();
   for(const menu of menus){
+    if(menu.id==="active-filters")continue;
     const group=menu.querySelector("summary").textContent;
     for(const item of menu.querySelectorAll(".popover button,.popover input[type=checkbox]")){
       if(item.id==="search-menus"||item.disabled||item.closest("[hidden]"))continue;
