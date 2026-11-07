@@ -1040,8 +1040,10 @@ function applyCellEdit(form,next,continueAtEntry=false){
     added[column]=value;
     state.currentRows.push(added);
   }else if(row&&String(row[column]??"")!==value){
+    const before=String(row[column]??"");
     remember();
     row[column]=value;
+    trace?.followValueRename(row,column,before);
   }
   state.editingCell=null;
   updateDirty();

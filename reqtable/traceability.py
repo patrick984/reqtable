@@ -163,8 +163,14 @@ const trace=(()=>{
     overrides:new Map(),
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
-  const glossaryColumns=new Set([data.meta.idColumn,"Name",...glossaryFields]);
-  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin",...glossaryFields]);
+  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
+  const glossaryKinds={
+    terms:{types:["Term"],columns:new Set([data.meta.idColumn,"Name",...glossaryFields]),
+      summary:count=>`${count} glossary ${count===1?"term":"terms"}`},
+    values:{types:["Value","Field"],
+      columns:new Set([data.meta.idColumn,"Type","Field","Name","Definition","Multiple","Aliases","Reference"]),
+      summary:count=>`${count} value ${count===1?"record":"records"}`},
+  };
   const glossaryPopover=createGlossaryPopover();
   const labels={
     "Part of":["Parent system","Move to…"],
@@ -173,7 +179,7 @@ const trace=(()=>{
     "Derived from":["Parent requirements","Link parent requirement…"],
     "Source refs":["Needs and sources","Link need or source…"],
   };
-  let index,view="requirements",system="",unallocated=false,descendants=true;
+  let index,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
   let selected=null,selectedSystem=null,revealed=null,pending=null,previous=null;
   let scope=new Set(),recordEdit=null,linkEdit=null,deleteEdit=null;
 
@@ -190,7 +196,7 @@ const trace=(()=>{
   function columnAvailable(name){
     if(view==="requirements")return !traceMetadata.has(name);
     if(view==="sources")return sourceColumns.has(name);
-    if(view==="glossary")return glossaryColumns.has(name);
+    if(view==="glossary")return glossaryKinds[glossaryKind].columns.has(name);
     return true;
   }
   function defaultHidden(){
@@ -199,13 +205,16 @@ const trace=(()=>{
   }
   const viewStates=new Map();
   const collapsed=new Set();
-  function switchView(next,reveal=null){
-    if(view===next)return false;
-    viewStates.set(view,{hidden:state.hidden,filters:state.filters,valueFilters:state.valueFilters,
+  const stateKey=(name,kind)=>name==="glossary"?`glossary:${kind}`:name;
+  const kindOf=id=>glossaryKinds.values.types.includes(index.records.get(id)?.type)?"values":"terms";
+  function switchView(next,reveal=null,kind=glossaryKind){
+    if(view===next&&(next!=="glossary"||kind===glossaryKind))return false;
+    viewStates.set(stateKey(view,glossaryKind),{hidden:state.hidden,filters:state.filters,valueFilters:state.valueFilters,
       sort:state.sort,focus:state.focus,scroll:[wrap.scrollLeft,wrap.scrollTop],
       commentsOnly:state.commentsOnly,qualityOnly:quality.only});
     view=next;
-    const saved=viewStates.get(next);
+    if(next==="glossary")glossaryKind=kind;
+    const saved=viewStates.get(stateKey(next,glossaryKind));
     state.hidden=saved?.hidden??defaultHidden();
     state.filters=saved?.filters??new Map();
     state.valueFilters=saved?.valueFilters??new Map();
@@ -241,7 +250,7 @@ const trace=(()=>{
     const record=index.records.get(row.id);
     const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
     if(view==="sources")return type==="Need"||type==="Source";
-    if(view==="glossary")return type==="Term";
+    if(view==="glossary")return glossaryKinds[glossaryKind].types.includes(type);
     if(type!=="Requirement")return false;
     if(!system&&!unallocated)return true;
     const allocated=record?(record.outgoing.get("Allocated to")??[]).map(target=>target.id)
@@ -309,7 +318,13 @@ const trace=(()=>{
     selectedLinks.hidden=inSystems;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
-    $("#trace-term-add").hidden=!developMode()||view!=="glossary";
+    const inGlossary=view==="glossary";
+    $("#trace-glossary-kind").hidden=!inGlossary;
+    for(const button of $("#trace-glossary-kind").querySelectorAll("[data-glossary-kind]")){
+      button.setAttribute("aria-pressed",String(button.dataset.glossaryKind===glossaryKind));
+    }
+    $("#trace-term-add").hidden=!developMode()||!inGlossary||glossaryKind!=="terms";
+    $("#trace-value-add").hidden=!developMode()||!inGlossary||glossaryKind!=="values";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
     if(view==="requirements"){
       const options=[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
@@ -436,7 +451,7 @@ const trace=(()=>{
     const record=index.records.get(id),type=record?.type;
     if(type==="System")return "systems";
     if(type==="Need"||type==="Source")return "sources";
-    if(type==="Term")return "glossary";
+    if(type==="Term"||type==="Value"||type==="Field")return "glossary";
     return type==="Requirement"?"requirements":"all";
   }
   function openPanel(id){
@@ -482,9 +497,9 @@ const trace=(()=>{
       return;
     }
     if(selected!==id||destination!==view){
-      previous={id:selected,view,system,unallocated,descendants,revealed};
+      previous={id:selected,view,kind:glossaryKind,system,unallocated,descendants,revealed};
     }
-    switchView(destination);
+    switchView(destination,null,kindOf(id));
     if(view!=="systems"&&!visible(id)){revealed=id;render();}
     focusRecord(id);
   }
@@ -493,7 +508,7 @@ const trace=(()=>{
     const origin=previous;
     previous=null;
     ({system,unallocated,descendants}=origin);
-    if(!switchView(origin.view,origin.revealed)){
+    if(!switchView(origin.view,origin.revealed,origin.kind)){
       revealed=origin.revealed;
       render();
     }
@@ -559,21 +574,37 @@ const trace=(()=>{
     recordEdit={type,record,parent};
     $("#trace-editor-title").textContent=record?"Rename system":parent?(type==="System"?"Add subsystem":"Add child requirement"):`Add ${type.toLowerCase()}`;
     const idInput=$("#trace-record-id");
-    $("#trace-record-id-field").hidden=idInput.disabled=type==="Term";
+    const generatedId=type==="Term"||type==="Value";
+    $("#trace-record-id-field").hidden=idInput.disabled=generatedId;
+    $("#trace-value-field-label").hidden=type!=="Value";
+    $("#trace-value-aliases-label").hidden=type!=="Value";
+    $("#trace-value-aliases").value="";
+    if(type==="Value")fillValueFields();
     idInput.value=record?.id??(type==="Requirement"?nextRecordId():"");
     idInput.readOnly=!!record;
     $("#trace-record-name").value=record?.row.Name??"";
     $("#trace-record-name").required=type!=="Requirement";
     $("#trace-record-name-field").hidden=type==="Requirement";
     $("#trace-record-content").value="";
-    $("#trace-record-content").required=type==="Requirement"||type==="Term";
+    $("#trace-record-content").required=type==="Requirement"||type==="Term"||type==="Value";
     $("#trace-record-content-field").hidden=type==="System";
-    $("#trace-record-content-label").textContent=type==="Term"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
+    $("#trace-record-content-label").textContent=type==="Term"||type==="Value"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
     $("#trace-term-options").hidden=type!=="Term";
     $("#trace-term-aliases").value="";
     $("#trace-term-single-word").checked=false;
     editor.showModal();
     if(type==="Term")$("#trace-record-name").focus();
+    if(type==="Value")$("#trace-value-field").focus();
+  }
+  function fillValueFields(){
+    const names=valueFieldNames(data.source.new.headers,data.meta.idColumn);
+    const open=data.source.new.headers.filter(name=>!traceMetadata.has(name)&&!valueColumnProblem(name,names));
+    const defined=open.filter(name=>index.values.has(name));
+    $("#trace-value-field").replaceChildren(...[...defined,...open.filter(name=>!index.values.has(name))]
+      .map(name=>new Option(name,name)));
+  }
+  function takenIds(){
+    return new Set([...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])].map(rowId));
   }
   function optionList(select,choices,empty){
     select.replaceChildren(new Option(empty,""),...choices.map(record=>new Option(caption(record),record.id)));
@@ -647,6 +678,14 @@ const trace=(()=>{
   $("#trace-need-add").addEventListener("click",()=>editRecord("Need"));
   $("#trace-source-add").addEventListener("click",()=>editRecord("Source"));
   $("#trace-term-add").addEventListener("click",()=>editRecord("Term"));
+  $("#trace-value-add").addEventListener("click",()=>editRecord("Value"));
+  $("#trace-glossary-kind").addEventListener("click",event=>{
+    const kind=event.target.closest("[data-glossary-kind]")?.dataset.glossaryKind;
+    if(!kind||kind===glossaryKind||!canNavigate())return;
+    previous=null;
+    close();
+    switchView("glossary",null,kind);
+  });
   $("#trace-system-add").addEventListener("click",()=>editRecord("System"));
   $("#trace-subsystem-add").addEventListener("click",()=>editRecord("System",{parent:selectedSystem}));
   $("#trace-system-rename").addEventListener("click",()=>editRecord("System",{record:index.records.get(selectedSystem)}));
@@ -706,7 +745,7 @@ const trace=(()=>{
     else if(button.id==="trace-add-child")editRecord("Requirement",{parent:selected});
     else if(button.id==="trace-reveal"&&pending&&canNavigate()){
       const id=pending;
-      previous={id:selected,view,system,unallocated,descendants,revealed};
+      previous={id:selected,view,kind:glossaryKind,system,unallocated,descendants,revealed};
       revealed=id;
       render();
       focusRecord(id);
@@ -739,10 +778,16 @@ const trace=(()=>{
     event.preventDefault();
     if(!writable())return;
     const {type,record,parent}=recordEdit;
-    const id=record?.id??(type==="Term"?nextRecordId("TERM-"):validateNewId($("#trace-record-id").value));
     const name=$("#trace-record-name").value.trim(),content=$("#trace-record-content").value.trim();
+    const valueField=$("#trace-value-field").value;
+    if(type==="Value"&&!valueField){
+      $("#trace-value-field").focus();
+      return;
+    }
+    const id=record?.id??(type==="Term"?nextRecordId("TERM-"):type==="Value"?valueRecordId(valueField,name,takenIds())
+      :validateNewId($("#trace-record-id").value));
     if(!id)return;
-    if((type==="Requirement"||type==="Term")&&!content){
+    if((type==="Requirement"||type==="Term"||type==="Value")&&!content){
       $("#trace-record-content").focus();
       return;
     }
@@ -761,7 +806,11 @@ const trace=(()=>{
         row["Derived from"]=parent;
         if(system)row["Allocated to"]=system;
       }
-      if(type!=="System")row[type==="Term"?"Definition":type==="Source"?"Reference":"Requirement"]=content;
+      if(type!=="System")row[{Term:"Definition",Value:"Definition",Source:"Reference"}[type]??"Requirement"]=content;
+      if(type==="Value"){
+        row.Field=valueField;
+        row.Aliases=$("#trace-value-aliases").value.trim();
+      }
       if(type==="Term"){
         row.Aliases=$("#trace-term-aliases").value.trim();
         row["Auto Link"]=$("#trace-term-single-word").checked?"Yes":"";
@@ -769,9 +818,9 @@ const trace=(()=>{
       state.currentRows.push(row);
     }
     updateDirty();
-    const destination=type==="System"?"systems":type==="Requirement"?"requirements":type==="Term"?"glossary":"sources";
+    const destination=type==="System"?"systems":type==="Requirement"?"requirements":type==="Term"||type==="Value"?"glossary":"sources";
     if(type==="System")selectedSystem=id;
-    if(!switchView(destination))render();
+    if(!switchView(destination,null,type==="Value"?"values":"terms"))render();
     if(view!=="systems"&&!visible(id)){revealed=id;render();}
     focusRecord(id);
     if(panel.hidden&&view==="systems")focusControl(tree,"data-trace-system",id);
@@ -794,7 +843,18 @@ const trace=(()=>{
     if(view==="systems")focusControl(tree,"data-trace-system",selectedSystem);
   });
 
-  return {refresh,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+  function followValueRename(row,column,before){
+    if(column!=="Name"||traceType(row)!=="Value")return;
+    const field=row.Field?.trim(),rule=index.values.get(field),old=before.trim(),name=row.Name.trim();
+    if(!rule||!old||!name||old===name||rule.values.get(old)?.row!==row)return;
+    const changes=renameValueUses(state.currentRows,field,rule.multiple,old,name);
+    if(!changes.length)return;
+    const n=changes.length;
+    if(!confirm(`Rename “${old}” to “${name}” in ${n} ${n===1?"row that uses":"rows that use"} it?`))return;
+    for(const change of changes)change.row[field]=change.value;
+  }
+
+  return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>view==="sources"?sourceLayout:null,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
@@ -805,7 +865,7 @@ const trace=(()=>{
     gridSummary:count=>{
       if(view==="systems")return `${index.systems.length} systems`;
       if(view==="sources")return `${count} needs and sources`;
-      if(view==="glossary")return `${count} glossary ${count===1?"term":"terms"}`;
+      if(view==="glossary")return glossaryKinds[glossaryKind].summary(count);
       if(view==="all")return `${count} of ${data.rows.length} records`;
       return `${count} requirements`;
     },
@@ -825,7 +885,8 @@ const trace=(()=>{
     allocate:row=>{if(view==="requirements"&&system)row["Allocated to"]=system;},
     reveal:(id,column)=>{
       const destination=recordView(id);
-      if(view!=="all"&&view!==destination)switchView(destination==="systems"?"all":destination);
+      if(view!=="all"&&(view!==destination||(destination==="glossary"&&glossaryKind!==kindOf(id))))
+        switchView(destination==="systems"?"all":destination,null,kindOf(id));
       if(view==="systems"||(column&&!columnAvailable(column)))switchView("all");
       revealed=id;
     },
@@ -849,7 +910,12 @@ TRACE_WORKSPACE = """
     <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
   </div>
   <button id="trace-view-add" type="button" hidden>Add requirement…</button>
+  <span id="trace-glossary-kind" role="group" aria-label="Glossary content" hidden>
+    <button type="button" data-glossary-kind="terms" aria-pressed="true">Terms</button>
+    <button type="button" data-glossary-kind="values" aria-pressed="false">Values</button>
+  </span>
   <button id="trace-term-add" type="button" hidden>Add term…</button>
+  <button id="trace-value-add" type="button" hidden>Add value…</button>
   <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
   <span id="trace-source-actions" hidden>
     <button id="trace-need-add" type="button">Add need…</button>
@@ -903,10 +969,12 @@ TRACE_HTML = """
   <form id="trace-record-form">
     <div class="help-head"><h2 id="trace-editor-title">Add record</h2><button type="button" id="trace-editor-cancel">Cancel</button></div>
     <div class="help-body">
+      <label id="trace-value-field-label" hidden>Field <select id="trace-value-field"></select></label>
       <label id="trace-record-id-field">ID <input id="trace-record-id" required></label>
       <label id="trace-record-name-field">Name <input id="trace-record-name"></label>
       <label id="trace-record-content-field"><span id="trace-record-content-label"></span>
         <textarea id="trace-record-content" rows="3"></textarea></label>
+      <label id="trace-value-aliases-label" hidden>Aliases (separated by semicolons) <input id="trace-value-aliases"></label>
       <div id="trace-term-options" hidden>
         <label>Aliases (separated by semicolons) <input id="trace-term-aliases"></label>
         <label><input type="checkbox" id="trace-term-single-word"> Also link single-word Title Case spellings</label>
@@ -932,8 +1000,8 @@ TRACE_HTML = """
 
 TRACE_CSS = """
 #trace-workspace {display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:5px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
-#trace-views,#trace-scope,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
-#trace-views button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
+#trace-views,#trace-scope,#trace-glossary-kind,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+#trace-views button[aria-pressed="true"],#trace-glossary-kind button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
 #trace-system {max-width:min(24ch,60vw)}
 #trace-status {flex-basis:100%;margin:0}
 #trace-status:empty {display:none}
@@ -979,7 +1047,7 @@ TRACE_CSS = """
 #trace-query {display:block;width:100%}
 #trace-candidates button,#trace-candidates label {display:block;width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
 #trace-record-form label,#trace-delete-form label {display:grid;gap:3px;margin-bottom:10px}
-#trace-systems[hidden],#trace-scope[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
+#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
 @media print {#trace-workspace,#trace-panel,.trace-row-marker,.trace-marker,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
