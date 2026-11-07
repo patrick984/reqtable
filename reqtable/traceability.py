@@ -33,6 +33,32 @@ function definedValues(rule,cell){
   return [...new Set((rule.multiple?traceIds(text):text?[text]:[])
     .map(part=>rule.values.has(part)?part:rule.aliases.get(part)?.row.Name.trim()??part))];
 }
+const verificationStates={
+  Compliance: {appliesTo:"Requirement",plural:"requirements",states:["Not verified","Compliant","Partially compliant","Non-compliant","Waived"]},
+  Result: {appliesTo:"Test",plural:"tests",states:["Not run","Passed","Failed","Blocked"]}
+};
+function verificationState(values,column,cell){
+  const rule=values.get(column),text=String(cell??"").trim();
+  return rule?definedValues(rule,text)[0]??"":text;
+}
+function verificationMethodMarks(rule,cell){
+  const present=new Set(definedValues(rule,cell));
+  return [...rule.values.keys()].map(name=>({name,letter:name.trim().charAt(0).toUpperCase(),filled:present.has(name)}));
+}
+function checkVerification(records,values,issue){
+  const state=(record,column)=>verificationState(values,column,record.row[column]);
+  const sentence=parts=>parts.length>1?`${parts.slice(0,-1).join(", ")} and ${parts.at(-1)}`:parts[0];
+  for(const record of records.values()){
+    for(const [column,{appliesTo,plural}] of Object.entries(verificationStates)){
+      if(record.type!==appliesTo&&String(record.row[column]??"").trim())issue(record.id,column,`${column} applies to ${plural}.`);
+    }
+    if(record.type!=="Requirement"||state(record,"Compliance")!=="Compliant")continue;
+    const unmet=(record.outgoing.get("Verified by")??[]).map(test=>[test.id,state(test,"Result")]).filter(([,result])=>result!=="Passed");
+    if(unmet.length){
+      issue(record.id,"Compliance",`Compliant, but ${sentence(unmet.map(([id,result])=>result?`${id} is “${result}”`:`${id} has no result`))}.`);
+    }
+  }
+}
 function checkTestCoverage(records,values,issue){
   const quote=names=>names.map(name=>`“${name}”`).join(", ");
   for(const record of records.values()){
@@ -120,6 +146,7 @@ function buildTraceIndex(rows,identify,schema={}){
   const glossary=buildGlossary(records.values(),issue);
   const values=buildValueRules(records.values(),headers,schema.idColumn,issue);
   checkTestCoverage(records,values,issue);
+  checkVerification(records,values,issue);
   return {records,systems,roots,issues,glossary,values};
 }
 function groupFindingsByCell(issues){

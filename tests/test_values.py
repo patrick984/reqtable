@@ -150,7 +150,7 @@ assert.equal(rules.get("Priority").multiple,true);
         result = json.loads(subprocess.run(["node"], input=script, text=True, check=True,
                                            capture_output=True).stdout)
         self.assertEqual(result["issues"], [])
-        self.assertEqual(sorted(result["columns"]), ["Execution", "Priority", "Verification Level", "Verification Method"])
+        self.assertEqual(sorted(result["columns"]), ["Compliance", "Execution", "Priority", "Result", "Verification Level", "Verification Method"])
 
 
 if __name__ == "__main__":

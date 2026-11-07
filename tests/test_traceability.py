@@ -296,6 +296,64 @@ assert.deepEqual(issues.filter(({message})=>message.startsWith("No test")).map((
 ]);
 """)
 
+    VERIFICATION_PRELUDE = r"""
+const HEADERS=["ID","Type","Name","Field","Aliases","Definition","Compliance","Result","Verified by"];
+const value=(Field,Name,Aliases="")=>({ID:`V-${Field}-${Name}`,Type:"Value",Field,Name,Aliases,Definition:"Defined."});
+const defined=[
+  value("Compliance","Compliant"),value("Compliance","Non-compliant"),value("Result","Passed","Pass"),value("Result","Failed")
+];
+const test=(ID,Result)=>({ID,Type:"Test",Result});
+const findings=(rows,withValues=true)=>buildTraceIndex(withValues?[...defined,...rows]:rows,row=>row.ID,{headers:HEADERS,idColumn:"ID"})
+  .issues.filter(({field})=>field==="Compliance"||field==="Result").map(({id,field,message})=>`${id}|${field}|${message}`);
+"""
+
+    def test_compliant_requirement_needs_every_linked_test_to_have_passed(self):
+        self.run_js(self.VERIFICATION_PRELUDE + r"""
+const rows=[
+  test("T-PASS","Passed"),test("T-ALIAS","Pass"),test("T-FAIL","Failed"),test("T-BLANK",""),test("T-BLANK2",""),
+  {ID:"R-OK",Compliance:"Compliant","Verified by":"T-PASS; T-ALIAS"},
+  {ID:"R-FAILED",Compliance:"Compliant","Verified by":"T-PASS; T-FAIL"},
+  {ID:"R-TWO",Compliance:"Compliant","Verified by":"T-FAIL; T-BLANK"},
+  {ID:"R-THREE",Compliance:"Compliant","Verified by":"T-FAIL; T-BLANK; T-PASS; T-BLANK2"},
+  {ID:"R-NO-TESTS",Compliance:"Compliant"},
+  {ID:"R-NON",Compliance:"Non-compliant","Verified by":"T-FAIL"},
+  {ID:"R-BLANK-COMPLIANCE","Verified by":"T-FAIL"}
+];
+assert.deepEqual(findings(rows).filter(line=>!line.includes("replaced spelling")),[
+  "R-FAILED|Compliance|Compliant, but T-FAIL is “Failed”.",
+  "R-TWO|Compliance|Compliant, but T-FAIL is “Failed” and T-BLANK has no result.",
+  "R-THREE|Compliance|Compliant, but T-FAIL is “Failed”, T-BLANK has no result and T-BLANK2 has no result."
+]);
+assert.deepEqual(findings([test("T","Failed"),{ID:"R",Compliance:"Compliant","Verified by":"T"}],false),
+  ["R|Compliance|Compliant, but T is “Failed”."]);
+""")
+
+    def test_compliance_and_result_apply_only_to_their_record_types(self):
+        self.run_js(self.VERIFICATION_PRELUDE + r"""
+const rows=[
+  {ID:"R",Compliance:"Compliant",Result:"Passed"},
+  {ID:"T",Type:"Test",Compliance:"Compliant",Result:"Passed"},
+  {ID:"N",Type:"Need",Result:"Failed"},
+  {ID:"S",Type:"System",Compliance:" "}
+];
+assert.deepEqual(findings(rows).sort(),[
+  "N|Result|Result applies to tests.",
+  "R|Result|Result applies to tests.",
+  "T|Compliance|Compliance applies to requirements."
+]);
+""")
+
+    def test_verification_method_marks_fill_slots_in_value_order(self):
+        self.run_js(r"""
+const value=(Name,Aliases="")=>({row:{Name,Aliases}});
+const rule={multiple:true,values:new Map(["Inspection","Analysis","Demonstration","Test"].map(name=>[name,value(name)])),
+  aliases:new Map([["Try it",value("Demonstration")]])};
+const marks=cell=>verificationMethodMarks(rule,cell).map(({letter,filled})=>letter+(filled?"+":"-")).join(" ");
+assert.equal(marks("Test; Try it"),"I- A- D+ T+");
+assert.equal(marks(""),"I- A- D- T-");
+assert.equal(marks("Unknown"),"I- A- D- T-");
+""")
+
     def test_shipped_uat_csv_links_tests_without_findings(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
         source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
