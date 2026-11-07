@@ -511,13 +511,14 @@ def build_report_data(
     if old is not None and not config["diff"]["include_unchanged"]:
         rows = [row for row in rows if row["status"] != "unchanged"]
     labels = config["columns"]["labels"]
+    glossary_widths = {"Name": 150, "Definition": 320, "Aliases": 140} if traceability else {}
     column_data = [
         {
             "name": name,
             "label": labels.get(name, name),
             "hidden": name in config["columns"]["hidden"],
             "width": config["columns"]["widths"].get(name),
-            "estimatedWidth": _estimated_column_width(name, rows),
+            "estimatedWidth": max(_estimated_column_width(name, rows), glossary_widths.get(name, 0)),
             "oldOnly": bool(old and name in old.headers and name not in new.headers),
             "newOnly": bool(old and name in new.headers and name not in old.headers),
             "markdown": name in markdown_set,

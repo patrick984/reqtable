@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from .quality import QUALITY_JS
+from .glossary import GLOSSARY_CSS, GLOSSARY_HTML
 from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
 
@@ -625,7 +626,7 @@ function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">
   table.classList.toggle("compact-row-ids",idWidth<=110);
   positionCellEditor();
 }
-function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();positionCellEditor();}
+function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();trace?.linkGlossary();renderQualityPanel();positionCellEditor();}
 function syncModeUi(){
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
@@ -1544,7 +1545,7 @@ function menuItems(menu){
   return [...menu.querySelectorAll("button,input")].filter(item=>!item.disabled&&item.getClientRects().length);
 }
 document.addEventListener("click",event=>{
-  const menu=event.composedPath().find(node=>node.matches?.(".toolbar details.popup-menu"));
+  const menu=event.composedPath().find(node=>node instanceof Element&&node.matches(".toolbar details.popup-menu"));
   if(!menu){closeHeaderPopups();return;}
   const summary=menu.querySelector("summary");
   if(event.target.closest("summary"))closeHeaderPopups(menu);
@@ -1716,7 +1717,7 @@ def render_report(data: dict[str, Any]) -> str:
     trace_js = TRACE_MODEL_JS + TRACE_UI_JS if traceability else "const trace=null;\n"
     return (
         TEMPLATE.replace("__TRACE_MENU__", TRACE_MENU if traceability else "")
-        .replace("__TRACE_HTML__", TRACE_HTML if traceability else "")
+        .replace("__TRACE_HTML__", TRACE_HTML + GLOSSARY_HTML if traceability else "")
         .replace("__TRACE_WORKSPACE__", TRACE_WORKSPACE if traceability else "")
         .replace("__TRACE_SYSTEMS__", TRACE_SYSTEMS if traceability else "")
         .replace("__TITLE__", title)
@@ -1725,7 +1726,7 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__META__", description)
         .replace("__SUMMARY__", summary)
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
-        .replace("__CSS__", CSS + (TRACE_CSS if traceability else ""))
+        .replace("__CSS__", CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
         .replace("__JS__", JS + trace_js + INITIAL_RENDER_JS)
     )

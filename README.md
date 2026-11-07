@@ -72,6 +72,16 @@ In Develop mode, use **Systems** to add subsystems, rename them, move them, and 
 
 Enable the pilot with `--traceability` or `"traceability": true` in the JSON configuration. The generator adds missing traceability columns. A blank `Type` means `Requirement`, and multi-value link fields use semicolon-separated IDs. Use the same flag when regenerating from a saved CSV. With the default JSON comments format, the exported comments return as annotations. See the [traceability proposal](requirements-traceability-proposal.md) for the schema and model.
 
+### Project glossary
+
+Open **Glossary** in either mode to browse the shared terms for the whole project. Use the **Name** or **Definition** column filter to search. In Develop mode, choose **Add term…**, then edit any of its fields in the grid. To attach a citation, select the term and choose **Links → Link source…**.
+
+Each term is a `Term` record in the same CSV, with a unique ID, a **Name**, and a **Definition**. Separate optional **Aliases** with semicolons, for example `CSV; Delimited Text`. Set **Auto Link** to `Yes` to also link single-word Title Case spellings for that term. The **Trace findings** panel reports incomplete records, duplicate names, and spellings shared by different terms.
+
+The browser underlines registered Title Case phrases and uppercase acronyms in rendered **Requirement**, **Acceptance Criteria**, and **Rationale** text. Matching is case-sensitive, uses whole spellings, and prefers the longest match. For example, a term named `Comma-Separated Values` with alias `CSV` matches either spelling. Code, existing links, URLs, and email addresses are skipped. Matches use continuous rendered text, so a formatting boundary inside a phrase can interrupt a match.
+
+Click an underlined term or focus it and press Enter to read its definition in place. Press Escape to close it and return focus to the term. Links are calculated from the glossary in the open report, so the feature works offline and the prose in the CSV stays plain.
+
 ## Review comments
 
 Enter reviewer initials in the report, then select or hover a non-ID cell to reveal its `+` control. A nearby quick-comment popup keeps the latest comment visible, permits its author to edit it, and can open the full comments sidebar. Numbered red indicators mark cells with comments. Reviewer colors are derived consistently from initials. The resizable sidebar supports browsing, searching, inline editing, deleting, and navigating to a cell without closing. Saving or cancelling an inline edit returns to the same browse or single-cell view.

@@ -1,17 +1,19 @@
 """Offline traceability model and report controls for opted-in CSVs."""
 
+from .glossary import GLOSSARY_COLUMNS, GLOSSARY_MODEL_JS, GLOSSARY_UI_JS
+
 TRACE_COLUMNS = (
     "Type", "Name", "Requirement", "Part of", "Allocated to", "Owner",
-    "Derived from", "Source refs", "Reference", "Origin", "Rationale",
+    "Derived from", "Source refs", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS,
 )
 
-TRACE_MODEL_JS = r"""
+TRACE_MODEL_JS = GLOSSARY_MODEL_JS + r"""
 const traceFields={
   "Part of": {from:["System"],to:["System"],single:true},
   "Allocated to": {from:["Requirement"],to:["System"]},
   "Owner": {from:["Requirement"],to:["System"],single:true},
   "Derived from": {from:["Requirement"],to:["Requirement"]},
-  "Source refs": {from:["Requirement","Need"],to:["Need","Source"]}
+  "Source refs": {from:["Requirement","Need","Term"],to:["Need","Source"]}
 };
 function traceType(row){
   const value=String(row.Type??"").trim();
@@ -21,7 +23,7 @@ function traceIds(value){
   return String(value??"").split(";").map(id=>id.trim()).filter(Boolean);
 }
 function traceTargetTypes(field,type){
-  return field==="Source refs"&&type==="Need"?["Source"]:traceFields[field].to;
+  return field==="Source refs"&&type!=="Requirement"?["Source"]:traceFields[field].to;
 }
 function buildTraceIndex(rows,identify){
   const records=new Map(rows.map(row=>{
@@ -35,7 +37,7 @@ function buildTraceIndex(rows,identify){
     const {id,row,type}=record;
     if(id.includes(";"))issue(id,"ID","A traceable ID cannot contain a semicolon.");
     if(type==="System")systems.push(record);
-    if(!["System","Requirement","Need","Source"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
+    if(!["System","Requirement","Need","Source","Term"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
     if(type==="Requirement"&&row.Origin?.trim()==="Self-derived"&&!row.Rationale?.trim()){
       issue(id,"Rationale","Explain why this self-derived requirement is needed.");
     }
@@ -92,7 +94,8 @@ function buildTraceIndex(rows,identify){
       }
     }
   }
-  return {records,systems,roots,issues};
+  const glossary=buildGlossary(records.values(),issue);
+  return {records,systems,roots,issues,glossary};
 }
 function traceCanLink(record,field,target){
   const rule=traceFields[field];
@@ -130,7 +133,7 @@ function traceIncomingChanges(rows,oldId,newId){
 }
 """
 
-TRACE_UI_JS = r"""
+TRACE_UI_JS = GLOSSARY_UI_JS + r"""
 const trace=(()=>{
   const panel=$("#trace-panel"),detail=$("#trace-record"),tree=$("#trace-tree");
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
@@ -141,7 +144,10 @@ const trace=(()=>{
     data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
   ]);
   const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
-  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Rationale"]);
+  const glossaryFields=["Definition","Aliases","Auto Link"];
+  const glossaryColumns=new Set([data.meta.idColumn,"Name",...glossaryFields]);
+  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Rationale",...glossaryFields]);
+  const glossaryPopover=createGlossaryPopover();
   const labels={
     "Part of":["Parent system","Move to…"],
     "Allocated to":["Applies to","Allocate to…"],
@@ -166,6 +172,7 @@ const trace=(()=>{
   function columnAvailable(name){
     if(view==="requirements")return !traceMetadata.has(name);
     if(view==="sources")return sourceColumns.has(name);
+    if(view==="glossary")return glossaryColumns.has(name);
     return true;
   }
   function defaultHidden(){
@@ -216,6 +223,7 @@ const trace=(()=>{
     const record=index.records.get(row.id);
     const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
     if(view==="sources")return type==="Need"||type==="Source";
+    if(view==="glossary")return type==="Term";
     if(type!=="Requirement")return false;
     if(!system&&!unallocated)return true;
     const allocated=record?(record.outgoing.get("Allocated to")??[]).map(target=>target.id)
@@ -223,6 +231,7 @@ const trace=(()=>{
     return unallocated?!allocated.length:allocated.some(id=>scope.has(id));
   }
   function refresh(){
+    glossaryPopover.close();
     index=buildTraceIndex(state.currentRows,rowId);
     if(index.records.get(system)?.type!=="System")system="";
     if(revealed&&!index.records.has(revealed)&&!data.rows.some(row=>row.id===revealed))revealed=null;
@@ -282,6 +291,7 @@ const trace=(()=>{
     selectedLinks.hidden=inSystems;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
+    $("#trace-term-add").hidden=!developMode()||view!=="glossary";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
     if(view==="requirements"){
       const options=[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
@@ -336,7 +346,7 @@ const trace=(()=>{
     for(const [field,rule] of Object.entries(traceFields)){
       const ids=[...new Set(traceIds(row[field]))];
       if(!rule.from.includes(type)&&!ids.length)continue;
-      const [heading,action]=labels[field];
+      const [heading,action]=field==="Source refs"&&type==="Term"?["Sources","Link source…"]:labels[field];
       const targets=ids.map(targetId=>{
         const target=index.records.get(targetId);
         const remove=writable()? ` <button type="button" class="trace-remove" data-trace-remove="${escapeHtml(field)}"
@@ -356,7 +366,7 @@ const trace=(()=>{
       }
     }
     const origin=row.Origin?.trim()||(traceIds(row["Source refs"]).length||traceIds(row["Derived from"]).length?"":"No origin recorded");
-    const notes=[row.Requirement,row.Reference,type==="Requirement"?origin:"",row.Rationale].filter(Boolean);
+    const notes=[row.Requirement,row.Definition,row.Reference,type==="Requirement"?origin:"",row.Rationale].filter(Boolean);
     detail.innerHTML=reveal+`<h3 tabindex="-1">${escapeHtml(caption(record))}</h3><p class="meta">${escapeHtml(type)}</p>`
       +notes.map(note=>`<p class="trace-note">${escapeHtml(note)}</p>`).join("")+sections.join("");
   }
@@ -374,6 +384,7 @@ const trace=(()=>{
     const record=index.records.get(id),type=record?.type;
     if(type==="System")return "systems";
     if(type==="Need"||type==="Source")return "sources";
+    if(type==="Term")return "glossary";
     return type==="Requirement"?"requirements":"all";
   }
   function openPanel(id){
@@ -484,7 +495,8 @@ const trace=(()=>{
     if(!writable()||!index.records.has(id))return;
     const checked=field==="Allocated to"?new Set(traceIds(index.records.get(id).row[field])):null;
     linkEdit={id,field,checked};
-    $("#trace-picker-title").textContent=labels[field][1].replace("…","");
+    $("#trace-picker-title").textContent=field==="Source refs"&&index.records.get(id).type==="Term"
+      ?"Link source":labels[field][1].replace("…","");
     $("#trace-query").value="";
     $("#trace-picker-apply").hidden=!checked;
     showCandidates();
@@ -500,9 +512,12 @@ const trace=(()=>{
     $("#trace-record-name").required=type!=="Requirement";
     $("#trace-record-name-field").hidden=type==="Requirement";
     $("#trace-record-content").value="";
-    $("#trace-record-content").required=type==="Requirement";
+    $("#trace-record-content").required=type==="Requirement"||type==="Term";
     $("#trace-record-content-field").hidden=type==="System";
-    $("#trace-record-content-label").textContent=type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
+    $("#trace-record-content-label").textContent=type==="Term"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
+    $("#trace-term-options").hidden=type!=="Term";
+    $("#trace-term-aliases").value="";
+    $("#trace-term-single-word").checked=false;
     editor.showModal();
   }
   function optionList(select,choices,empty){
@@ -537,6 +552,10 @@ const trace=(()=>{
     deletion.showModal();
   }
   function clearCopy(clone){
+    clone.querySelector("#glossary-definition").hidden=true;
+    for(const id of ["glossary-definition-title","glossary-definition-content","glossary-definition-sources"]){
+      clone.querySelector("#"+id).replaceChildren();
+    }
     clone.querySelector("#trace-panel").hidden=true;
     clone.querySelector(".table-wrap").hidden=false;
     clone.querySelector("#trace-systems").hidden=true;
@@ -569,6 +588,7 @@ const trace=(()=>{
   $("#trace-view-add").addEventListener("click",()=>{if(canNavigate())addRequirement("end");});
   $("#trace-need-add").addEventListener("click",()=>editRecord("Need"));
   $("#trace-source-add").addEventListener("click",()=>editRecord("Source"));
+  $("#trace-term-add").addEventListener("click",()=>editRecord("Term"));
   $("#trace-system-add").addEventListener("click",()=>editRecord("System"));
   $("#trace-subsystem-add").addEventListener("click",()=>editRecord("System",{parent:selectedSystem}));
   $("#trace-system-rename").addEventListener("click",()=>editRecord("System",{record:index.records.get(selectedSystem)}));
@@ -664,8 +684,12 @@ const trace=(()=>{
     const id=record?.id??validateNewId($("#trace-record-id").value);
     const name=$("#trace-record-name").value.trim(),content=$("#trace-record-content").value.trim();
     if(!id)return;
-    if(type==="Requirement"?!content:!name){
-      $(type==="Requirement"?"#trace-record-content":"#trace-record-name").focus();
+    if((type==="Requirement"||type==="Term")&&!content){
+      $("#trace-record-content").focus();
+      return;
+    }
+    if(type!=="Requirement"&&!name){
+      $("#trace-record-name").focus();
       return;
     }
     editor.close();
@@ -679,11 +703,15 @@ const trace=(()=>{
         row["Derived from"]=parent;
         if(system)row["Allocated to"]=system;
       }
-      if(type!=="System")row[type==="Source"?"Reference":"Requirement"]=content;
+      if(type!=="System")row[type==="Term"?"Definition":type==="Source"?"Reference":"Requirement"]=content;
+      if(type==="Term"){
+        row.Aliases=$("#trace-term-aliases").value.trim();
+        row["Auto Link"]=$("#trace-term-single-word").checked?"Yes":"";
+      }
       state.currentRows.push(row);
     }
     updateDirty();
-    const destination=type==="System"?"systems":type==="Requirement"?"requirements":"sources";
+    const destination=type==="System"?"systems":type==="Requirement"?"requirements":type==="Term"?"glossary":"sources";
     if(type==="System")selectedSystem=id;
     if(!switchView(destination))render();
     if(view!=="systems"&&!visible(id)){revealed=id;render();}
@@ -709,14 +737,16 @@ const trace=(()=>{
   });
 
   return {refresh,matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+    linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
-    scoped:()=>view==="systems"||view==="sources"||(view==="requirements"&&(!!system||unallocated))||!!revealed,
+    scoped:()=>["systems","sources","glossary"].includes(view)||(view==="requirements"&&(!!system||unallocated))||!!revealed,
     rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
     entry:()=>view==="requirements"||view==="all",
     systemsView:()=>view==="systems",
     gridSummary:count=>{
       if(view==="systems")return `${index.systems.length} systems`;
       if(view==="sources")return `${count} needs and sources`;
+      if(view==="glossary")return `${count} glossary ${count===1?"term":"terms"}`;
       if(view==="all")return `${count} of ${data.rows.length} records`;
       return `${count} requirements`;
     },
@@ -752,6 +782,7 @@ TRACE_WORKSPACE = """
     <button type="button" data-trace-view="requirements" aria-pressed="true">Requirements</button>
     <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
     <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
+    <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
     <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
   </nav>
   <div id="trace-scope">
@@ -759,6 +790,7 @@ TRACE_WORKSPACE = """
     <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
   </div>
   <button id="trace-view-add" type="button" hidden>Add requirement…</button>
+  <button id="trace-term-add" type="button" hidden>Add term…</button>
   <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
   <span id="trace-source-actions" hidden>
     <button id="trace-need-add" type="button">Add need…</button>
@@ -816,6 +848,10 @@ TRACE_HTML = """
       <label id="trace-record-name-field">Name <input id="trace-record-name"></label>
       <label id="trace-record-content-field"><span id="trace-record-content-label"></span>
         <textarea id="trace-record-content" rows="3"></textarea></label>
+      <div id="trace-term-options" hidden>
+        <label>Aliases (separated by semicolons) <input id="trace-term-aliases"></label>
+        <label><input type="checkbox" id="trace-term-single-word"> Also link single-word Title Case spellings</label>
+      </div>
       <button type="submit" class="primary">Apply</button>
     </div>
   </form>
