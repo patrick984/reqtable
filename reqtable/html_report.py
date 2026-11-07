@@ -240,6 +240,10 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
   const row=data.rows.find(item=>item.id===selected?.parentElement.dataset.rowId);
   const column=selected?.dataset.column;
   $("#revert-selected-cell").disabled=!!state.editingCell||!canRevertCell(column,row?.cells[column]);
+  const current=row?.id&&row.status!=="removed";
+  $("#delete-record-label").textContent=`Delete ${recordKind(current?row.cells.Type?.new:null)}`;
+  $("#delete-requirement").disabled=!current||!!state.editingCell||!!trace?.systemsView();
+  $("#restore-deleted-requirement").textContent=`Restore deleted ${recordKind(row?.cells.Type?.old)}`;
   paintSelection();
   trace?.syncSelection(row?.id??null);
   $("#restore-deleted-requirement").disabled=!!state.editingCell||!developMode()||row?.status!=="removed";
@@ -631,7 +635,7 @@ function syncModeUi(){
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
-    for(const id of ["rename-requirement","delete-requirement"])$("#"+id).disabled=trace.systemsView();
+    $("#rename-requirement").disabled=trace.systemsView();
   }
   document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
@@ -832,15 +836,22 @@ function renameRequirement(){
   render();
   focusRequirement(id,column);
 }
-function deleteRequirement(){
+function recordKind(type){
+  if(!trace)return "requirement";
+  const value=type?.trim();
+  if(value==="")return "requirement";
+  return ["Requirement","System","Need","Source","Term"].includes(value)?value.toLowerCase():"record";
+}
+function deleteSelectedRecord(){
   if(!developMode()||state.editingCell)return;
-  const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);
-  const kind=trace?"record":"requirement";
-  if(index<0){alert(`Select a current ${kind} before deleting it.`);return;}
-  if(trace&&traceType(state.currentRows[index])==="System"){
+  const id=selectedRequirementId(),row=id&&findCurrentRow(id);
+  if(!row)return;
+  const kind=recordKind(row.Type);
+  if(kind==="system"){
     trace.openDeletion(id);
     return;
   }
+  const name=kind==="requirement"?id:row.Name?.trim()||id;
   const commentCount=state.comments.filter(c=>c.requirementId===id).length;
   const links=(trace?.incomingChanges(id,null)??[]).filter(change=>rowId(change.row)!==id);
   const comments=commentCount?` and its ${commentCount} attached comment${commentCount===1?"":"s"}`:"";
@@ -848,7 +859,7 @@ function deleteRequirement(){
     ?`\n\nThe following records reference ${id}. Confirm to remove these links as part of the deletion.\n`
       +links.map(({row,field})=>`${rowId(row)} · ${field}`).join("\n")
     :"";
-  if(!confirm(`Delete ${kind} ${id}${comments}?${affected}`))return;
+  if(!confirm(`Delete ${kind} ${name}${comments}?${affected}`))return;
   deleteRecord(id,links);
 }
 function deleteRecord(id,links){
@@ -1377,7 +1388,7 @@ tableBody.addEventListener("click",event=>{
     applyCellEdit(editor,cell);
   }
 });
-for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteRequirement);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",saveReportCopy);
+for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",saveReportCopy);
 document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
   const cell=event.target.closest("[data-grid-cell]");
   if(cell&&developMode()&&!event.target.closest("form,button,a")){
@@ -1628,7 +1639,7 @@ TEMPLATE = r"""<!doctype html>
 <div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
-<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
+<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>

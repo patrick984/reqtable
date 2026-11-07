@@ -533,7 +533,7 @@ const trace=(()=>{
     const changes=traceIncomingChanges(state.currentRows,id,null).filter(change=>change.row!==record.row);
     const fields=["Part of","Allocated to","Owner"];
     deleteEdit={id,changes};
-    $("#trace-delete-title").textContent=`Delete ${caption(record)}?`;
+    $("#trace-delete-title").textContent=`Delete system ${caption(record)}?`;
     const comments=state.comments.filter(comment=>comment.requirementId===id).length;
     $("#trace-delete-impact").textContent=`This affects ${changes.length} incoming links and deletes ${comments} attached comments.`;
     let described=0;
