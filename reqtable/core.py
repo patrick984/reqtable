@@ -182,7 +182,7 @@ def validate_config(config: dict[str, Any]) -> None:
     validate_xlsx_sources(config["xlsx"]["sources"])
 
 
-_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix"}
+_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists"}
 
 
 def validate_xlsx_sources(sources: Any) -> None:
@@ -213,6 +213,24 @@ def validate_xlsx_sources(sources: Any) -> None:
         exclude = source.get("exclude", [])
         if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
             raise ConfigError(f"{where}.exclude must be an array of strings")
+        constants = source.get("set", {})
+        if not isinstance(constants, dict) or not all(
+            isinstance(k, str) and k.strip() and isinstance(v, str) for k, v in constants.items()
+        ):
+            raise ConfigError(f"{where}.set must be an object of output header to constant string")
+        if "type" in source and "Type" in constants:
+            raise ConfigError(f"{where} gives both 'type' and set.Type; use one")
+        if "id_from" in source:
+            id_from = source["id_from"]
+            if not isinstance(id_from, list) or not id_from or not all(isinstance(x, str) and x.strip() for x in id_from):
+                raise ConfigError(f"{where}.id_from must be a non-empty array of column names")
+            if "id_prefix" not in source:
+                raise ConfigError(f"{where}.id_from needs id_prefix")
+        lists = source.get("lists", {})
+        if not isinstance(lists, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) and v for k, v in lists.items()
+        ):
+            raise ConfigError(f"{where}.lists must be an object of output header to separator string (or \"newline\")")
 
 
 def valid_initials(value: Any) -> bool:

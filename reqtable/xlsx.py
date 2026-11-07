@@ -360,7 +360,7 @@ def _slug(text: str) -> str:
 
 
 def _map_source(block: Block, source: dict[str, Any], id_column: str | None, traceability: bool) -> Block:
-    """Apply one configured source to its block: exclude, rename, then Type and generated IDs."""
+    """Apply one configured source to its block: exclude, rename, set, lists, then Type and generated IDs."""
     where = f"xlsx source {_source_name(source)!r}"
     headers, body = list(block.rows[0]), block.rows[1:]
     if "" in headers:
@@ -386,28 +386,47 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
                 row.append("")
         return out_headers.index(name)
 
+    def need(name: str, key: str) -> int:
+        if name not in out_headers:
+            raise ConfigError(f"{where}: {key} names {name!r}, which is not a mapped column; columns: {_names(iter(out_headers))}")
+        return out_headers.index(name)
+
+    constants = dict(source.get("set", {}))
     if "type" in source:
-        if not traceability:
-            raise ConfigError(
-                f"{where} sets 'type', which needs traceability: use --traceability or set \"traceability\": true"
-            )
-        at = column("Type")
+        constants["Type"] = source["type"]
+    if "Type" in constants and not traceability:
+        raise ConfigError(
+            f"{where} sets 'type', which needs traceability: use --traceability or set \"traceability\": true"
+        )
+    for name, constant in constants.items():
+        at = column(name)
         for row in rows:
-            row[at] = source["type"]
+            row[at] = constant
+    for name, separator in source.get("lists", {}).items():
+        at = need(name, "lists")
+        pattern = r"\r?\n" if separator == "newline" else re.escape(separator)
+        for row in rows:
+            row[at] = "; ".join(p for p in (part.strip() for part in re.split(pattern, row[at])) if p)
     if "id_prefix" in source:
         if not id_column:
             raise ConfigError(f"{where} sets 'id_prefix', which needs an ID column: use --id-column or set id_column")
         at = column(id_column)
+        id_from = source.get("id_from") or (["Field", "Name"] if constants.get("Type") == "Value" else None)
+        parts_at = [need(name, "id_from") for name in id_from] if id_from else []
         names = out_headers.index("Name") if "Name" in out_headers else None
         aliases = out_headers.index("Aliases") if "Aliases" in out_headers else None
         for number, row in enumerate(rows, start=2):
             if row[at].strip():
                 continue
-            alias = next((a.strip() for a in row[aliases].split(";") if a.strip()), "") if aliases is not None else ""
-            slug = _slug(alias) or (_slug(row[names]) if names is not None else "")
+            if id_from:
+                slug = "-".join(filter(None, (_slug(row[i]) for i in parts_at)))
+            else:
+                alias = next((a.strip() for a in row[aliases].split(";") if a.strip()), "") if aliases is not None else ""
+                slug = _slug(alias) or (_slug(row[names]) if names is not None else "")
             if not slug:
                 raise InputError(
-                    f"{where}: row {number} has no ID and no Aliases or Name to build one from for id_prefix"
+                    f"{where}: row {number} has no ID and nothing to build one from for id_prefix"
+                    + (f" ({', '.join(id_from)} are empty)" if id_from else " (no Aliases or Name)")
                 )
             row[at] = source["id_prefix"] + slug
     elif id_column and id_column not in out_headers:
