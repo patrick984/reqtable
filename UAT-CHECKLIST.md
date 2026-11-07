@@ -113,19 +113,29 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 3. Apply an edit, then test Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+Y outside the editor. Repeat in a textarea and verify native text editing handles the shortcuts.
 4. Add above and below a selected row using the Edit menu and the `O`/`o` shortcuts. Confirm the new row opens for editing. Move a row, then rename its ID. Export and verify CSV row order. Undo and redo the structural changes.
 5. Edit the final blank row, cancel, and confirm no row appears in the CSV. Commit a non-empty value, confirm the generated ID is unique, and verify there is still exactly one blank entry row.
-6. Open Changes since save. Verify unchanged rows are hidden initially and the Filter menu can show them. Move a row and look for the order-change indicator. Edit Markdown and verify bold, lists, code, and safe links still render in unified and side-by-side views with changed words highlighted.
+6. Open **Compare with last save** from View. Verify unchanged rows are hidden initially and the Filter menu can show them. Move a row and look for the order-change indicator. Edit Markdown and verify bold, lists, code, and safe links still render in unified and side-by-side views with changed words highlighted.
 7. With the native file picker available, use Save CSV As, make a change, then use Save CSV and verify it reuses the same destination. Cancel a later Save As and confirm the saved baseline is unchanged. Verify ordinary downloads in a browser without the picker.
 8. With local storage available, edit a cell, close the report and reopen it from the same path. Recover the draft from File and confirm the edit is present. With a writable handle, commit another change and verify autosave updates the CSV. Pause autosave and verify subsequent changes require a manual save.
 
 9. In Develop mode, use Tab and Shift+Tab across row boundaries and out of the grid. Try Ctrl/Cmd+Arrow on filled cells and across a blank gap. With a filter active and a column hidden, verify Ctrl/Cmd+Home and Ctrl/Cmd+End reach the visible data corners. Use `gg` and Shift+G to reach the first row and blank entry row. Press `i` on a non-ID cell, type `hjkl` in the editor, and press Escape to return to the same cell.
 10. In Chromium, click directly on the text in an editable cell, then paste a two-row, two-column block of tab-separated text. Verify all four values update and one Undo restores them. Click the text in another cell, copy it, and paste into a different cell. Verify pasting into an open cell editor or a column filter only inserts text into that field.
+11. Use Alt/Option+/ to search menus and run a command. Apply two filters, then remove one from the active filter summary and verify the other remains.
+12. Double-click and press F2 in Category and Acceptance Criteria. Confirm the former selects the existing text and the latter places the caret at the end. In a narrow column near the right edge, verify the editor expands within the visible grid. Choose a suggestion and confirm it commits.
+13. In source order, drag one row and then a selected block. Check the drag preview and drop line. Move a selected block by holding the Spreadsheet move shortcut, then check its order and selection.
+14. In **Compare with last save**, revert an edited cell and restore a deleted row that had a comment. Verify that the restored row includes the comment and that Undo reverses each operation.
+
+## Requirement quality
+
+1. Open **View → Check requirement quality** on a fixture with missing obligations, repeated keywords, placeholders and vague wording. Verify the report finds issues offline, including issues on filtered-out requirements.
+2. Click a finding card to focus its cell, then use **Edit wording** to open its editor and verify the flagged occurrence is selected. Verify the grid marker opens the matching card and **Show rows with findings** filters the grid.
+3. Change quality settings, dismiss a finding with a reason, then save and reopen an HTML copy. Confirm settings and the dismissal survive. Restore the finding. Dismiss it again and edit its source text to verify the old dismissal does not suppress the new finding.
 
 ## Systems and traceability pilot
 
 Generate the Develop and Review reports using the `--traceability` commands in the [README](README.md#systems-and-traceability-pilot). Work on a copy of the CSV when testing saves.
 
 1. Confirm **Requirements** opens with the core writing columns, including Verification Method. Narrow the ID column and confirm the ID sits below the grab handle. Use the **System** selector to show Python generator and Browser report in turn. Edit `REQ-003` in one scope and confirm the other shows the same edit. Select ReqTable with **Include subsystems** enabled and confirm `REQ-003` appears once.
-2. Select `REQ-003`, check that its ID cell has a link indicator, and use **Links** in the workspace bar. Follow the proposed need into **Needs & Sources**, then return with **Back to previous record**. From the Python generator scope, follow the browser child and confirm **Reveal in grid** retains that scope. Remove the reveal via **Active filters**.
+2. Select `REQ-003`, check that its ID cell has a link indicator, and use **Links** in the workspace bar. Follow the offline workflow need into **Needs & Sources**, then return with **Back to previous record**. From the Python generator scope, follow the browser child and confirm **Reveal in grid** retains that scope. Remove the reveal via **Active filters**.
 3. In **Systems**, add a subsystem under a selected parent and rename it. Use **Move to…** and verify the picker excludes the system and its descendants. Delete a system with allocations and owners, choose where to reassign each, and verify one Undo restores the system and its links.
 4. Use **Allocate to…** to change several systems in one edit. Use **Add child requirement…** and verify the parent link. Enter a missing or wrong-type link in **All fields**, then confirm **Trace findings** identifies it and repair it from the Links panel.
 5. Rename `REQ-003` and confirm both child references and an attached comment follow it. Cancel its deletion and confirm nothing changes. Confirm deletion, then undo and verify the record, links and comment return together.

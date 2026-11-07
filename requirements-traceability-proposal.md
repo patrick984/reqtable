@@ -1,6 +1,6 @@
 # ReqTable systems and traceability proposal
 
-**Status:** Implemented as an opt-in pilot. See the [README](README.md#systems-and-traceability-pilot) for generation commands and the [UAT checklist](UAT-CHECKLIST.md#systems-and-traceability-pilot) for trial scenarios.
+**Status:** Implemented as an opt-in pilot. The [reviewed baseline](requirements-uat.csv) applies the model to ReqTable's full requirement set. See the [README](README.md#systems-and-traceability-pilot) for generation commands and the [UAT checklist](UAT-CHECKLIST.md#systems-and-traceability-pilot) for trial scenarios.
 
 ReqTable should support system breakdown, requirement allocation, and traceability in a single CSV. The generated report should derive its navigation, reverse links, and findings from that CSV and run offline. The pilot will use ReqTable itself as the system, with the Python generator and Browser report as subsystems.
 
@@ -43,7 +43,7 @@ Use semicolon-separated ID lists in the multi-value fields and trim whitespace a
 
 Keep existing requirement columns such as Category, Priority, Acceptance Criteria, Verification Method, and Source Section. The pilot can add structured links alongside the existing Source Section citations.
 
-## ReqTable pilot
+## Original ReqTable pilot
 
 Keep existing requirement wording and IDs. The pilot adds a small set of system records, allocations, and clearly labelled proposals to demonstrate a complete trace from an embedded need to distinct subsystem obligations.
 
@@ -60,6 +60,21 @@ Keep existing requirement wording and IDs. The pilot adds a small set of system 
 | `REQ-145` | Requirement | Existing keyboard navigation and offline shortcut help requirement. | | `SYS-REPORT` | `SYS-REPORT` | | |
 
 The proposed children have separate verification activities. Run the generator against a local fixture with networking disabled, then open the resulting HTML with networking disabled and exercise the review and save-copy workflows. Retain end-to-end ownership of `REQ-003` at the ReqTable level. The existing source statements are in [requirements-uat.csv](requirements-uat.csv).
+
+## Baseline review
+
+The Python generator owns CLI, configuration and CSV input, diff and HTML generation, and comment extraction. The browser report owns the grid, review and comments, Develop editing and persistence, requirement quality, and the traceability workspace. Report-wide presentation and accessibility stay with the browser report. End-to-end offline operation, shared security and performance obligations, and project verification have an owner at the ReqTable level.
+
+The CSV preserves the original IDs and relative row order. Every requirement has an owner and one or more allocations. A shared requirement has one row and multiple allocations where the same obligation applies. For example, the diff matching requirements apply to both generation and the browser grid because the generated report rebuilds its view from the embedded source data. **Derived from** records how a requirement elaborates an upstream obligation. **Source refs** records provenance, with the original specification sections or implementation commits identified in **Source Section**.
+
+The review corrected requirements that described old behavior, including header metadata, saved filenames, flat versus traceability views, and the distinction between a source CSV comparison and the Develop comparison with the last save. Requirements `REQ-214` to `REQ-259` cover additional behavior identified in Git history.
+
+The review retained these open items:
+
+- `REQ-077` requires source order for equal sort keys. The current descending comparator also reverses the tie-break, so equal nonempty values can appear in reverse source order.
+- `REQ-097` calls for a browser warning when leaving with unsaved comments. The current report has an unsaved indicator and Develop draft recovery, but no `beforeunload` handler.
+- `REQ-110`, `REQ-113`, and `REQ-115` retain the contrast and capacity targets. This review did not establish WCAG contrast conformance or measure the maximum-size fixtures against an agreed time and memory budget.
+- `REQ-123` and `REQ-131` cover the minimum Python runtime and packaging verification. The current suite does not explicitly exercise the zipapp or define a minimum-version test matrix.
 
 ## Report and editing workflow
 
