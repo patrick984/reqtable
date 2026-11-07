@@ -52,9 +52,13 @@ CSS = r"""
 #table-context-menu[hidden]{display:none}
 #table-context-menu button{display:block;width:100%;text-align:left;border:0}
 #table-context-menu button:hover,#table-context-menu button:focus-visible{background:var(--selected)}
-.row-with-grip{position:relative;padding-inline-start:25px}.row-with-grip .cell-wrap{padding-inline-end:0}
+.row-id{position:relative;font-size:.85em;font-weight:600;font-variant-numeric:tabular-nums}
+.row-id .cell-wrap{padding-inline-end:0;min-height:0}
+.row-with-grip{padding-inline-start:25px}
 .row-grip{position:absolute;inset-inline-start:7px;top:8px;color:var(--muted);cursor:grab;user-select:none;touch-action:none}
 .row-grip[aria-disabled="true"]{cursor:not-allowed;opacity:.55;touch-action:auto}
+.compact-row-ids .row-with-grip{padding:4px 6px 8px}
+.compact-row-ids .row-grip{position:static;display:block;width:20px;margin:0 auto 3px;line-height:16px;text-align:center}
 [data-grid-cell].range-selected:not(.selected-cell){background:var(--selected)}
 [data-grid-cell].whole-row-selected:not(.selected-cell){box-shadow:inset 0 -2px var(--accent)}
 #row-drag-preview{position:fixed;z-index:85;pointer-events:none;width:max-content;max-width:min(280px,calc(100vw - 16px));padding:6px 10px;background:var(--panel);color:var(--text);border:1px solid var(--accent);border-radius:6px;box-shadow:var(--shadow);opacity:.88;overflow-wrap:anywhere}
@@ -181,7 +185,13 @@ function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell
 function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
 function commentCard(c,actions=""){const stamp=displayTimestamp(c.modified||c.created);return `<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(stamp)}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><div class="markdown">${renderCommentMarkdown(c.text)}</div>${actions}</article>`;}
 
-function dataCell(row,column,ri,ci,canDrag){const tag=column.name===data.meta.idColumn?"th":"td",scope=tag==="th"?' scope="row"':"";const grip=tag==="th"&&row.id&&developMode();const links=tag==="th"?trace?.rowButton(row)??"":"";return `<${tag}${scope} ${grip?'class="row-with-grip"':""} tabindex="-1" data-grid-cell data-row-index="${ri}" data-column-index="${ci}" data-column="${escapeHtml(column.name)}">${grip?rowGrip(canDrag):""}${renderCell(row,column)}${links}</${tag}>`;}
+function dataCell(row,column,ri,ci,canDrag){
+  const isId=column.name===data.meta.idColumn,tag=isId?"th":"td";
+  const grip=isId&&row.id&&developMode();
+  const attributes=isId?`scope="row" class="${row.id?"row-id":""}${grip?" row-with-grip":""}"`:"";
+  const marker=isId?trace?.rowMarker(row.id)??"":"";
+  return `<${tag} ${attributes} tabindex="-1" data-grid-cell data-row-index="${ri}" data-column-index="${ci}" data-column="${escapeHtml(column.name)}">${grip?rowGrip(canDrag):""}${renderCell(row,column)}${marker}</${tag}>`;
+}
 
 function rowGrip(enabled){
   const title=enabled?"Drag to reorder requirement":"Reordering needs the normal view in source order with no filters";
@@ -592,7 +602,10 @@ ${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-l
   }else content="";
 }else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
-function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;}
+function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;
+  const idWidth=widths[cols.findIndex(column=>column.name===data.meta.idColumn)];
+  table.classList.toggle("compact-row-ids",idWidth<=110);
+}
 function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();renderQualityPanel();}
 function syncModeUi(){
   if(trace){
@@ -1064,6 +1077,7 @@ function openTableContext(cell,x,y){
   const index=state.currentRows.findIndex(row=>rowId(row)===selectedRequirementId());
   const actions=[];
   if(index>=0){
+    if(trace)actions.push("trace-selected-links");
     actions.push("add-above","add-below");
     if(index>0)actions.push("move-up");
     if(index<state.currentRows.length-1)actions.push("move-down");

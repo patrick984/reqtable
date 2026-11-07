@@ -136,9 +136,12 @@ const trace=(()=>{
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
   const viewBar=$("#trace-views"),systemSelect=$("#trace-system"),status=$("#trace-status");
   const wrap=$(".table-wrap"),systemsPage=$("#trace-systems");
-  const requirementsDefaults=new Set([data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria"]);
+  const selectedLinks=$("#trace-selected-links");
+  const requirementsDefaults=new Set([
+    data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
+  ]);
   const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
-  const relationshipColumns=new Set([...Object.keys(traceFields),"Type","Reference","Origin","Rationale"]);
+  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Rationale"]);
   const labels={
     "Part of":["Parent system","Move to…"],
     "Allocated to":["Applies to","Allocate to…"],
@@ -161,7 +164,7 @@ const trace=(()=>{
   };
 
   function columnAvailable(name){
-    if(view==="requirements")return !relationshipColumns.has(name);
+    if(view==="requirements")return !traceMetadata.has(name);
     if(view==="sources")return sourceColumns.has(name);
     return true;
   }
@@ -276,6 +279,7 @@ const trace=(()=>{
     $("#columns-menu").hidden=inSystems;
     $("#filter-menu").hidden=inSystems;
     $("#trace-scope").hidden=view!=="requirements";
+    selectedLinks.hidden=inSystems;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
@@ -360,6 +364,9 @@ const trace=(()=>{
     if(view==="systems")id=selectedSystem;
     if(id===selected&&!force)return;
     selected=id;
+    selectedLinks.disabled=!index.records.has(id);
+    selectedLinks.title=selectedLinks.disabled?"Select a current record to view its links":`Show links for ${id}`;
+    selectedLinks.setAttribute("aria-label",selectedLinks.disabled?"Links":`Links for ${id}`);
     pending=null;
     renderDetail();
   }
@@ -374,6 +381,7 @@ const trace=(()=>{
     closeQuality();
     panel.hidden=false;
     $("#open-trace").setAttribute("aria-expanded","true");
+    selectedLinks.setAttribute("aria-expanded","true");
     renderIssues();
     syncSelection(id,true);
     renderLayout();
@@ -383,6 +391,7 @@ const trace=(()=>{
     if(panel.hidden)return;
     panel.hidden=true;
     $("#open-trace").setAttribute("aria-expanded","false");
+    selectedLinks.setAttribute("aria-expanded","false");
     renderLayout();
   }
   function focusRecord(id){
@@ -532,6 +541,7 @@ const trace=(()=>{
     clone.querySelector(".table-wrap").hidden=false;
     clone.querySelector("#trace-systems").hidden=true;
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
+    clone.querySelector("#trace-selected-links").setAttribute("aria-expanded","false");
     for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system"]){
       clone.querySelector("#"+id).replaceChildren();
     }
@@ -594,13 +604,10 @@ const trace=(()=>{
     if(panel.hidden)openPanel(view==="systems"?selectedSystem:selectedRequirementId());
     else {close();restoreSelectedCell();}
   });
-  tableBody.addEventListener("click",event=>{
-    const button=event.target.closest("[data-trace-row]");
-    if(!button||!canNavigate())return;
-    event.stopPropagation();
+  selectedLinks.addEventListener("click",()=>{
+    if(!canNavigate())return;
     previous=null;
-    restoreGridSelection(button.dataset.traceRow,data.meta.idColumn);
-    openPanel(button.dataset.traceRow);
+    openPanel(selectedRequirementId());
   });
   for(const dialog of [editor,picker,deletion])dialog.addEventListener("keydown",event=>event.stopPropagation());
   $("#close-trace").addEventListener("click",()=>{
@@ -713,11 +720,10 @@ const trace=(()=>{
       if(view==="all")return `${count} of ${data.rows.length} records`;
       return `${count} requirements`;
     },
-    rowButton:row=>{
-      if(!index.records.has(row.id))return "";
-      const record=index.records.get(row.id);
-      const text=view==="sources"?`Links (${record.incoming.filter(edge=>edge.field==="Source refs").length})`:"Links";
-      return ` <button type="button" class="trace-row-link" data-trace-row="${escapeHtml(row.id)}" aria-label="Links for ${escapeHtml(row.id)}">${text}</button>`;
+    rowMarker:id=>{
+      const record=index.records.get(id);
+      if(!record||(!record.incoming.length&&!Object.keys(traceFields).some(field=>traceIds(record.row[field]).length)))return "";
+      return '<span class="trace-row-marker" role="img" aria-label="Has trace links" title="Has trace links"></span>';
     },
     rename:(oldId,newId)=>{
       if(system===oldId)system=newId;
@@ -753,6 +759,7 @@ TRACE_WORKSPACE = """
     <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
   </div>
   <button id="trace-view-add" type="button" hidden>Add requirement…</button>
+  <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
   <span id="trace-source-actions" hidden>
     <button id="trace-need-add" type="button">Add need…</button>
     <button id="trace-source-add" type="button">Add source…</button>
@@ -844,7 +851,7 @@ TRACE_CSS = """
 #trace-tree [data-trace-system] {flex:1;text-align:start;overflow-wrap:anywhere}
 #trace-tree [data-trace-collapse],.trace-tree-leaf {width:26px;flex:none}
 #trace-tree .meta {white-space:nowrap}
-.trace-row-link {font-size:.83em;padding:0 4px;margin-inline-start:3px;color:var(--accent)}
+.trace-row-marker {position:absolute;inset-block-start:5px;inset-inline-end:4px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 #trace-panel {width:min(380px,100vw)}
 #trace-panel h3 {font-size:1.05em;margin:8px 0 4px}
 #trace-record {margin:8px 0;overflow-wrap:anywhere}
@@ -865,5 +872,5 @@ TRACE_CSS = """
 #trace-systems[hidden],#trace-scope[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
-@media print {#trace-workspace,#trace-panel,.trace-row-link,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
+@media print {#trace-workspace,#trace-panel,.trace-row-marker,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
 """
