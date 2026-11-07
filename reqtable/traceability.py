@@ -164,9 +164,9 @@ const trace=(()=>{
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };
-  const testColumnOrder=[data.meta.idColumn,"Type","Name","Test plan","Verification Method","Reference","Requirement"];
+  const testColumnOrder=[data.meta.idColumn,"Type","Name","Test plan","Verification Method","Verification Phase","Reference","Requirement"];
   const testLayout={
-    defaults:new Map([[data.meta.idColumn,110],["Type",84],["Name",168],["Test plan",110],["Verification Method",150],["Reference",220],["Requirement",260]]),
+    defaults:new Map([[data.meta.idColumn,110],["Type",84],["Name",168],["Test plan",110],["Verification Method",150],["Verification Phase",140],["Reference",220],["Requirement",260]]),
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };

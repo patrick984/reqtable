@@ -233,6 +233,8 @@ In Develop mode, editing a column that has `Value` records suggests exactly the 
 
 Renaming a value in its **Name** cell asks `Rename “Should” to “Recommended” in 39 rows that use it?`. Choose OK to rewrite those cells in the same step, so one **Undo** restores the name and the rows. Choose Cancel to change only the name, and the rows then show findings. Matching is exact and case-sensitive on the whole cell, or on each semicolon-separated segment in a `Multiple` column. Value and Field records are never rewritten. Renaming a `Field` record, or changing a value's **Field**, does not update any rows.
 
+The pilot's `requirements-uat.csv` defines Priority (`Must`, `Should`, `Could`), Verification Method, and **Verification Phase**, which uses the V-model test levels `Unit test`, `Integration test`, `System test` and `Acceptance test` and allows several per cell. Its Test records carry a phase; its requirements leave the phase blank until it is assigned.
+
 ### Tests
 
 Requirements can point at the tests that verify them. A `Test plan` record groups tests, and a `Test` record is one test, script or checklist. Both are rows in the same CSV, with a **Name**, an optional description in **Requirement** and a **Reference** for the external link, for example a test-management tool URL. Only HTTP, HTTPS and mailto links render as links, so write a repository path as code, such as `` `tests/test_core.py` ``.

@@ -5,9 +5,9 @@
 - [x] XLSX column mapping: merge a separate glossary table (Name, Definition, Aliases) into Term rows and map differently named columns, via a saved JSON mapping.
 - [x] Move undo/redo to top of edit menu, add copy/past/delete.
 - [x] Update requirements-uat.csv to add any missing glossary terms.
-- [ ] Verification Method and Priority values should be constrained to definitions stored in the table (similar to the glossary).
+- [x] Verification Method and Priority values should be constrained to definitions stored in the table (similar to the glossary).
   - Decisions: allowed values are `Type=Value` records (`Field` names the column, `Name` is the value, `Definition` explains it, optional `Aliases` for replaced spellings and `Reference` for an external link). Per-column rules are `Type=Field` records (`Name` is the column, `Definition` describes it, `Multiple=Yes` allows semicolon-separated values). Undefined values are flagged, never blocked. A column is checked only when it has at least one Value record. Checks need `--traceability`.
-  - UAT data: Priority `Must`, `Should`, `Could`. Verification Method keeps `Manual browser test`, `Automated test`, `Automated and manual test`, `Manual UAT`, `Manual accessibility test`, `Performance test`, `Documentation review`; `Manual verification` becomes an alias of `Manual browser test`. Add a Verification Phase column with its own values (open: the list of phases is not decided).
+  - UAT data: Priority `Must`, `Should`, `Could`. Verification Method keeps `Manual browser test`, `Automated test`, `Automated and manual test`, `Manual UAT`, `Manual accessibility test`, `Performance test`, `Documentation review`; `Manual verification` becomes an alias of `Manual browser test`. Verification Phase uses the V-model levels `Unit test`, `Integration test`, `System test`, `Acceptance test` (Multiple=Yes), filled on Test records; requirements are left blank for now.
   - [x] Phase 1: Value and Field record types; Trace findings for undefined values, alias spellings, multi-value columns, and invalid Value/Field records; UAT CSV definitions.
   - [x] Phase 2: editor suggests defined values with definitions (multi-select where `Multiple=Yes`) and marks flagged cells.
   - [x] Phase 3: Values view in the Glossary, `Add value…` in Develop, renaming a value updates the rows that use it.
