@@ -205,7 +205,7 @@ Renaming a value in its **Name** cell asks `Rename “Should” to “Recommende
 
 ### Tests
 
-Requirements can point at the tests that verify them. A `Test plan` record groups tests, and a `Test` record is one test, script or checklist. Both are rows in the same CSV, with a **Name**, an optional description in **Requirement** and a **Reference** for the external link, for example a test-management tool URL or a Markdown link to a file in the repository. Only HTTP, HTTPS and mailto links render as links. Other targets show as text.
+Requirements can point at the tests that verify them. A `Test plan` record groups tests, and a `Test` record is one test, script or checklist. Both are rows in the same CSV, with a **Name**, an optional description in **Requirement** and a **Reference** for the external link, for example a test-management tool URL. Only HTTP, HTTPS and mailto links render as links, so write a repository path as code, such as `` `tests/test_core.py` ``.
 
 Open **Tests** to list every `Test plan` and `Test` record in table order, with ID, Type, Name, Test plan, Verification Method, Reference and Requirement columns. In Develop mode, **Add test plan…** and **Add test…** take an ID, Name and description, and **Add test…** offers the existing plans. Edit the other fields in the grid.
 

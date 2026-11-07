@@ -33,5 +33,5 @@ Preconditions:
 
 - **Verified by** and **Test plan** are hidden in the Requirements view like the other link columns. Use All fields to see them as cells.
 - The Tests view lists only Test and Test plan rows. A Test never appears in the Systems tree because it has no `Part of`.
-- Relative Markdown links in **Reference** (`[tests/](tests/)`) render as `label (target)` text, because only HTTP, HTTPS and mailto targets become links.
+- **Reference** only becomes a clickable link for HTTP, HTTPS and mailto targets. The UAT data therefore stores repository paths as code spans, such as `` `tests/test_core.py` ``, not as relative Markdown links.
 - `TEST-XLSX` and `TEST-GIT-BASELINE` verify no requirement. Their Verifies section is empty by design.

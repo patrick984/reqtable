@@ -315,10 +315,10 @@ VAL-VERIFICATION-METHOD-MANUAL-UAT,,,,,,,Value,Manual UAT,,,,,,,,,"A person work
 VAL-VERIFICATION-METHOD-MANUAL-ACCESSIBILITY-TEST,,,,,,,Value,Manual accessibility test,,,,,,,,,"A person inspects keyboard, screen reader and semantic markup behavior.",,,Verification Method,,,
 VAL-VERIFICATION-METHOD-PERFORMANCE-TEST,,,,,,,Value,Performance test,,,,,,,,,"A representative large workload is run and timing, responsiveness or memory is recorded.",,,Verification Method,,,
 VAL-VERIFICATION-METHOD-DOCUMENTATION-REVIEW,,,,,,,Value,Documentation review,,,,,,,,,A person reads the documentation to confirm it covers the requirement.,,,Verification Method,,,
-TP-UNIT,,Standard-library unittest suite run with `python3 -m unittest discover -s tests`.,,,,,Test plan,Automated unit tests,,,,,,[tests/](tests/),,,,,,,,,
-TP-UAT,,Manual walkthrough of generated reports in a browser.,,,,,Test plan,UAT checklist,,,,,,[UAT-CHECKLIST.md](UAT-CHECKLIST.md),,,,,,,,,
-TEST-TRACEABILITY,,"Record link validation, glossary matching, round trip of typed records and test records.",,,Automated test,,Test,Traceability tests,,,,,,[tests/test_traceability.py](tests/test_traceability.py),,,,,,,,,TP-UNIT
-TEST-VALUES,,"Value and Field records, undefined and alias spellings, editor suggestions and value renames.",,,Automated test,,Test,Allowed values tests,,,,,,[tests/test_values.py](tests/test_values.py),,,,,,,,,TP-UNIT
-TEST-CORE,,"Configuration validation, CSV parsing, diffing and report generation.",,,Automated test,,Test,Core parsing and configuration tests,,,,,,[tests/test_core.py](tests/test_core.py),,,,,,,,,TP-UNIT
-TEST-XLSX,,"Workbook reading, table and sheet selection, CSV export.",,,Automated test,,Test,XLSX input tests,,,,,,[tests/test_xlsx.py](tests/test_xlsx.py),,,,,,,,,TP-UNIT
-TEST-GIT-BASELINE,,Comparing against a committed file at a git revision.,,,Automated test,,Test,Git baseline tests,,,,,,[tests/test_git_baseline.py](tests/test_git_baseline.py),,,,,,,,,TP-UNIT
+TP-UNIT,,Standard-library unittest suite run with `python3 -m unittest discover -s tests`.,,,,,Test plan,Automated unit tests,,,,,,`tests/`,,,,,,,,,
+TP-UAT,,Manual walkthrough of generated reports in a browser.,,,,,Test plan,UAT checklist,,,,,,`UAT-CHECKLIST.md`,,,,,,,,,
+TEST-TRACEABILITY,,"Record link validation, glossary matching, round trip of typed records and test records.",,,Automated test,,Test,Traceability tests,,,,,,`tests/test_traceability.py`,,,,,,,,,TP-UNIT
+TEST-VALUES,,"Value and Field records, undefined and alias spellings, editor suggestions and value renames.",,,Automated test,,Test,Allowed values tests,,,,,,`tests/test_values.py`,,,,,,,,,TP-UNIT
+TEST-CORE,,"Configuration validation, CSV parsing, diffing and report generation.",,,Automated test,,Test,Core parsing and configuration tests,,,,,,`tests/test_core.py`,,,,,,,,,TP-UNIT
+TEST-XLSX,,"Workbook reading, table and sheet selection, CSV export.",,,Automated test,,Test,XLSX input tests,,,,,,`tests/test_xlsx.py`,,,,,,,,,TP-UNIT
+TEST-GIT-BASELINE,,Comparing against a committed file at a git revision.,,,Automated test,,Test,Git baseline tests,,,,,,`tests/test_git_baseline.py`,,,,,,,,,TP-UNIT
