@@ -213,8 +213,9 @@ ID,Type,Name,Field,Multiple,Aliases,Definition,Priority,Verification Method
 FIELD-VM,Field,Verification Method,,Yes,,How the requirement is shown to be met.,,
 VAL-PRIORITY-MUST,Value,Must,Priority,,,Required for the release.,,
 VAL-PRIORITY-SHOULD,Value,Should,Priority,,,Expected but not blocking.,,
-VAL-VM-BROWSER,Value,Manual browser test,Verification Method,,Manual verification,A person checks the report in a browser.,,
-REQ-1,,,,,,,Shoud,Manual verification; Automated test
+VAL-VM-DEMO,Value,Demonstration,Verification Method,,Manual check,Operate it and observe the result.,,
+VAL-VM-TEST,Value,Test,Verification Method,,,Run it under controlled conditions and record results.,,
+REQ-1,,,,,,,Shoud,Manual check; Test
 ```
 
 A column is checked only when it has at least one `Value` record. Trace findings then report, on any other record with a non-empty cell:
@@ -233,17 +234,25 @@ In Develop mode, editing a column that has `Value` records suggests exactly the 
 
 Renaming a value in its **Name** cell asks `Rename “Should” to “Recommended” in 39 rows that use it?`. Choose OK to rewrite those cells in the same step, so one **Undo** restores the name and the rows. Choose Cancel to change only the name, and the rows then show findings. Matching is exact and case-sensitive on the whole cell, or on each semicolon-separated segment in a `Multiple` column. Value and Field records are never rewritten. Renaming a `Field` record, or changing a value's **Field**, does not update any rows.
 
-The pilot's `requirements-uat.csv` defines Priority (`Must`, `Should`, `Could`), Verification Method, and **Verification Phase**, which uses the V-model test levels `Unit test`, `Integration test`, `System test` and `Acceptance test` and allows several per cell. Its Test records carry a phase; its requirements leave the phase blank until it is assigned.
+A column with `Value` records shows by default in the Requirements and Tests views when that view's records use it, so a project's own column names need no configuration.
+
+The pilot's `requirements-uat.csv` follows the V-model with three constrained columns:
+
+- **Verification Method** says how a requirement is shown to be met: `Inspection`, `Analysis`, `Demonstration` or `Test`. Several are allowed per cell.
+- **Verification Level** says where on the V it is verified: `Unit`, `Integration`, `System` or `Acceptance` (alias `UAT`). Several are allowed per cell. Unit, Integration and System verify the product against its specification. Acceptance validates it against user needs.
+- **Execution** says how a test is run: `Manual` or `Automated`. It belongs on Test records, not requirements, because one requirement can be checked both ways by two tests.
+
+Priority uses `Must`, `Should` and `Could`.
 
 ### Tests
 
 Requirements can point at the tests that verify them. A `Test plan` record groups tests, and a `Test` record is one test, script or checklist. Both are rows in the same CSV, with a **Name**, an optional description in **Requirement** and a **Reference** for the external link, for example a test-management tool URL. Only HTTP, HTTPS and mailto links render as links, so write a repository path as code, such as `` `tests/test_core.py` ``.
 
-Open **Tests** to list every `Test plan` and `Test` record in table order, with ID, Type, Name, Test plan, Verification Method, Reference and Requirement columns. In Develop mode, **Add test plan…** and **Add test…** take an ID, Name and description, and **Add test…** offers the existing plans. Edit the other fields in the grid.
+Open **Tests** to list every `Test plan` and `Test` record in table order, with ID, Type, Name, Test plan, Reference and Requirement columns, plus each constrained column the tests use, such as Verification Method, Verification Level and Execution. In Develop mode, **Add test plan…** and **Add test…** take an ID, Name and description, and **Add test…** offers the existing plans. Edit the other fields in the grid.
 
 A requirement's **Verified by** column lists `Test` IDs. In its **Links** panel, choose **Link test…** to pick tests. A test's **Test plan** column holds at most one `Test plan` ID, set with **Set test plan…**. The panel shows the reverse links as **Verifies** on a test and **Tests** on a plan. The dedicated **Test plan** column keeps **Part of** for the Systems tree. Deleting a test or plan clears the links that point at it, and the confirmation lists them.
 
-The tests' **Verification Method** is checked against the table's `Value` records like any other row, so an undefined method shows a trace finding. **Trace findings** also reports links to missing or wrongly typed records.
+A test's constrained columns, such as **Verification Method**, are checked against the table's `Value` records like any other row, so an undefined method shows a trace finding. **Trace findings** also reports links to missing or wrongly typed records.
 
 ## Review comments
 

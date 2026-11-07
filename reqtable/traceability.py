@@ -156,7 +156,7 @@ const trace=(()=>{
   const wrap=$(".table-wrap"),systemsPage=$("#trace-systems");
   const selectedLinks=$("#trace-selected-links");
   const requirementsDefaults=new Set([
-    data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method","Verification Phase"
+    data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
   ]);
   const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
   const sourceLayout={
@@ -164,15 +164,20 @@ const trace=(()=>{
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };
-  const testColumnOrder=[data.meta.idColumn,"Type","Name","Test plan","Verification Method","Verification Phase","Reference","Requirement"];
+  const testTypes=["Test","Test plan"];
+  const constrainedColumns=types=>{
+    const records=[...(index?.records.values()??[])].filter(record=>types.includes(record.type));
+    return [...(index?.values.keys()??[])].filter(name=>records.some(record=>record.row[name]?.trim()));
+  };
+  const testColumnOrder=()=>[data.meta.idColumn,"Type","Name","Test plan",...constrainedColumns(testTypes),"Reference","Requirement"];
   const testLayout={
-    defaults:new Map([[data.meta.idColumn,110],["Type",84],["Name",168],["Test plan",110],["Verification Method",150],["Verification Phase",140],["Reference",220],["Requirement",260]]),
+    defaults:new Map([[data.meta.idColumn,110],["Type",84],["Name",168],["Test plan",110],["Reference",220],["Requirement",260]]),
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };
   const listViews={
     sources:{types:["Need","Source"],columns:sourceColumns,layout:sourceLayout,summary:count=>`${count} needs and sources`},
-    tests:{types:["Test","Test plan"],columns:new Set(testColumnOrder),layout:testLayout,summary:count=>`${count} test records`},
+    tests:{types:testTypes,get columns(){return new Set(testColumnOrder());},layout:testLayout,summary:count=>`${count} test records`},
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
@@ -214,8 +219,9 @@ const trace=(()=>{
     return true;
   }
   function defaultHidden(){
+    const shown=new Set([...requirementsDefaults,...constrainedColumns(["Requirement"])]);
     return new Set(data.columns.filter(({name,hidden})=>name===data.meta.idColumn
-      ?view==="glossary":hidden||(view==="requirements"&&!requirementsDefaults.has(name))).map(({name})=>name));
+      ?view==="glossary":hidden||(view==="requirements"&&!shown.has(name))).map(({name})=>name));
   }
   const viewStates=new Map();
   const collapsed=new Set();
@@ -271,9 +277,10 @@ const trace=(()=>{
       :traceIds(row.cells["Allocated to"]?.old);
     return unallocated?!allocated.length:allocated.some(id=>scope.has(id));
   }
+  const buildIndex=()=>buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn});
   function refresh(){
     glossaryPopover.close();
-    index=buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn});
+    index=buildIndex();
     if(index.records.get(system)?.type!=="System")system="";
     if(revealed&&!index.records.has(revealed)&&!data.rows.some(row=>row.id===revealed))revealed=null;
     scope=new Set();
@@ -676,6 +683,7 @@ const trace=(()=>{
     }
   }
 
+  index=buildIndex();
   state.hidden=defaultHidden();
   wrap.hidden=false;
   viewBar.addEventListener("click",event=>{
@@ -878,7 +886,7 @@ const trace=(()=>{
   return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
-      :view==="tests"?testColumnOrder.indexOf(name):0,
+      :view==="tests"?testColumnOrder().indexOf(name):0,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
     scoped:()=>view==="systems"||view==="glossary"||!!listViews[view]||(view==="requirements"&&(!!system||unallocated))||!!revealed,
