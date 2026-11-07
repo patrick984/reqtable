@@ -57,6 +57,11 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
   display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
   position:relative; gap:4px 12px; margin-bottom:14px;
 }
+@media screen {
+  .page {padding-inline:0; padding-bottom:0}
+  .report-header,.recovery-notice {margin-inline:18px}
+  .toolbar {border-radius:0}
+}
 .report-identity,.save-area {display:flex; align-items:center; gap:6px; min-width:0}
 .report-identity {max-width:100%}
 .save-area {margin-inline-start:auto}
@@ -83,6 +88,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
   .table-wrap {min-height:0}
 }
 @media screen and (max-width:700px) {
+  .report-header,.recovery-notice {margin-inline:7px}
   .report-header {margin-bottom:7px}
 }
 @media print {
