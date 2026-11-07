@@ -91,6 +91,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 }
 .report-identity,.save-area {display:flex; align-items:center; gap:6px; min-width:0}
 .report-identity {max-width:100%}
+.report-identity .report-info {margin-inline-start:12px}
 .save-area {margin-inline-start:auto}
 .report-identity h1 {margin:0; font-size:1.3rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .report-identity .mode-badge,.report-identity .report-info>summary {
@@ -122,6 +123,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 @media screen and (max-width:700px) {
   .report-header,.recovery-notice {margin-inline:7px}
   .report-header {margin-bottom:7px}
+  .report-identity .report-info {margin-inline-start:1px}
 }
 @media print {
   .report-header .header-disclosure,#save-status {display:none}
