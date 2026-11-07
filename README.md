@@ -106,13 +106,13 @@ While editing in Spreadsheet mode, Enter commits and moves down, Shift+Enter com
 
 Narrow cells open a wider editor anchored to the selected cell. It fits within the grid's visible width and uses the same shortcuts and suggestions as the inline editor.
 
-With a grid cell focused in Spreadsheet mode, Ctrl/Cmd+Shift+Up or Down adds a requirement above or below. Alt/Option+Shift+Up or Down moves the selected requirement. Ctrl/Cmd+Backspace or Delete opens the delete confirmation. The Edit menu shows shortcuts for the active keyboard mode. Press Alt/Option+/ to search available menu commands, then use the arrow keys and Enter to run one.
+With a grid cell focused in Spreadsheet mode, Ctrl/Cmd+Shift+Up or Down adds a requirement above or below. Alt/Option+Shift+Up or Down moves the selected requirement. Ctrl/Cmd+Backspace or Delete opens the delete confirmation. Plain Delete or Backspace clears the selected cells; the ID column, protected columns and removed rows are skipped, and one Undo restores them. The Edit menu shows shortcuts for the active keyboard mode. Press Alt/Option+/ to search available menu commands, then use the arrow keys and Enter to run one.
 
 Committing an edit removes trailing whitespace and blank lines. Columns with up to 50 distinct nonempty values, each a single line of at most 60 characters, suggest existing values as you type. Click a suggestion or use Down Arrow and Enter to select it and commit the edit. You can also enter a new value.
 
 In Develop mode, right-click a cell or press Shift+F10 on a focused cell to open its actions. Drag the grip beside a requirement ID to reorder it in the normal view with source order and no filters. The line shows where the row will land. One Undo reverses the move.
 
-Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the underlying values as tab-separated text. Ctrl/Cmd+V pastes starting at the active cell, in visible row and column order. The whole paste is rejected if it would touch a protected cell, a removed row, or the edge of the table. One Undo reverses a paste.
+Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the underlying values as tab-separated text. Ctrl/Cmd+V pastes starting at the active cell, in visible row and column order. The whole paste is rejected if it would touch a protected cell, a removed row, or the edge of the table. One Undo reverses a paste. The **Edit** menu lists Undo and Redo first, then **Copy**, **Paste** and **Clear cells**, which act on the selected cells. Menu **Paste** reads the system clipboard, so the browser may ask for permission. If it is refused, the status line says so and Ctrl/Cmd+V still works. **Clear cells** is separate from **Delete requirement**, which removes the whole row.
 
 Click an ID cell to select the row, then Shift+click another ID or use Shift+Up/Down to select a block. Drag any selected row’s grip to move the whole block in its existing order.
 

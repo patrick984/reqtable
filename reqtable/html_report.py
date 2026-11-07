@@ -781,6 +781,10 @@ function handleSpreadsheetRowShortcut(event){
     action=direction<0?"add-above":"add-below";
   }else if(command&&!event.shiftKey&&!event.altKey&&["Backspace","Delete"].includes(event.key)){
     action="delete-requirement";
+  }else if(!command&&!event.shiftKey&&!event.altKey&&["Backspace","Delete"].includes(event.key)){
+    event.preventDefault();
+    if(!event.repeat)clearSelectedCells();
+    return true;
   }
   if(!action)return false;
   event.preventDefault();
@@ -1394,8 +1398,11 @@ function parseClipboardBlock(text){
 function pasteSelection(event){
   if(!gridClipboardEvent()||!event.clipboardData?.types.includes("text/plain"))return;
   event.preventDefault();
+  applyPasteText(event.clipboardData.getData("text/plain"));
+}
+function applyPasteText(text){
   let block;
-  try{block=parseClipboardBlock(event.clipboardData.getData("text/plain"));}
+  try{block=parseClipboardBlock(text);}
   catch(error){alert(error.message);return;}
   const {row:startRow,column:startColumn}=state.focus;
   const columns=visibleColumns(),rows=sortedRows(),current=byId(state.currentRows);
@@ -1421,6 +1428,43 @@ function pasteSelection(event){
   render();
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
+function clearSelectedCells(){
+  if(!developMode()||state.editingCell)return;
+  const {top,bottom,left,right}=selectionBounds();
+  const columns=visibleColumns().slice(left,right+1),rows=sortedRows().slice(top,bottom+1),current=byId(state.currentRows);
+  const editable=columns.map(column=>column.name).filter(name=>name!==data.meta.idColumn&&data.source.new.headers.includes(name));
+  const changes=[];
+  for(const source of rows){
+    const row=current.get(source.id);
+    if(!row)continue;
+    for(const name of editable)if(String(row[name]??"")!=="")changes.push({row,name});
+  }
+  if(!changes.length)return;
+  remember();
+  for(const {row,name} of changes)row[name]="";
+  updateDirty();
+  render();
+  requestAnimationFrame(()=>focusGridCell(state.focus.row,state.focus.column,true));
+}
+function syncClipboardActions(){
+  const disabled=!developMode()||!!state.editingCell||!gridCells().length;
+  for(const id of ["copy-cells","paste-cells","clear-cells"])$("#"+id).disabled=disabled;
+}
+$("#copy-cells").addEventListener("click",()=>{
+  if(state.editingCell)return;
+  focusGridCell(state.focus.row,state.focus.column,true);
+  document.execCommand("copy");
+});
+$("#paste-cells").addEventListener("click",async()=>{
+  if(state.editingCell)return;
+  let text;
+  try{text=await navigator.clipboard.readText();}
+  catch{$("#save-status").textContent="Paste from the menu needs clipboard permission; use Cmd/Ctrl+V";return;}
+  $("#save-status").textContent="";
+  applyPasteText(text);
+});
+$("#clear-cells").addEventListener("click",clearSelectedCells);
+$("#edit-menu").addEventListener("toggle",syncClipboardActions);
 tableBody.addEventListener("copy",copySelection);
 tableBody.addEventListener("paste",pasteSelection);
 
@@ -1772,7 +1816,7 @@ TEMPLATE = r"""<!doctype html>
 <div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
-<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
+<details id="edit-menu" class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button><div class="menu-section"><button id="copy-cells" disabled>Copy <kbd data-shortcut="Mod C"></kbd></button><button id="paste-cells" disabled>Paste <kbd data-shortcut="Mod V"></kbd></button><button id="clear-cells" disabled>Clear cells <kbd data-shortcut="Delete" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section diff-only"><button id="revert-selected-cell" disabled>Revert selected cell</button><button id="restore-deleted-requirement" disabled>Restore deleted requirement</button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="review-comparison" hidden>Show current requirements</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
