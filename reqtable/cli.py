@@ -21,7 +21,7 @@ from .core import (
     read_csv_source,
 )
 from .html_report import render_report
-from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, read_selection
+from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
 
 def parser() -> argparse.ArgumentParser:
@@ -53,6 +53,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--sheet", help="read this sheet from each .xlsx input")
     result.add_argument("--header-row", type=int, metavar="N", help="header row number on --sheet; default is the first non-empty row")
     result.add_argument("--list-tables", metavar="WORKBOOK.xlsx", help="list the sheets and tables of a workbook and exit")
+    result.add_argument(
+        "--xlsx-mapping-template", metavar="WORKBOOK.xlsx",
+        help="print a JSON configuration that maps every table and sheet of a workbook, and exit",
+    )
     result.add_argument("--print-default-config", action="store_true")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return result
@@ -111,7 +115,11 @@ def file_source(path: str) -> CsvSource:
 
 
 def xlsx_source(path: str, selection: XlsxSelection, config: dict[str, object]) -> CsvSource:
-    block = read_selection(path, selection)
+    sources = config["xlsx"]["sources"]  # type: ignore[index]
+    if sources:
+        block = read_mapped(path, sources, config["id_column"], config["traceability"])  # type: ignore[arg-type]
+    else:
+        block = read_selection(path, selection)
     text = block_to_csv(block.rows, config["csv"]["delimiter"])  # type: ignore[index]
     # Name only: the label ends up in the report, which gets shared.
     return CsvSource(f"{Path(path).name} [{block.name}]", text, Path(path))
@@ -129,6 +137,9 @@ def run(argv: list[str] | None = None) -> int:
     if args.list_tables:
         print(describe(args.list_tables))
         return 0
+    if args.xlsx_mapping_template:
+        print(json.dumps(mapping_template(args.xlsx_mapping_template), indent=2))
+        return 0
     if not args.output:
         raise ConfigError("--output is required")
     selection = XlsxSelection(args.table, args.sheet, args.header_row)
@@ -136,6 +147,8 @@ def run(argv: list[str] | None = None) -> int:
     if selection.given and not any(is_xlsx(path) for path in inputs):
         raise ConfigError("--table, --sheet and --header-row apply only to .xlsx inputs")
     config = load_config(args.config, _overrides(args))
+    if selection.given and config["xlsx"]["sources"]:
+        raise ConfigError("--table, --sheet and --header-row cannot be combined with xlsx.sources in the configuration")
     if args.extract_comments:
         if args.input or args.old or args.new:
             raise ConfigError("--extract-comments cannot be combined with CSV inputs")

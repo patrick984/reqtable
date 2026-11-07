@@ -54,6 +54,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "csv_format": "json",
     },
     "quality": {"requirement_column": None, "required_columns": [], "obligation": "shall"},
+    "xlsx": {"sources": []},
 }
 
 
@@ -178,6 +179,40 @@ def validate_config(config: dict[str, Any]) -> None:
     initials = config["comments"]["reviewer_initials"]
     if initials is not None and not valid_initials(initials):
         raise ConfigError("comments.reviewer_initials must contain 1-16 non-control characters")
+    validate_xlsx_sources(config["xlsx"]["sources"])
+
+
+_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix"}
+
+
+def validate_xlsx_sources(sources: Any) -> None:
+    if not isinstance(sources, list) or not all(isinstance(s, dict) for s in sources):
+        raise ConfigError("xlsx.sources must be an array of objects")
+    for index, source in enumerate(sources):
+        where = f"xlsx.sources[{index}]"
+        unknown = sorted(set(source) - _XLSX_SOURCE_KEYS)
+        if unknown:
+            raise ConfigError(f"unknown configuration key: {where}.{unknown[0]}")
+        has_table, has_sheet = "table" in source, "sheet" in source
+        if has_table == has_sheet:
+            raise ConfigError(f"{where} needs exactly one of 'table' or 'sheet'")
+        for key in ("table", "sheet", "type", "id_prefix"):
+            if key in source and (not isinstance(source[key], str) or not source[key].strip()):
+                raise ConfigError(f"{where}.{key} must be a non-empty string")
+        if "header_row" in source:
+            row = source["header_row"]
+            if not has_sheet:
+                raise ConfigError(f"{where}.header_row applies only with 'sheet'")
+            if isinstance(row, bool) or not isinstance(row, int) or row < 1:
+                raise ConfigError(f"{where}.header_row must be a whole number of 1 or greater")
+        columns = source.get("columns", {})
+        if not isinstance(columns, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in columns.items()
+        ):
+            raise ConfigError(f"{where}.columns must be an object of source header to output header strings")
+        exclude = source.get("exclude", [])
+        if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
+            raise ConfigError(f"{where}.exclude must be an array of strings")
 
 
 def valid_initials(value: Any) -> bool:
