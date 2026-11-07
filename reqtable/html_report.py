@@ -28,7 +28,6 @@ CSS = r"""
 .toolbar .popover kbd{font:inherit;font-size:.8em;color:var(--muted);white-space:nowrap;border:0;padding:0}
 .toolbar .popover .menu-section{border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
 .toolbar .popover #hidden-filter-warning:not(:empty){padding:5px 12px}
-.revert-cell{margin-top:4px;padding:1px 6px;font-size:.85em}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 """
 
@@ -72,7 +71,11 @@ function dataCell(row,column,ri,ci){const tag=column.name===data.meta.idColumn?"
 
 function renderHead(){const cols=visibleColumns();headRow.innerHTML=statusHead()+cols.map(c=>`<th scope="col" class="heading-cell" data-header-column="${escapeHtml(c.name)}"><button class="sort-button" data-sort="${escapeHtml(c.name)}">${escapeHtml(c.label)} <span aria-hidden="true">${state.sort&&state.sort.column===c.name?(state.sort.direction===1?'▲':'▼'):''}</span></button><span class="resize-handle" data-resize="${escapeHtml(c.name)}" role="separator" aria-orientation="vertical" aria-label="Resize ${escapeHtml(c.label)} column" title="Drag to resize; double-click to auto-size"></span></th>`).join("");filterRow.innerHTML=statusFilterHead()+cols.map(c=>{const value=state.filters.get(c.name)||'',selected=state.valueFilters.get(c.name),active=value||selected?.size;return `<th><label class="sr-only" for="filter-${escapeHtml(c.name)}">Filter ${escapeHtml(c.label)}</label><div class="filter-control"><input id="filter-${escapeHtml(c.name)}" data-filter="${escapeHtml(c.name)}" value="${escapeHtml(value)}" placeholder="${selected?.size?`${selected.size} selected`:'Filter…'}"><button class="clear-filter" data-clear-filter="${escapeHtml(c.name)}" aria-label="Clear ${escapeHtml(c.label)} filter" ${active?'':'hidden'}>×</button></div></th>`;}).join("");}
 function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-cell]")];cells.forEach(c=>{c.tabIndex=-1;c.classList.remove("selected-cell");});if(cells.length){const maxRow=Math.max(...cells.map(c=>+c.dataset.rowIndex)),row=Math.min(state.focus.row,maxRow),col=Math.min(state.focus.column,visibleColumns().length-1),target=cells.find(c=>+c.dataset.rowIndex===row&&+c.dataset.columnIndex===col)||cells[0];state.focus={row:+target.dataset.rowIndex,column:+target.dataset.columnIndex};target.tabIndex=0;target.classList.add("selected-cell");}
-  $("#revert-selected-cell").disabled=!tableBody.querySelector(".selected-cell [data-revert-cell]");
+  const selected=tableBody.querySelector(".selected-cell");
+  const row=data.rows.find(item=>item.id===selected?.parentElement.dataset.rowId);
+  const column=selected?.dataset.column;
+  $("#revert-selected-cell").disabled=!!state.editingCell||!canRevertCell(column,row?.cells[column]);
+  $("#restore-deleted-requirement").disabled=!!state.editingCell||!developMode()||row?.status!=="removed";
 }
 
 
@@ -345,16 +348,41 @@ function revertCell(cellElement){
   render();
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
+function insertAtBaselinePosition(items,baseline,index,item,identify){
+  const positions=new Map(items.map((value,i)=>[identify(value),i]));
+  const next=baseline.slice(index+1).find(value=>positions.has(identify(value)));
+  items.splice(next?positions.get(identify(next)):items.length,0,item);
+}
+function restoreDeletedRequirement(){
+  if(!developMode()||!diffActive()||state.editingCell)return;
+  const id=selectedRequirementId();
+  const baseline=state.unsavedDiff?state.savedRows:data.source.old.rows;
+  const index=baseline.findIndex(row=>rowId(row)===id);
+  if(index<0||findCurrentRow(id))return;
+  const column=visibleColumns()[state.focus.column]?.name;
+  const restored=Object.fromEntries(data.source.new.headers.map(name=>[name,baseline[index][name]??""]));
+  remember();
+  insertAtBaselinePosition(state.currentRows,baseline,index,restored,rowId);
+  if(state.unsavedDiff){
+    const existingIds=new Set(state.comments.map(comment=>comment.id));
+    state.savedComments.forEach((comment,i)=>{
+      if(comment.requirementId===id&&!existingIds.has(comment.id)){
+        insertAtBaselinePosition(state.comments,state.savedComments,i,cloneValue(comment),value=>value.id);
+      }
+    });
+  }
+  updateDirty();
+  render();
+  if(!focusRequirement(id,column))restoreSelectedCell();
+}
 function renderCell(row,column){const cell=row.cells[column.name],count=commentsFor(row.id,column.name).length,editing=state.editingCell&&state.editingCell.rid===row.id&&state.editingCell.column===column.name;if(editing){const value=state.editingCell.draft??valueFor(row,column.name);return `<form class="cell-editor" data-cell-editor data-row-id="${escapeHtml(row.id)}" data-column="${escapeHtml(column.name)}"><textarea aria-label="Edit ${escapeHtml(column.label)}">
 ${escapeHtml(value)}</textarea><div class="cell-suggestions" role="group" aria-label="Suggested values" hidden></div><div class="cell-editor-actions"><button class="apply-edit" type="submit" aria-label="Apply" title="Apply">✓</button><button class="cancel-edit" type="button" data-cancel-cell-edit aria-label="Cancel" title="Cancel">✕</button></div></form>`;}let content;if(row.id!==""&&diffActive()&&state.view==="side-by-side"&&(cell.changed||cell.old===null||cell.new===null)){content=`<div class="split"><div class="pane"><span class="pane-label">Old</span>${cell.old===null?'<div class="missing">Not present</div>':cell.oldHtml}</div><div class="pane"><span class="pane-label">New</span>${cell.new===null?'<div class="missing">Not present</div>':cell.newHtml}</div></div>`;}else if(row.id===""){
   if(column.name===data.meta.idColumn)content='<button type="button" class="entry-add" tabindex="-1" data-add-entry aria-label="Add requirement" title="Add requirement">+</button>';
   else if(column.name.toLowerCase()==="requirement"&&data.source.new.headers.includes(column.name)){
     content='<span class="entry-hint">Type to add a requirement…</span>';
   }else content="";
-}else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;const revert=canRevertCell(column.name,cell)
-  ?`<button type="button" class="revert-cell" data-revert-cell aria-label="Revert ${escapeHtml(column.label)} for ${escapeHtml(row.id)} to the ${state.unsavedDiff?"last saved":"old CSV"} value">↶ Revert cell</button>`
-  :"";
-return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${revert}${button}</div>`;}
+}else content=cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
+return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}${button}</div>`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}function renderLayout(){const cols=visibleColumns(),status=diffActive()?118:0,widths=cols.map(c=>state.widths.get(c.name)),natural=status+widths.reduce((a,b)=>a+b,0),target=Math.max($(".table-wrap").clientWidth,natural);if(cols.length&&target>natural){let flex=0;for(let i=1;i<widths.length;i++)if(widths[i]>widths[flex])flex=i;widths[flex]+=target-natural;}$("#column-widths").innerHTML=(status?'<col style="width:118px">':"")+cols.map((c,i)=>`<col data-col-width="${escapeHtml(c.name)}" style="width:${Math.round(widths[i])}px">`).join("");table.style.width=`${target}px`;}
 function renderBody(){const rows=sortedRows(),cols=visibleColumns(),display=developMode()?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci)).join("")}</tr>`).join("");resultCount.textContent=`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();}
 function syncModeUi(){document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
@@ -641,12 +669,8 @@ for(const option of clone.querySelector("#keyboard-mode").options){
 }
 clone.querySelectorAll("details[open]").forEach(d=>d.removeAttribute("open"));for(const selector of["#quick-comment","#comment-hover","#value-filter-popover","#review-panel","#dirty-indicator"])clone.querySelector(selector).hidden=true;clone.querySelector("#save-status").textContent="";clone.querySelector("#recovery-notice").hidden=true;clone.querySelector("#recover-draft").hidden=true;clone.querySelector("#discard-draft").hidden=true;const kind=developMode()?"developed":"reviewed",suffix=token?`-${token}`:"";downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`);markSaved(currentSnapshot(),`Report download initiated at ${new Date().toLocaleTimeString()}`);}
 $("#revert-selected-cell").addEventListener("click",()=>revertCell(tableBody.querySelector(".selected-cell")));
+$("#restore-deleted-requirement").addEventListener("click",restoreDeletedRequirement);
 tableBody.addEventListener("click",event=>{
-  const revert=event.target.closest("[data-revert-cell]");
-  if(revert){
-    revertCell(revert.closest("[data-grid-cell]"));
-    return;
-  }
   if(event.target.closest("[data-add-entry]")&&!state.editingCell)addRequirement("end");
   if(vimKeys()||!state.editingCell||event.target.closest("button,a,form"))return;
   const cell=event.target.closest("[data-grid-cell]");
@@ -853,7 +877,7 @@ TEMPLATE = r"""<!doctype html>
 <div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
-<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
+<details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement">Delete requirement <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
