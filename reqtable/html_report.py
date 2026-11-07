@@ -35,6 +35,9 @@ CSS = r"""
 .row-with-grip{position:relative;padding-inline-start:25px}.row-with-grip .cell-wrap{padding-inline-end:0}
 .row-grip{position:absolute;inset-inline-start:7px;top:8px;color:var(--muted);cursor:grab;user-select:none;touch-action:none}
 .row-grip[aria-disabled="true"]{cursor:not-allowed;opacity:.55;touch-action:auto}
+#row-drag-preview{position:fixed;z-index:85;pointer-events:none;width:max-content;max-width:min(280px,calc(100vw - 16px));padding:6px 10px;background:var(--panel);color:var(--text);border:1px solid var(--accent);border-radius:6px;box-shadow:var(--shadow);opacity:.88;overflow-wrap:anywhere}
+#row-drag-preview span{display:block;font-size:.85em;color:var(--muted)}
+tr.row-drag-source>td,tr.row-drag-source>th{background:var(--selected)}
 tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 tr.drop-after>td,tr.drop-after>th{box-shadow:inset 0 -3px var(--accent)}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -686,6 +689,8 @@ clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
 clone.querySelector("#requirements-body").replaceChildren();
 clone.querySelector("#table-context-menu").replaceChildren();
 clone.querySelector("#table-context-menu").hidden=true;
+clone.querySelector("#row-drag-preview").hidden=true;
+clone.querySelector("#row-drag-preview").replaceChildren();
 clone.querySelector("#comment-list").replaceChildren();
 for(const option of clone.querySelector("#keyboard-mode").options){
   option.toggleAttribute("selected",option.value===keyboardMode.value);
@@ -768,7 +773,21 @@ document.addEventListener("focusin",event=>{
 });
 $(".table-wrap").addEventListener("scroll",()=>closeTableContext());
 
+const rowDragPreview=$("#row-drag-preview");
 let rowDrag=null;
+function startRowDragPreview(){
+  const row=findCurrentRow(rowDrag.id);
+  const columns=data.source.new.headers.filter(name=>name!==data.meta.idColumn);
+  const preferred=columns.find(name=>name.toLowerCase()==="requirement");
+  const fallback=columns.find(name=>String(row?.[name]??"").trim());
+  const summary=String(row?.[preferred]||row?.[fallback]||"").replace(/\s+/g," ").trim();
+  const id=document.createElement("strong"),excerpt=document.createElement("span");
+  id.textContent=rowDrag.id;
+  excerpt.textContent=summary.length>100?summary.slice(0,99)+"…":summary;
+  rowDragPreview.replaceChildren(id,excerpt);
+  rowDragPreview.hidden=false;
+  rowDrag.source.classList.add("row-drag-source");
+}
 function showRowDrop(row,after){
   rowDrag.target?.classList.remove("drop-before","drop-after");
   rowDrag.target=row;
@@ -780,12 +799,18 @@ tableBody.addEventListener("pointerdown",event=>{
   if(!grip||event.button!==0||rowDrag||!canDragRows()||state.editingCell)return;
   event.preventDefault();
   grip.setPointerCapture(event.pointerId);
-  rowDrag={pointerId:event.pointerId,id:grip.closest("tr").dataset.rowId,
+  const source=grip.closest("tr");
+  rowDrag={pointerId:event.pointerId,id:source.dataset.rowId,source,
     x:event.clientX,y:event.clientY,target:null,after:false};
 });
 tableBody.addEventListener("pointermove",event=>{
   if(rowDrag?.pointerId!==event.pointerId)return;
-  if(!rowDrag.target&&Math.hypot(event.clientX-rowDrag.x,event.clientY-rowDrag.y)<4)return;
+  if(rowDragPreview.hidden){
+    if(Math.hypot(event.clientX-rowDrag.x,event.clientY-rowDrag.y)<4)return;
+    startRowDragPreview();
+  }
+  rowDragPreview.style.left=`${Math.max(8,Math.min(event.clientX+16,innerWidth-rowDragPreview.offsetWidth-8))}px`;
+  rowDragPreview.style.top=`${Math.max(8,Math.min(event.clientY+16,innerHeight-rowDragPreview.offsetHeight-8))}px`;
   const wrap=$(".table-wrap"),viewport=wrap.getBoundingClientRect();
   if(event.clientX>=viewport.left&&event.clientX<=viewport.right){
     if(event.clientY>viewport.bottom-24&&event.clientY<viewport.bottom)wrap.scrollTop+=16;
@@ -798,8 +823,10 @@ tableBody.addEventListener("pointermove",event=>{
 });
 function finishRowDrag(event){
   if(rowDrag?.pointerId!==event.pointerId)return;
-  const {id,target,after}=rowDrag;
+  const {id,target,after,source:sourceRow}=rowDrag;
   showRowDrop(null,false);
+  sourceRow.classList.remove("row-drag-source");
+  rowDragPreview.hidden=true;
   rowDrag=null;
   if(event.type!=="pointerup"||!target?.isConnected||!canDragRows()||state.editingCell)return;
   const ids=state.currentRows.map(rowId);
@@ -1023,6 +1050,7 @@ TEMPLATE = r"""<!doctype html>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
 <details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
+<div id="row-drag-preview" aria-hidden="true" hidden></div>
 <div id="table-context-menu" class="popover" role="group" aria-label="Requirement actions" hidden></div>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
