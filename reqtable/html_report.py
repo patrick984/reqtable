@@ -63,6 +63,12 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 .order-change{display:block}.entry-row{color:var(--muted)}.entry-add{padding:0 6px;line-height:1.4}.entry-hint{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #quality-panel {width:min(360px,100vw)}
 #quality-count {margin:8px 0}
+.quality-dismissed-toggle {display:block; margin-top:5px}
+.quality-issue {padding:6px 0; border-top:1px solid var(--line)}
+.quality-dismissed {opacity:.8}
+#quality-settings-form label {display:block; margin-bottom:8px}
+#quality-settings-form fieldset {border:1px solid var(--line); margin-bottom:12px}
+#quality-dismiss-reason {display:block; width:100%; margin:6px 0}
 .quality-card h3 {font-size:1em; margin:0}
 .quality-card p {margin:6px 0 10px}
 .quality-card.quality-active {border-color:var(--accent); background:var(--selected)}
@@ -140,6 +146,8 @@ const data=JSON.parse(document.getElementById("reqtable-data").textContent);
 function configuredPixels(column){const raw=column.width;if(!raw)return column.estimatedWidth||160;const n=parseFloat(raw);if(raw.endsWith("rem")||raw.endsWith("em"))return n*16;if(raw.endsWith("ch"))return n*8;if(raw.endsWith("%"))return Math.max(70,document.documentElement.clientWidth*n/100);return n;}
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
 const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,unsavedDiff:false,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
+state.qualityReview=cloneValue(data.qualityReview??{settings:data.options.quality??{},dismissals:[]});
+state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
 const $=s=>document.querySelector(s),table=$("#requirements-table"),tableBody=$("#requirements-body"),headRow=$("#heading-row"),filterRow=$("#filter-row"),resultCount=$("#result-count"),quick=$("#quick-comment"),hover=$("#comment-hover"),valuePopover=$("#value-filter-popover"),review=$("#review-panel"),help=$("#keyboard-help");
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -585,9 +593,13 @@ function syncModeUi(){document.querySelectorAll(".develop-only").forEach(el=>el.
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
-  state.dirty=state.requirementsDirty||state.commentsDirty;
-  const label=state.requirementsDirty&&state.commentsDirty?"Unsaved requirements and comments"
-    :state.requirementsDirty?"Unsaved requirements":state.commentsDirty?"Unsaved comments":"";
+  state.qualityDirty=JSON.stringify(state.qualityReview)!==JSON.stringify(state.savedQualityReview);
+  state.dirty=state.requirementsDirty||state.commentsDirty||state.qualityDirty;
+  const changed=[];
+  if(state.requirementsDirty)changed.push("requirements");
+  if(state.commentsDirty)changed.push("comments");
+  if(state.qualityDirty)changed.push("quality settings and dismissals (save a report copy)");
+  const label=changed.length?"Unsaved "+changed.join(" and "):"";
   $("#dirty-details").textContent=label;
   const announcement=$("#dirty-announcement"),indicator=$("#dirty-indicator");
   if(announcement.textContent!==label)announcement.textContent=label;
@@ -596,7 +608,7 @@ function updateDirty(){
   scheduleAutosave();
 }
 function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);}updateDirty();}
-function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
+function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);if(snapshot.qualityReview)state.qualityReview=cloneValue(snapshot.qualityReview);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
 function selectedRequirementId(){return document.querySelector("[data-grid-cell].selected-cell")?.closest("tr")?.dataset.rowId||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The requirement ID cannot be empty.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`Requirement ID ${id} already exists.`);return null;}return id;}
 function nextRequirementId(){
   const ids=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])].map(rowId);
@@ -812,7 +824,7 @@ function applyCellEdit(form,next,continueAtEntry=false){
 }
 function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function csvField(value,delimiter){const text=String(value??"");return(/["\r\n]/.test(text)||text.includes(delimiter))?'"'+text.replace(/"/g,'""')+'"':text;}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const delimiter=data.options.csvDelimiter||",",lines=[headers.map(x=>csvField(x,delimiter)).join(delimiter)];for(const source of snapshot.rows){const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}lines.push(headers.map(h=>csvField(row[h]??"",delimiter)).join(delimiter));}return"\ufeff"+lines.join("\r\n")+"\r\n";}
 function currentSnapshot(){
-  return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)};
+  return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments),qualityReview:cloneValue(state.qualityReview)};
 }
 function snapshotKey(snapshot){
   let hash=2166136261;
@@ -820,7 +832,7 @@ function snapshotKey(snapshot){
   return (hash>>>0).toString(16);
 }
 const openedSnapshot=currentSnapshot();
-const draftKey=`reqtable:draft:${location.pathname}:${snapshotKey([data.meta, data.source.old, openedSnapshot])}`;
+const draftKey=`reqtable:draft:${location.pathname}:${snapshotKey([data.meta, data.source.old, {rows:openedSnapshot.rows,comments:openedSnapshot.comments}])}`;
 let csvHandle=null,writingCsv=false,autosaveTimer=null,recoveryPending=false;
 function loadDraft(){
   try{return JSON.parse(localStorage.getItem(draftKey));}catch{return null;}
@@ -830,7 +842,7 @@ function persistDraft(){
   try{
     const current=currentSnapshot();
     if(JSON.stringify(current)===JSON.stringify(openedSnapshot)&&!state.dirty)localStorage.removeItem(draftKey);
-    else localStorage.setItem(draftKey,JSON.stringify({current,saved:{rows:state.savedRows,comments:state.savedComments}}));
+    else localStorage.setItem(draftKey,JSON.stringify({current,saved:{rows:state.savedRows,comments:state.savedComments,qualityReview:state.savedQualityReview}}));
   }catch{
     if(!csvHandle)$("#save-status").textContent="Local draft storage unavailable";
   }
@@ -839,7 +851,7 @@ function scheduleAutosave(){
   clearTimeout(autosaveTimer);
   if(!developMode()||!$("#autosave").checked)return;
   if(!recoveryPending)persistDraft();
-  if(csvHandle&&state.dirty&&!writingCsv){
+  if(csvHandle&&(state.requirementsDirty||state.commentsDirty)&&!writingCsv){
     autosaveTimer=setTimeout(()=>{if(!state.editingCell)saveCsv(false,true);},1200);
   }
 }
@@ -908,6 +920,7 @@ $("#recover-draft").addEventListener("click",()=>{
   $("#recovery-notice").hidden=true;
   state.savedRows=recovery.saved.rows;
   state.savedComments=recovery.saved.comments;
+  if(recovery.saved.qualityReview)state.savedQualityReview=cloneValue(recovery.saved.qualityReview);
   restoreHistory(recovery.current);
   $("#save-status").textContent="Autosaved draft recovered";
   restoreSelectedCell();
@@ -928,6 +941,7 @@ function saveReportCopy(){if(writingCsv)return;if(state.editingCell){$("#save-st
 const embedded={...data};
 delete embedded.rows;
 embedded.comments=state.comments;
+embedded.qualityReview=cloneValue(state.qualityReview);
 embedded.source={...data.source,new:{...data.source.new,rows:state.currentRows}};
 if(data.meta.mode==="diff")embedded.diffStatus=savedDiffStatuses();
 clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
@@ -938,6 +952,11 @@ clone.querySelector("#row-drag-preview").hidden=true;
 clone.querySelector("#row-drag-preview").replaceChildren();
 clone.querySelector("#comment-list").replaceChildren();
 clone.querySelector("#quality-panel").hidden=true;
+for(const selector of ["#quality-settings-dialog","#quality-dismiss-dialog"]){
+  clone.querySelector(selector).removeAttribute("open");
+}
+clone.querySelector("#quality-dismiss-reason").value="";
+clone.querySelector("#quality-dismiss-reason").textContent="";
 clone.querySelector("#quality-findings").replaceChildren();
 clone.querySelector("#quality-count").textContent="";
 clone.querySelector("#reviewer-initials").setAttribute("value",reviewerInitials());
@@ -946,7 +965,7 @@ clone.querySelector("#dirty-announcement").textContent="";
 for(const option of clone.querySelector("#keyboard-mode").options){
   option.toggleAttribute("selected",option.value===keyboardMode.value);
 }
-clone.querySelectorAll("details[open]").forEach(d=>d.removeAttribute("open"));for(const selector of["#quick-comment","#comment-hover","#value-filter-popover","#review-panel","#dirty-indicator"])clone.querySelector(selector).hidden=true;clone.querySelector("#save-status").textContent="";clone.querySelector("#recovery-notice").hidden=true;clone.querySelector("#recover-draft").hidden=true;clone.querySelector("#discard-draft").hidden=true;const kind=developMode()?"developed":"reviewed",suffix=token?`-${token}`:"";downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`);markSaved(currentSnapshot(),`Report download initiated at ${new Date().toLocaleTimeString()}`);}
+clone.querySelectorAll("details[open]").forEach(d=>d.removeAttribute("open"));for(const selector of["#quick-comment","#comment-hover","#value-filter-popover","#review-panel","#dirty-indicator"])clone.querySelector(selector).hidden=true;clone.querySelector("#save-status").textContent="";clone.querySelector("#recovery-notice").hidden=true;clone.querySelector("#recover-draft").hidden=true;clone.querySelector("#discard-draft").hidden=true;const kind=developMode()?"developed":"reviewed",suffix=token?`-${token}`:"";downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`);state.savedQualityReview=cloneValue(state.qualityReview);markSaved(currentSnapshot(),`Report download initiated at ${new Date().toLocaleTimeString()}`);}
 $("#revert-selected-cell").addEventListener("click",()=>revertCell(tableBody.querySelector(".selected-cell")));
 $("#restore-deleted-requirement").addEventListener("click",restoreDeletedRequirement);
 const tableContextMenu=$("#table-context-menu");
@@ -1473,13 +1492,35 @@ TEMPLATE = r"""<!doctype html>
 <aside id="quality-panel" class="review-panel" hidden aria-labelledby="quality-title">
   <div class="review-head"><h2 id="quality-title" tabindex="-1">Requirement quality</h2><button id="close-quality">Close</button></div>
   <div class="review-body">
+    <div class="comment-actions"><button id="quality-settings">Quality settings…</button></div>
     <label><input type="checkbox" id="quality-only"> Show rows with findings</label>
+    <label class="quality-dismissed-toggle"><input type="checkbox" id="quality-show-dismissed"> Show dismissed findings</label>
     <div id="quality-count" class="meta" role="status"></div>
     <div id="quality-findings"></div>
     <p class="meta">Writing guidance from <a href="https://www.nasa.gov/reference/appendix-c-how-to-write-a-good-requirement/" target="_blank" rel="noopener">NASA Appendix C</a>
       and the <a href="https://www.incose.org/wp-content/uploads/legacy/working-groups/requirements-wg/guidetowritingrequirements/incose_rwg_gtwr_v4_summary_sheet.pdf?sfvrsn=73644bc7_2" target="_blank" rel="noopener">INCOSE Guide to Writing Requirements summary</a>.</p>
   </div>
 </aside>
+<dialog id="quality-settings-dialog" class="help-dialog" aria-labelledby="quality-settings-title">
+  <form id="quality-settings-form"><div class="help-head"><h2 id="quality-settings-title">Quality settings</h2><button type="button" id="quality-settings-cancel">Cancel</button></div>
+    <div class="help-body"><label>Requirement column <select id="quality-column"></select></label>
+      <label>Obligation keyword <input id="quality-obligation" placeholder="Leave blank to disable" maxlength="80"></label>
+      <fieldset><legend>Required fields</legend><div id="quality-required-columns"></div></fieldset>
+      <fieldset><legend>Enabled checks</legend><div id="quality-enabled-rules"></div></fieldset>
+      <button type="submit" class="primary">Apply settings</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="quality-dismiss-dialog" class="help-dialog" aria-labelledby="quality-dismiss-title">
+  <form id="quality-dismiss-form"><div class="help-head"><h2 id="quality-dismiss-title">Dismiss finding</h2><button type="button" id="quality-dismiss-cancel">Cancel</button></div>
+    <div class="help-body"><p id="quality-dismiss-description"></p>
+      <label for="quality-dismiss-reason">Reason for accepting this wording</label>
+      <textarea id="quality-dismiss-reason" required rows="3"></textarea>
+      <p class="meta">This exception applies to this cell content and rule. Editing the content triggers a fresh review. Save a report copy to retain it.</p>
+      <button type="submit" class="primary">Dismiss finding</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="settings-dialog" class="help-dialog" aria-labelledby="settings-title"><div class="help-head"><h2 id="settings-title">Settings</h2><button id="close-settings">Done</button></div><div class="help-body"><label>Keyboard mode <select id="keyboard-mode"><option value="spreadsheet">Spreadsheet</option><option value="vim">Vim</option></select></label></div></dialog>
 <dialog id="command-search" class="help-dialog" aria-labelledby="command-title"><div class="help-head"><h2 id="command-title">Search menus</h2><button id="close-command-search">Close</button></div><div class="help-body"><label class="sr-only" for="command-query">Search menu items</label><input type="search" id="command-query" placeholder="Search menu items…"><div id="command-results"></div><p id="command-empty" hidden>No matching commands.</p></div></dialog>
 <dialog id="keyboard-help" class="help-dialog"><div class="help-head"><h2>Keyboard shortcuts</h2><button id="close-help">Close</button></div><div class="help-body"><p>Focus a table cell with <kbd>Tab</kbd>, then use:</p><table class="shortcut-table"><tbody><tr><th><kbd>Arrow keys</kbd> or <kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></th><td>Move one cell</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd> or <kbd>0</kbd> / <kbd>$</kbd></th><td>First / last visible column</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>Ctrl</kbd>+<kbd>End</kbd></th><td>First / last table corner. In Develop, Cmd also works and End skips the blank entry row.</td></tr><tr><th><kbd>g</kbd> / <kbd>G</kbd></th><td>First / last table row. In Develop, press <kbd>g</kbd> twice for the first row.</td></tr><tr><th><kbd>Page Up</kbd> / <kbd>Page Down</kbd></th><td>Move ten rows</td></tr><tr class="develop-only"><th><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>Next / previous cell, wrapping across rows. Tab leaves the grid at its edges.</td></tr><tr class="develop-only"><th><kbd>Ctrl/Cmd</kbd>+<kbd>Arrow</kbd></th><td>Jump to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge.</td></tr><tr class="develop-only"><th><kbd>Enter</kbd>, <kbd>F2</kbd>, or <kbd>i</kbd></th><td>Edit a non-ID cell. The i shortcut is for Vim mode.</td></tr><tr class="develop-only"><th><kbd>o</kbd> / <kbd>Shift</kbd>+<kbd>o</kbd></th><td>Insert a requirement below / above the selected requirement</td></tr><tr><th><kbd>C</kbd></th><td>Open comments for a non-ID cell</td></tr><tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd></th><td>Undo / redo requirement edits in Develop mode. Ctrl/Cmd+Shift+Z also redoes.</td></tr><tr><th><kbd>/</kbd></th><td>Focus the selected column filter, or comment search when browsing comments</td></tr><tr><th><kbd>Down Arrow</kbd> or <kbd>Enter</kbd> in a filter</th><td>Move to that column in the first matching row</td></tr><tr><th><kbd>?</kbd></th><td>Open this help page</td></tr><tr><th><kbd>Escape</kbd></th><td>Cancel editing or close menus, popups, or the comments sidebar</td></tr></tbody></table><p>Click a menu name, then hover over another name to switch menus. Left and Right also switch menus. Down and Up move through items. Enter activates an item, Space toggles a checkbox, and Escape closes the menu. In Develop mode, choose View → Settings to switch between Spreadsheet and Vim shortcuts. Press Alt/Option+/ to search menus. Right-click a cell or press Shift+F10 to open its actions in Develop mode. In Spreadsheet mode, type on a selected editable cell to replace its value. In either mode, Tab or Shift+Tab applies the edit and moves to the next or previous cell. In Spreadsheet mode, Enter and Shift+Enter apply the edit and move down or up. Alt/Option+Enter inserts a newline, F2 starts with the caret at the end, and clicking another cell applies the edit. In Vim mode, Enter inserts a newline. Ctrl/Cmd+Enter applies the edit and stays on the cell in both modes. Column dividers can be dragged. Double-click a divider to auto-size the column on its left.</p></div></dialog>

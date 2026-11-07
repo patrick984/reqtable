@@ -81,9 +81,11 @@ Use Shift+click or Shift+Arrow to extend a cell selection. Ctrl/Cmd+C copies the
 
 Click an ID cell to select the row, then Shift+click another ID or use Shift+Up/Down to select a block. Drag any selected row’s grip to move the whole block in its existing order.
 
-In Develop mode, choose **View → Check requirement quality** to scan all current rows, including filtered rows. The sidebar shows the flagged wording and a suggestion. Use **Go to cell** to edit, or select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
+In Develop mode, choose **View → Check requirement quality** to scan all current rows, including filtered rows. The sidebar shows the flagged wording and a suggestion. **Edit wording** opens the cell editor with the exact match selected. Select the amber warning icon in a cell to jump back to its findings. **Show rows with findings** narrows the grid. Findings refresh after committed edits and are advisory.
 
-The checker recognizes a CSV column named `Requirement` or `Requirement Text` by default. Set `quality.requirement_column` to use another header. Set `quality.required_columns` to a list of fields that must be filled, such as `["Acceptance Criteria", "Verification Method"]`. The obligation keyword defaults to `shall`. Set `quality.obligation` to another keyword or to `null` to turn off obligation checks.
+Open **Quality settings** in the sidebar to choose the statement column, required fields, obligation keyword and enabled checks. The defaults recognize `Requirement` or `Requirement Text` and use `shall`. A blank keyword turns off obligation checks. Set initial values in the generator configuration with `quality.requirement_column`, `quality.required_columns` and `quality.obligation`.
+
+Use **Dismiss…** to accept a finding with a reason. The exception applies to that exact cell content and finding. **Show dismissed findings** displays the reasons and lets you restore findings. Use **File → Save report copy** to keep quality settings and dismissals with the report. Browser draft recovery can also recover these changes.
 
 In Spreadsheet mode, use Shift+Up/Down from any cell to select consecutive requirements, then Alt/Option+Shift+Up/Down to move them together. Use the normal view in source order with no filters. The selection follows the moved rows, and one Undo reverses each move.
 
