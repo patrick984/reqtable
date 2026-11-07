@@ -165,6 +165,7 @@ const data=JSON.parse(document.getElementById("reqtable-data").textContent);
 function configuredPixels(column,fallback=column.estimatedWidth||160){const raw=column.width;if(!raw)return fallback;const n=parseFloat(raw);if(raw.endsWith("rem")||raw.endsWith("em"))return n*16;if(raw.endsWith("ch"))return n*8;if(raw.endsWith("%"))return Math.max(70,document.documentElement.clientWidth*n/100);return n;}
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
 const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,unsavedDiff:false,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
+state.reviewCurrent=false;
 state.qualityReview=cloneValue(data.qualityReview??{settings:data.options.quality??{},dismissals:[]});
 state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
@@ -339,7 +340,7 @@ function showAllComments(focusSearch=false){trace?.close();closeQuality();state.
 function renderReviewPanel(focusEditor=false){populateReviewFilters();const reviewBody=$(".review-body"),previousScroll=reviewBody.scrollTop,context=state.commentContext,q=($("#comment-search").value||"").toLocaleLowerCase(),reviewer=$("#reviewer-filter").value,column=$("#comment-column-filter").value,status=$("#comment-status-filter").value,statusMap=new Map(data.rows.map(r=>[r.id,r.status]));let list=state.comments.filter(c=>!context||(c.requirementId===context.rid&&c.column===context.column));list=list.filter(c=>(!reviewer||c.initials===reviewer)&&(!column||c.column===column)&&(!status||statusMap.get(c.requirementId)===status)&&`${c.text}\n${c.initials}\n${c.requirementId}\n${c.column}\n${c.created}\n${c.modified||''}`.toLocaleLowerCase().includes(q)).sort((a,b)=>a.created.localeCompare(b.created));const cellCount=new Set(state.comments.map(c=>`${c.requirementId}\u0000${c.column}`)).size;$("#review-title").textContent=context?`Comments: ${context.rid} / ${context.column}`:"All comments";$("#back-comments").hidden=!context;$("#comment-counts").textContent=`${state.comments.length} comments across ${cellCount} cells · ${list.length} shown`;let body=list.map(c=>c.id===state.editingId?`<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(displayTimestamp(c.modified||c.created))}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><form class="inline-comment-editor" data-inline-comment-id="${escapeHtml(c.id)}"><label class="sr-only" for="inline-comment-text-${escapeHtml(c.id)}">Edit comment</label><textarea id="inline-comment-text-${escapeHtml(c.id)}" required>${escapeHtml(c.text)}</textarea><div class="comment-editor-actions"><button class="primary" type="submit">Save changes</button><button type="button" data-cancel-inline-edit>Cancel</button></div></form></article>`:commentCard(c,`<div class="comment-actions"><button data-go-comment="${escapeHtml(c.id)}">Go to cell</button><button data-edit-comment="${escapeHtml(c.id)}">Edit</button><button data-delete-comment="${escapeHtml(c.id)}">Delete</button></div>`)).join("");if(!list.length)body='<div class="empty-state">No comments match.</div>';const editor=context&&!state.editingId?`<form id="comment-form" class="comment-editor"><label for="comment-text">New comment</label><textarea id="comment-text" required></textarea><div class="comment-editor-actions"><button class="primary" type="submit">Add comment</button></div></form>`:"";$("#comment-list").innerHTML=body+editor;reviewBody.scrollTop=previousScroll;const form=$("#comment-form");if(form)form.addEventListener("submit",saveComment);document.querySelectorAll(".inline-comment-editor").forEach(el=>el.addEventListener("submit",saveInlineComment));document.querySelectorAll("[data-cancel-inline-edit]").forEach(el=>el.addEventListener("click",cancelInlineEdit));if(focusEditor)requestAnimationFrame(()=>$(".inline-comment-editor textarea,#comment-text")?.focus());}
 function reviewerInitials(){return $("#reviewer-initials").value.trim();}function validInitials(s){return s.length>=1&&s.length<=16&&![...s].some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);}function loadReviewerInitials(){try{return localStorage.getItem("reqtable-reviewer-initials")||"";}catch{return "";}}function persistReviewerInitials(){const initials=reviewerInitials();if(!validInitials(initials))return;try{localStorage.setItem("reqtable-reviewer-initials",initials);}catch{}}
 function restoreSidebarFocus(id){requestAnimationFrame(()=>{const button=[...document.querySelectorAll("[data-edit-comment]")].find(x=>x.dataset.editComment===id);(button||$("#comment-search"))?.focus();});}function cancelInlineEdit(){const id=state.editingId;state.editingId=null;renderReviewPanel();restoreSidebarFocus(id);}function saveInlineComment(e){e.preventDefault();const id=e.currentTarget.dataset.inlineCommentId,c=state.comments.find(x=>x.id===id),text=e.currentTarget.querySelector("textarea").value.trim(),initials=reviewerInitials();if(!c||!text)return;if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");return;}if(developMode())remember();c.text=text;c.initials=initials;c.modified=localTimestamp();state.editingId=null;persistReviewerInitials();setDirty(true);render();renderReviewPanel();restoreSidebarFocus(id);}function saveComment(e){e.preventDefault();const text=$("#comment-text").value.trim();if(!text||!state.commentContext)return;if(!addComment(text,state.commentContext.rid,state.commentContext.column))return;render();renderReviewPanel();restoreSelectedCell();}function deleteComment(id){if(!confirm("Delete this comment?"))return;if(developMode())remember();state.comments=state.comments.filter(c=>c.id!==id);setDirty(true);render();renderReviewPanel();restoreSelectedCell();}
-function goToComment(c){trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
+function goToComment(c){if(state.reviewCurrent&&!findCurrentRow(c.requirementId))state.reviewCurrent=false;trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
 function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");}function filenameInitials(s){return s.replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^[-_]+|[-_]+$/g,"");}
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...document.querySelectorAll("[data-grid-cell]")];}
@@ -481,7 +482,7 @@ document.addEventListener("keydown",e=>{
 document.querySelectorAll("#reviewer-filter,#comment-column-filter,#comment-status-filter").forEach(el=>el.addEventListener("change",renderReviewPanel));if(data.meta.mode!=="diff")document.querySelectorAll(".diff-only").forEach(el=>el.hidden=true);if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);const storedInitials=loadReviewerInitials();if(storedInitials)$("#reviewer-initials").value=storedInitials;syncReviewerLabel();populateReviewFilters();
 
 /* Develop-mode editing and browser-side persistence. */
-function developMode(){return data.meta.documentMode==="develop";}function diffActive(){return data.meta.mode==="diff"||state.unsavedDiff;}function rowId(row){return String(row[data.meta.idColumn]??"").trim();}function byId(rows){return new Map(rows.map(row=>[rowId(row),row]));}
+function developMode(){return data.meta.documentMode==="develop";}function diffActive(){return state.unsavedDiff||(data.meta.mode==="diff"&&!state.reviewCurrent);}function rowId(row){return String(row[data.meta.idColumn]??"").trim();}function byId(rows){return new Map(rows.map(row=>[rowId(row),row]));}
 function wordChanges(a,b){
   const removed=new Set(),added=new Set();
   if(!a.length||!b.length||a.length*b.length>20000)return [removed,added];
@@ -546,18 +547,31 @@ function requirementStatus(oldRow,newRow){
     &&comparisonValue(String(oldRow[name]??""))!==comparisonValue(String(newRow[name]??"")));
   return changed?"changed":"unchanged";
 }
-function savedDiffStatuses(){
-  const oldRows=byId(data.source.old.rows),newRows=byId(state.currentRows);
+function movedRowIds(oldRows,newRows){
+  const position=new Map([...oldRows.keys()].filter(id=>newRows.has(id)).map((id,i)=>[id,i]));
+  const current=[...newRows.keys()].filter(id=>position.has(id)),tails=[],prev=[];
+  current.forEach((id,i)=>{
+    const value=position.get(id);let lo=0,hi=tails.length;
+    while(lo<hi){const mid=(lo+hi)>>1;if(position.get(current[tails[mid]])<value)lo=mid+1;else hi=mid;}
+    prev[i]=lo?tails[lo-1]:-1;tails[lo]=i;
+  });
+  const stay=new Set();
+  for(let i=tails.length?tails[tails.length-1]:-1;i>=0;i=prev[i])stay.add(current[i]);
+  return new Set(current.filter(id=>!stay.has(id)));
+}
+function diffStatuses(baseline,{includeMoves=false,includeUnchanged=true}={}){
+  const oldRows=byId(baseline),newRows=byId(state.currentRows);
+  const moved=includeMoves?movedRowIds(oldRows,newRows):new Set();
   const ids=new Set([...oldRows.keys(),...newRows.keys()]);
   const statuses=Object.create(null);
   for(const id of ids){
-    const status=requirementStatus(oldRows.get(id),newRows.get(id));
-    if(status!=="unchanged"||data.options.includeUnchanged)statuses[id]=status;
+    const status=moved.has(id)?"changed":requirementStatus(oldRows.get(id),newRows.get(id));
+    if(status!=="unchanged"||includeUnchanged)statuses[id]=status;
   }
   return statuses;
 }
 let savedRowIndex;
-function rebuildRows(){savedRowIndex=byId(state.savedRows);const comparison=state.unsavedDiff?state.savedRows:(data.meta.mode==="diff"?data.source.old.rows:null),oldMap=comparison?byId(comparison):new Map(),newMap=byId(state.currentRows),ids=state.currentRows.map(rowId),previousOrder=comparison?.map(rowId).filter(id=>newMap.has(id))??[],currentOrder=ids.filter(id=>oldMap.has(id)),moved=new Set(state.unsavedDiff?currentOrder.filter((id,i)=>id!==previousOrder[i]):[]);if(comparison){
+function rebuildRows(){savedRowIndex=byId(state.savedRows);const comparison=state.unsavedDiff?state.savedRows:(diffActive()?data.source.old.rows:null),oldMap=comparison?byId(comparison):new Map(),newMap=byId(state.currentRows),ids=state.currentRows.map(rowId),moved=comparison&&(state.unsavedDiff||data.options.reviewComparison)?movedRowIds(oldMap,newMap):new Set();if(comparison){
   let following=null;
   for(let index=comparison.length-1;index>=0;index--){
     const id=rowId(comparison[index]);
@@ -668,6 +682,9 @@ function renderLayout(){
 }
 function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();trace?.linkGlossary();renderQualityPanel();positionCellEditor();}
 function syncModeUi(){
+  const comparison=$("#review-comparison");
+  comparison.hidden=!data.options.reviewComparison;
+  comparison.textContent=state.reviewCurrent?"Show changes since last save":"Show current requirements";
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
@@ -1136,24 +1153,43 @@ $("#discard-draft").addEventListener("click",()=>{
 });
 $("#recover-draft-notice").addEventListener("click",()=>$("#recover-draft").click());
 $("#autosave").addEventListener("change",scheduleAutosave);
-function prepareReviewCopy(clone,embedded){
+function prepareReviewCopy(clone,embedded,withChanges){
   const rows=byId(embedded.source.new.rows);
+  const counts={added:0,removed:0,changed:0,unchanged:0};
   embedded.meta={...embedded.meta,documentMode:"review",mode:"snapshot",
-    generated:localTimestamp(),oldFilename:null,ignoredColumns:[],
-    counts:{added:0,removed:0,changed:0,unchanged:rows.size}};
+    generated:localTimestamp(),oldFilename:null,counts};
   embedded.options={...embedded.options,reviewerInitials:""};
-  embedded.source.old=null;
   embedded.columns=embedded.columns.filter(column=>!column.oldOnly)
     .map(column=>({...column,newOnly:false}));
   embedded.comments=embedded.comments.filter(comment=>rows.has(comment.requirementId));
   embedded.qualityReview.dismissals=embedded.qualityReview.dismissals.filter(({id,column,value})=>
     rows.get(id)?.[column]===value);
-  delete embedded.diffStatus;
 
+  if(withChanges){
+    embedded.meta.mode="diff";
+    embedded.meta.oldFilename="Last saved version";
+    Object.assign(embedded.options,{reviewComparison:true,initialChangesOnly:true,
+      includeUnchanged:true,initialView:state.view});
+    embedded.source.old={headers:embedded.source.new.headers,rows:state.savedRows};
+    embedded.diffStatus=diffStatuses(state.savedRows,{includeMoves:true});
+    for(const status of Object.values(embedded.diffStatus))counts[status]++;
+    const retained=new Set(embedded.comments.map(comment=>comment.id));
+    for(const comment of state.savedComments){
+      if(embedded.diffStatus[comment.requirementId]==="removed"&&!retained.has(comment.id)){
+        embedded.comments.push(comment);
+      }
+    }
+  }else{
+    counts.unchanged=rows.size;
+    embedded.meta.ignoredColumns=[];
+    embedded.source.old=null;
+    delete embedded.diffStatus;
+  }
   const badge=clone.querySelector("#document-mode");
   badge.classList.replace("develop","review");
   badge.textContent="Review mode";
-  const description=`Source: ${embedded.meta.newFilename} · Generated ${embedded.meta.generated}`;
+  const comparison=withChanges?" · Compared with last save":"";
+  const description=`Source: ${embedded.meta.newFilename}${comparison} · Generated ${embedded.meta.generated}`;
   clone.querySelector("#metadata").textContent=description;
   clone.querySelector(".report-info summary").title=description;
   clone.querySelector(".print-details").textContent=description;
@@ -1162,7 +1198,7 @@ function prepareReviewCopy(clone,embedded){
   clone.querySelector("#reviewer-details summary").setAttribute("aria-label","Set reviewer initials");
   clone.querySelectorAll(".develop-only,.diff-only").forEach(element=>element.hidden=true);
 }
-function saveReportCopy(forReview=false){
+function saveReportCopy({forReview=false,withChanges=false}={}){
   if(writingCsv||(forReview&&!developMode()))return;
   if(state.editingCell){
     $("#save-status").textContent="Apply or cancel the cell edit before saving";
@@ -1189,8 +1225,9 @@ function saveReportCopy(forReview=false){
   const embedded={...data,comments:snapshot.comments,qualityReview:snapshot.qualityReview,
     source:{...data.source,new:{...data.source.new,rows:snapshot.rows}}};
   delete embedded.rows;
-  if(forReview)prepareReviewCopy(clone,embedded);
-  else if(data.meta.mode==="diff")embedded.diffStatus=savedDiffStatuses();
+  if(forReview)prepareReviewCopy(clone,embedded,withChanges);
+  else if(data.meta.mode==="diff")embedded.diffStatus=diffStatuses(data.source.old.rows,{
+    includeMoves:data.options.reviewComparison,includeUnchanged:data.options.includeUnchanged});
   clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
 
   for(const id of ["requirements-body","heading-row","filter-row","column-widths","column-list",
@@ -1211,7 +1248,7 @@ function saveReportCopy(forReview=false){
     option.toggleAttribute("selected",option.value===keyboardMode.value);
   }
 
-  const kind=forReview?"for-review":developMode()?"developed":"reviewed";
+  const kind=forReview?(withChanges?"changes-for-review":"for-review"):developMode()?"developed":"reviewed";
   const suffix=token?`-${token}`:"";
   const filename=`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`;
   downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),filename);
@@ -1224,6 +1261,10 @@ function saveReportCopy(forReview=false){
 }
 $("#revert-selected-cell").addEventListener("click",()=>revertCell(tableBody.querySelector(".selected-cell")));
 $("#restore-deleted-requirement").addEventListener("click",restoreDeletedRequirement);
+$("#review-comparison").addEventListener("click",()=>{
+  state.reviewCurrent=!state.reviewCurrent;
+  render();
+});
 const tableContextMenu=$("#table-context-menu");
 let contextCell=null;
 function closeTableContext(restoreFocus=false){
@@ -1480,7 +1521,7 @@ tableBody.addEventListener("click",event=>{
     applyCellEdit(editor,cell);
   }
 });
-for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy(true));
+for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy({forReview:true}));$("#export-review-changes").addEventListener("click",()=>saveReportCopy({forReview:true,withChanges:true}));
 document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
   const cell=event.target.closest("[data-grid-cell]");
   if(cell&&developMode()&&!event.target.closest("form,button,a")){
@@ -1529,7 +1570,7 @@ document.addEventListener("submit",event=>{const form=event.target.closest("[dat
     if(!event.repeat)addButton.click();
   }else startCellEdit(cell,{selection:event.key==="F2"?"auto":"all"});
 }},true);
-function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
+function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.reviewCurrent&&!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
 function syncReviewerLabel(){
   const initials=reviewerInitials();
   $("#reviewer-label").textContent=initials||"Set initials";
@@ -1730,9 +1771,9 @@ TEMPLATE = r"""<!doctype html>
 </header>
 <div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
 <section class="toolbar" aria-label="Table controls">
-<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
+<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
 <details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
-<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
+<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="review-comparison" hidden>Show current requirements</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
 <details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong>

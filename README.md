@@ -55,6 +55,8 @@ In Develop mode, double-click a non-ID cell or press Enter/F2 to edit its Markdo
 
 To hand off requirements from Develop mode, finish the active edit and choose **File → Export for review**. The browser downloads a self-contained `-for-review-…html` snapshot with the current rows, traceability, glossary, and comments on those rows. Export works from a comparison view and shares the current snapshot. The author can keep editing and save their working file separately. Send the exported HTML to the reviewer. They can open it offline, enter their initials, and return their comments using **File → Save report copy**.
 
+For a review against an established baseline, choose **File → Export changes for review** before saving the new edits. This copy includes the last saved rows and opens with the changes visible, including additions, removals, edits, and changes to row order. Saving the working report, including CSV autosave, advances that baseline. In Review mode, use **View → Show current requirements** to see the full current table and **View → Show changes since last save** to return to the comparison. The annotated report copy carries the comparison back to the author.
+
 ## Systems and traceability pilot
 
 Build the pilot from ReqTable's own requirements CSV.

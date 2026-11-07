@@ -62,6 +62,7 @@ Use `requirements-uat.html` for the full snapshot and `examples/requirements-dif
 1. In Develop, edit a requirement and choose **File → Export for review**. Confirm the `-for-review-…html` download and verify the Develop report still marks the edit unsaved.
 2. Open the download offline in a fresh browser profile. Confirm it opens in Review mode with the edited value, traceability views if enabled, and existing comments on current rows. Enter reviewer initials, add a comment, and use **Save report copy** to download the annotated Review file.
 3. Export from a Develop comparison report. Confirm the download shows the current rows as a snapshot, with the old baseline, removed rows, and comments on removed rows excluded.
+4. With an established saved baseline, edit, add, remove, and reorder rows in Develop. Before saving, choose **File → Export changes for review**. Open the copy offline and verify the comparison shows these changes against the last save. Switch to **Show current requirements**, then back to **Show changes since last save**. Comment on a removed row, save a report copy, and verify the comment and comparison survive reopening.
 19. Confirm the ID column never shows an add-comment control and Enter/C does not open comments there.
 20. Confirm a blue `+` appears only in the selected cell and a cell under the pointer, while populated comment counts remain red and visible.
 21. Confirm stored timestamps include an offset and displayed timestamps use local `YYYY-MM-DD HH:MM:SS` format.
