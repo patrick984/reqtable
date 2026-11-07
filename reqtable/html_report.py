@@ -1136,36 +1136,92 @@ $("#discard-draft").addEventListener("click",()=>{
 });
 $("#recover-draft-notice").addEventListener("click",()=>$("#recover-draft").click());
 $("#autosave").addEventListener("change",scheduleAutosave);
-function saveReportCopy(){if(writingCsv)return;if(state.editingCell){$("#save-status").textContent="Apply or cancel the cell edit before saving";return;}let token="";if(data.options.commentsEnabled){const initials=reviewerInitials();if(!validInitials(initials)){alert("Enter 1–16 reviewer initials before saving.");focusReviewerInitials();return;}token=filenameInitials(initials);if(!token){alert("Enter initials containing at least one ASCII letter or digit for the filename.");return;}persistReviewerInitials();data.options.reviewerInitials=initials;}const clone=document.documentElement.cloneNode(true);
-const embedded={...data};
-delete embedded.rows;
-embedded.comments=state.comments;
-embedded.qualityReview=cloneValue(state.qualityReview);
-embedded.source={...data.source,new:{...data.source.new,rows:state.currentRows}};
-if(data.meta.mode==="diff")embedded.diffStatus=savedDiffStatuses();
-clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
-clone.querySelector("#requirements-body").replaceChildren();
-clone.querySelector("#table-context-menu").replaceChildren();
-clone.querySelector("#table-context-menu").hidden=true;
-clone.querySelector("#row-drag-preview").hidden=true;
-clone.querySelector("#row-drag-preview").replaceChildren();
-clone.querySelector("#comment-list").replaceChildren();
-clone.querySelector("#quality-panel").hidden=true;
-trace?.clearCopy(clone);
-for(const selector of ["#quality-settings-dialog","#quality-dismiss-dialog"]){
-  clone.querySelector(selector).removeAttribute("open");
+function prepareReviewCopy(clone,embedded){
+  const rows=byId(embedded.source.new.rows);
+  embedded.meta={...embedded.meta,documentMode:"review",mode:"snapshot",
+    generated:localTimestamp(),oldFilename:null,ignoredColumns:[],
+    counts:{added:0,removed:0,changed:0,unchanged:rows.size}};
+  embedded.options={...embedded.options,reviewerInitials:""};
+  embedded.source.old=null;
+  embedded.columns=embedded.columns.filter(column=>!column.oldOnly)
+    .map(column=>({...column,newOnly:false}));
+  embedded.comments=embedded.comments.filter(comment=>rows.has(comment.requirementId));
+  embedded.qualityReview.dismissals=embedded.qualityReview.dismissals.filter(({id,column,value})=>
+    rows.get(id)?.[column]===value);
+  delete embedded.diffStatus;
+
+  const badge=clone.querySelector("#document-mode");
+  badge.classList.replace("develop","review");
+  badge.textContent="Review mode";
+  const description=`Source: ${embedded.meta.newFilename} · Generated ${embedded.meta.generated}`;
+  clone.querySelector("#metadata").textContent=description;
+  clone.querySelector(".report-info summary").title=description;
+  clone.querySelector(".print-details").textContent=description;
+  clone.querySelector(".report-info .summary").replaceChildren();
+  clone.querySelector("#reviewer-label").textContent="Set initials";
+  clone.querySelector("#reviewer-details summary").setAttribute("aria-label","Set reviewer initials");
+  clone.querySelectorAll(".develop-only,.diff-only").forEach(element=>element.hidden=true);
 }
-clone.querySelector("#quality-dismiss-reason").value="";
-clone.querySelector("#quality-dismiss-reason").textContent="";
-clone.querySelector("#quality-findings").replaceChildren();
-clone.querySelector("#quality-count").textContent="";
-clone.querySelector("#reviewer-initials").setAttribute("value",reviewerInitials());
-clone.querySelector("#dirty-details").textContent="";
-clone.querySelector("#dirty-announcement").textContent="";
-for(const option of clone.querySelector("#keyboard-mode").options){
-  option.toggleAttribute("selected",option.value===keyboardMode.value);
+function saveReportCopy(forReview=false){
+  if(writingCsv||(forReview&&!developMode()))return;
+  if(state.editingCell){
+    $("#save-status").textContent="Apply or cancel the cell edit before saving";
+    return;
+  }
+  const initials=forReview?"":reviewerInitials();
+  let token="";
+  if(!forReview&&data.options.commentsEnabled){
+    if(!validInitials(initials)){
+      alert("Enter 1–16 reviewer initials before saving.");
+      focusReviewerInitials();
+      return;
+    }
+    token=filenameInitials(initials);
+    if(!token){
+      alert("Enter initials containing at least one ASCII letter or digit for the filename.");
+      return;
+    }
+    persistReviewerInitials();
+    data.options.reviewerInitials=initials;
+  }
+
+  const clone=document.documentElement.cloneNode(true),snapshot=currentSnapshot();
+  const embedded={...data,comments:snapshot.comments,qualityReview:snapshot.qualityReview,
+    source:{...data.source,new:{...data.source.new,rows:snapshot.rows}}};
+  delete embedded.rows;
+  if(forReview)prepareReviewCopy(clone,embedded);
+  else if(data.meta.mode==="diff")embedded.diffStatus=savedDiffStatuses();
+  clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
+
+  for(const id of ["requirements-body","heading-row","filter-row","column-widths","column-list",
+    "active-filter-list","table-context-menu","row-drag-preview","comment-list","quality-findings",
+    "quality-count","quality-dismiss-description","quick-comment","comment-hover","value-filter-popover",
+    "dirty-details","dirty-announcement","save-status"]){
+    clone.querySelector("#"+id).replaceChildren();
+  }
+  for(const id of ["table-context-menu","row-drag-preview","quality-panel","quick-comment","comment-hover",
+    "value-filter-popover","review-panel","dirty-indicator","recovery-notice","recover-draft","discard-draft"]){
+    clone.querySelector("#"+id).hidden=true;
+  }
+  trace?.clearCopy(clone);
+  clone.querySelectorAll("details[open],dialog[open]").forEach(element=>element.removeAttribute("open"));
+  clone.querySelector("#quality-dismiss-reason").replaceChildren();
+  clone.querySelector("#reviewer-initials").setAttribute("value",initials);
+  for(const option of clone.querySelector("#keyboard-mode").options){
+    option.toggleAttribute("selected",option.value===keyboardMode.value);
+  }
+
+  const kind=forReview?"for-review":developMode()?"developed":"reviewed";
+  const suffix=token?`-${token}`:"";
+  const filename=`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`;
+  downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),filename);
+  if(forReview){
+    $("#save-status").textContent="Review copy download initiated";
+  }else{
+    state.savedQualityReview=snapshot.qualityReview;
+    markSaved(snapshot,`Report download initiated at ${new Date().toLocaleTimeString()}`);
+  }
 }
-clone.querySelectorAll("details[open]").forEach(d=>d.removeAttribute("open"));for(const selector of["#quick-comment","#comment-hover","#value-filter-popover","#review-panel","#dirty-indicator"])clone.querySelector(selector).hidden=true;clone.querySelector("#save-status").textContent="";clone.querySelector("#recovery-notice").hidden=true;clone.querySelector("#recover-draft").hidden=true;clone.querySelector("#discard-draft").hidden=true;const kind=developMode()?"developed":"reviewed",suffix=token?`-${token}`:"";downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`);state.savedQualityReview=cloneValue(state.qualityReview);markSaved(currentSnapshot(),`Report download initiated at ${new Date().toLocaleTimeString()}`);}
 $("#revert-selected-cell").addEventListener("click",()=>revertCell(tableBody.querySelector(".selected-cell")));
 $("#restore-deleted-requirement").addEventListener("click",restoreDeletedRequirement);
 const tableContextMenu=$("#table-context-menu");
@@ -1424,7 +1480,7 @@ tableBody.addEventListener("click",event=>{
     applyCellEdit(editor,cell);
   }
 });
-for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",saveReportCopy);
+for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy(true));
 document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
   const cell=event.target.closest("[data-grid-cell]");
   if(cell&&developMode()&&!event.target.closest("form,button,a")){
@@ -1674,7 +1730,7 @@ TEMPLATE = r"""<!doctype html>
 </header>
 <div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
 <section class="toolbar" aria-label="Table controls">
-<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
+<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
 <details class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><div class="menu-section"><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="revert-selected-cell" class="diff-only" disabled>Revert selected cell</button><button id="restore-deleted-requirement" class="diff-only" disabled>Restore deleted requirement</button><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>

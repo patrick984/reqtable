@@ -56,6 +56,12 @@ Use `requirements-uat.html` for the full snapshot and `examples/requirements-dif
 16. Open `comments.csv` and confirm each row's Comments field is a valid JSON array.
 17. Add a comment to removed requirement SYS-005, save, and confirm default diff extraction refuses comment loss.
 18. Repeat extraction with `--csv-base union` and confirm SYS-005 and `_Diff Status=removed` appear.
+
+## Export for review
+
+1. In Develop, edit a requirement and choose **File → Export for review**. Confirm the `-for-review-…html` download and verify the Develop report still marks the edit unsaved.
+2. Open the download offline in a fresh browser profile. Confirm it opens in Review mode with the edited value, traceability views if enabled, and existing comments on current rows. Enter reviewer initials, add a comment, and use **Save report copy** to download the annotated Review file.
+3. Export from a Develop comparison report. Confirm the download shows the current rows as a snapshot, with the old baseline, removed rows, and comments on removed rows excluded.
 19. Confirm the ID column never shows an add-comment control and Enter/C does not open comments there.
 20. Confirm a blue `+` appears only in the selected cell and a cell under the pointer, while populated comment counts remain red and visible.
 21. Confirm stored timestamps include an offset and displayed timestamps use local `YYYY-MM-DD HH:MM:SS` format.

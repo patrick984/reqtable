@@ -571,9 +571,12 @@ const trace=(()=>{
     clone.querySelector("#trace-systems").hidden=true;
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
     clone.querySelector("#trace-selected-links").setAttribute("aria-expanded","false");
-    for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system"]){
+    for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system",
+      "trace-system-name","trace-system-parent","trace-delete-impact","trace-delete-other"]){
       clone.querySelector("#"+id).replaceChildren();
     }
+    clone.querySelector("#trace-delete-title").textContent="Delete system?";
+    clone.querySelectorAll("#trace-delete-form select").forEach(select=>select.replaceChildren());
     for(const id of ["trace-editor","trace-picker","trace-delete","trace-findings"]){
       clone.querySelector("#"+id).removeAttribute("open");
     }

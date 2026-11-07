@@ -53,6 +53,8 @@ In Develop mode, double-click a non-ID cell or press Enter/F2 to edit its Markdo
 
 **File → Save CSV As…** selects a writable destination in supported Chromium contexts. **Save CSV** reuses that destination for the session. Both include the configured `Comments` column by default and download a CSV if the picker is unavailable. **File → Autosave** keeps a local recovery draft where browser storage is available and writes to the selected CSV after a short pause once a writable handle is established. When you reopen the original report, choose **Recover draft** above the table to restore committed edits. The same action is available under File. **Save report copy** creates a resumable self-contained HTML file. Develop copies use names such as `requirements-developed-PN-20260913-085719.html`; Review copies retain the `requirements-reviewed-PN-20260913-085719.html` convention.
 
+To hand off requirements from Develop mode, finish the active edit and choose **File → Export for review**. The browser downloads a self-contained `-for-review-…html` snapshot with the current rows, traceability, glossary, and comments on those rows. Export works from a comparison view and shares the current snapshot. The author can keep editing and save their working file separately. Send the exported HTML to the reviewer. They can open it offline, enter their initials, and return their comments using **File → Save report copy**.
+
 ## Systems and traceability pilot
 
 Build the pilot from ReqTable's own requirements CSV.
