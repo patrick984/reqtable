@@ -8,6 +8,9 @@ In a traceability Develop report, a column with `Value` records (Priority and Ve
 - `value-filter` narrows the list by prefix first, then by contained text.
 - `multi-segment` completes the semicolon-separated segment under the caret on a `Multiple=Yes` column.
 - `trace-marker` flags every cell with a trace finding and opens that finding.
+- `values-view` lists Value and Field records under Glossary → Values.
+- `add-value` adds a Value record from the Field, Name, Definition and Aliases form.
+- `rename-value` rewrites the rows that use a renamed value in the same undo step.
 
 ## How to get to it (user POV)
 
@@ -29,10 +32,14 @@ Preconditions:
 - **Marker appears.** In REQ-016's Priority editor select all, type `Shoud`, press `Return`. `tr[data-row-id="REQ-016"] td[data-column="Priority"] .trace-marker` exists with `aria-label` `1 trace finding for REQ-016, Priority`, and its `title` includes the message.
 - **Marker opens the finding.** Click the marker. `#trace-panel` is visible, `#trace-findings` has `open`, and the matching `#trace-issues li` has class `trace-finding-active`.
 - **Marker clears on Undo.** Click a grid cell and press `cmd+z`. The `.trace-marker` in that cell is gone and the Priority cell reads its previous value.
+- **Values view.** Install the stubs from SKILL.md (`window.__dialogs`, `confirm` returns true). Click `[data-trace-view="glossary"]`, then `[data-glossary-kind="values"]`. That button has `aria-pressed="true"`, `[data-glossary-kind="terms"]` has `false`, and `#trace-term-add` is hidden while `#trace-value-add` is visible. Every body row is Type `Value` or `Field` (read the `td[data-column="Type"]` cells). The ID column is hidden and `#result-count` reads `N value records`. Click `[data-glossary-kind="terms"]` and the Term rows return.
+- **Add value.** In Values mode click `#trace-value-add`. In `#trace-editor`, `#trace-value-field` lists `Priority` and `Verification Method` before other columns. Choose `Priority` with `form_input`, set `#trace-record-name` to `Won't`, `#trace-record-content` to any definition, and submit with the Apply button. A row `tr[data-row-id="VAL-PRIORITY-WON-T"]` exists with Type `Value`, Field `Priority` and Name `Won't`, and it holds focus. Adding `Won't` again gives `tr[data-row-id="VAL-PRIORITY-WON-T-2"]`.
+- **Rename follows.** In Values mode select the Name cell of `tr[data-row-id="VAL-PRIORITY-COULD"]` (`td[data-column="Name"]`), press `Return`, select all, type `May`, press `Return`. `window.__dialogs` ends with `{type:"confirm", message:"Rename “Could” to “May” in 1 row that uses it?"}`. Switch to Requirements: `tr[data-row-id="REQ-166"] td[data-column="Priority"]` reads `May` and has no `.trace-marker`. Click a grid cell and press `cmd+z` once: REQ-166's Priority reads `Could` again and the Value row's Name reads `Could`.
 
 ## Gotchas
 
 - Suggestions come from the Value records, not the cells. A value typed by hand that is not defined is accepted and flagged, never blocked.
 - A cell that is open in the inline editor has no marker until the edit is applied or cancelled.
 - A cell can hold both `.quality-marker` and `.trace-marker`. Select by class, not by position.
+- If `confirm` returns false the Name still changes and the rows keep the old value, now flagged.
 - Print hides `.trace-marker`. Do not look for it in a print preview.
