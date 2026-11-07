@@ -566,7 +566,7 @@ function moveRequirement(delta,repeat=false){
   if(top===bottom){
     const id=selectedRequirementId();
     const index=state.currentRows.findIndex(row=>rowId(row)===id);
-    reorderRequirement(index,index+delta);
+    reorderRequirement(index,index+delta,1,null,true);
     return;
   }
   if(!canDragRows()){
@@ -576,23 +576,54 @@ function moveRequirement(delta,repeat=false){
   const movePosition=position=>({...position,row:position.row+delta});
   const selection={...rangeSelection,anchor:movePosition(rangeSelection.anchor),
     extent:movePosition(rangeSelection.extent)};
-  reorderRequirement(top,top+delta,bottom-top+1,selection);
+  reorderRequirement(top,top+delta,bottom-top+1,selection,true);
 }
-function reorderRequirement(index,target,count=1,selection=null){
+function reorderRequirement(index,target,count=1,selection=null,keepGrid=false){
   if(index<0||index+count>state.currentRows.length||target<0
       ||target>state.currentRows.length-count||index===target)return;
   const id=rowId(state.currentRows[index]);
   const column=visibleColumns()[state.focus.column]?.name;
+  const moveInPlace=keepGrid&&Math.abs(target-index)===1&&canDragRows();
   remember();
   const rows=state.currentRows.splice(index,count);
   state.currentRows.splice(target,0,...rows);
   state.sort=null;
+  if(moveInPlace){
+    moveRenderedRows(index,target,count,selection);
+    updateDirty();
+    syncModeUi();
+    return;
+  }
   updateDirty();
   render();
   if(selection){
     rangeSelection=selection;
     focusGridCell(selection.extent.row,selection.extent.column,true);
   }else focusRequirement(id,column);
+}
+function moveRenderedRows(index,target,count,selection){
+  const delta=target-index;
+  const first=Math.min(index,target);
+  const last=Math.max(index,target)+count-1;
+  // Move the neighboring row around the block so the focused cell stays attached.
+  const rows=tableBody.rows;
+  if(delta<0) tableBody.insertBefore(rows[first],rows[last+1]??null);
+  else tableBody.insertBefore(rows[last],rows[first]);
+  const moved=data.rows.splice(index,count);
+  data.rows.splice(target,0,...moved);
+  for(let row=first;row<=last;row++){
+    data.rows[row].sourceOrder=row;
+    for(const cell of rows[row].cells)cell.dataset.rowIndex=row;
+  }
+  if(selection)rangeSelection=selection;
+  else if(rangeSelection){
+    rangeSelection.anchor.row+=delta;
+    rangeSelection.extent.row+=delta;
+  }
+  state.focus.row+=delta;
+  const cell=rows[state.focus.row].cells[state.focus.column];
+  if(document.activeElement!==cell)cell.focus({preventScroll:true});
+  ensureCellVisible(cell);
 }
 function renameRequirement(){if(!developMode())return;const oldId=selectedRequirementId(),row=oldId&&findCurrentRow(oldId);if(!row){alert("Select a current requirement before renaming it.");return;}const proposed=prompt(`Rename requirement ${oldId}:`,oldId);if(proposed===null)return;const id=validateNewId(proposed,oldId);if(!id||id===oldId)return;remember();row[data.meta.idColumn]=id;for(const comment of state.comments)if(comment.requirementId===oldId)comment.requirementId=id;if(state.commentContext?.rid===oldId)state.commentContext.rid=id;const column=visibleColumns()[state.focus.column]?.name;updateDirty();render();focusRequirement(id,column);}
 function deleteRequirement(){if(!developMode())return;const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);if(index<0){alert("Select a current requirement before deleting it.");return;}const commentCount=state.comments.filter(c=>c.requirementId===id).length,message=commentCount?`Delete requirement ${id} and its ${commentCount} attached comment${commentCount===1?'':'s'}?`:`Delete requirement ${id}?`;if(!confirm(message))return;remember();state.currentRows.splice(index,1);state.comments=state.comments.filter(c=>c.requirementId!==id);updateDirty();render();}
