@@ -117,9 +117,39 @@ A mapping for a requirements table with "Req ID" and "Text" columns and a glossa
 - Each source names one `table` or one `sheet` (with an optional `header_row`). `columns` renames headers and `exclude` drops them; other headers pass through. A name that is not a header of that source is an error that lists the real headers.
 - `type` sets the `Type` column on that source's rows, so glossary rows become `Term` records. It needs `--traceability` (or `"traceability": true`).
 - `id_prefix` gives an ID to rows that have none: the prefix plus the first alias, or the name when there is no alias, in capitals with other characters turned into `-`. `Identifier` with alias `ID` becomes `TERM-ID`. The ID depends only on the row, so it survives a re-import. Two rows that generate the same ID are a duplicate-ID error; give one of them a different alias.
+- `set` fills a column with a constant on every row of that source, adding the column when it is missing: `"set": {"Field": "Priority"}`. It runs after `columns` and `exclude`, so name the output header. `type` is the same as `set.Type`; giving both is an error.
+- `lists` splits the cells of the named output columns on a separator, trims each part, drops empty ones and joins them with `; `, the separator reqtable uses in `Verified by`, `Aliases` and multi-value columns: `"lists": {"Verified by": ","}`. Use `"newline"` for one value per line. Columns not listed are never split.
+- `id_from` names the output columns that build a generated ID (needs `id_prefix`): the prefix plus the slug of each column's value, joined with `-`, empty values skipped. Without it, a `Value` source uses `["Field", "Name"]`, so `Must` in the Priority field becomes `VAL-PRIORITY-MUST`, the same ID `Add value…` creates in the report. Any other source keeps the first-alias-else-Name rule above.
 - Columns that share a name across sources line up, and cells a source lacks stay empty.
 - The mapping applies to every `.xlsx` input of the run and cannot be combined with `--table`, `--sheet` or `--header-row`. CSV inputs ignore it.
 - `-o combined.csv` exports the combined table, so you can edit it as CSV from then on.
+
+#### Lookup lists and tests
+
+A workbook can also hold the allowed values for columns such as Priority and Verification Method, and a table of tests. This mapping imports a requirements table whose `Tests` cells read `T-1, T-2`, a `Priorities` sheet (Value, Meaning), a `Lists` sheet (Field, Value, Meaning, Old spellings), a `TestCases` table and a `Plans` table:
+
+```json
+{
+  "id_column": "ID",
+  "traceability": true,
+  "xlsx": {
+    "sources": [
+      {"table": "Reqs", "columns": {"Req ID": "ID", "Text": "Requirement", "Tests": "Verified by"},
+       "lists": {"Verified by": ","}},
+      {"sheet": "Priorities", "type": "Value", "set": {"Field": "Priority"},
+       "columns": {"Value": "Name", "Meaning": "Definition"}, "id_prefix": "VAL-"},
+      {"sheet": "Lists", "type": "Value",
+       "columns": {"Value": "Name", "Meaning": "Definition", "Old spellings": "Aliases"},
+       "lists": {"Aliases": ","}, "id_prefix": "VAL-"},
+      {"table": "TestCases", "type": "Test",
+       "columns": {"Test ID": "ID", "Title": "Name", "Plan": "Test plan", "Method": "Verification Method"}},
+      {"table": "Plans", "type": "Test plan", "columns": {"Plan ID": "ID", "Title": "Name"}}
+    ]
+  }
+}
+```
+
+The value rows get IDs such as `VAL-PRIORITY-MUST` and `VAL-VERIFICATION-METHOD-MANUAL-BROWSER-TEST`, requirements link to their tests with `T-1; T-2`, and each test links to its plan. A `Type=Field` source (`"type": "Field"`, `"set": {"Multiple": "Yes"}`, `Column` mapped to `Name`) marks a column as multi-value.
 
 ## Configuration
 
