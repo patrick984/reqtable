@@ -156,7 +156,7 @@ const trace=(()=>{
   const wrap=$(".table-wrap"),systemsPage=$("#trace-systems");
   const selectedLinks=$("#trace-selected-links");
   const requirementsDefaults=new Set([
-    data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
+    data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method","Verification Phase"
   ]);
   const sourceColumns=new Set([data.meta.idColumn,"Type","Name","Requirement","Reference"]);
   const sourceLayout={
