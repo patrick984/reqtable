@@ -491,7 +491,7 @@ The optional `text` representation emits human-readable comment blocks containin
 
 ### 10.13 Changes-since-save diff
 
-- Develop mode provides a `Show changes since save` toggle.
+- Develop mode provides `Compare with last save` and `Return to normal view` commands in the View menu.
 - At initial load, the saved baseline is the embedded current dataset. Saving a report copy or successfully writing/initiating a CSV download advances the saved baseline to the current revision.
 - When enabled, the table compares the saved baseline with the current in-memory dataset using added, removed, changed, and unchanged statuses and the existing unified/side-by-side cell presentation.
 - Editing a row marks it changed; adding a row marks it added; deleting a saved row marks it removed; restoring values to their saved form makes the row unchanged.

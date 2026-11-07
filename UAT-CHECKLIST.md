@@ -85,12 +85,12 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 6. Delete a requirement without comments and undo/redo the deletion.
 7. Delete a requirement with comments and confirm the warning explicitly includes comment deletion; undo and confirm both return.
 8. Apply several edits and confirm the unsaved indicator distinguishes requirements, comments, and both.
-9. Toggle Show changes since save and verify added, removed, changed, and unchanged statuses. Switch the unsaved comparison between unified and side-by-side views.
+9. Choose Compare with last save and verify added, removed, changed, and unchanged statuses. Switch the unsaved comparison between unified and side-by-side views.
 10. Revert a cell to its saved value and confirm its diff disappears.
 11. Save report copy, confirm the developed filename convention, reopen it, and verify it is clean and remains in Develop mode with all current rows.
 12. Use Save CSV. Where a native picker is offered, save directly; otherwise confirm a download occurs. Parse the file and verify quoted, multiline, Unicode, and comma-containing values round-trip.
 13. Confirm the exported CSV contains the Comments column by default and its entries are valid JSON arrays.
-14. After CSV saving, enable Show changes since save and confirm there are no outstanding requirement changes. Make another edit and confirm only that edit appears.
+14. After CSV saving, choose Compare with last save and confirm there are no outstanding requirement changes. Make another edit and confirm only that edit appears.
 
 ## Accessibility and print
 
