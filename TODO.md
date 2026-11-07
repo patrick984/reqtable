@@ -11,5 +11,5 @@
   - [x] Phase 1: Value and Field record types; Trace findings for undefined values, alias spellings, multi-value columns, and invalid Value/Field records; UAT CSV definitions.
   - [x] Phase 2: editor suggests defined values with definitions (multi-select where `Multiple=Yes`) and marks flagged cells.
   - [x] Phase 3: Values view in the Glossary, `Add value…` in Develop, renaming a value updates the rows that use it.
-  - [ ] Phase 4: `Test` and `Test plan` record types; requirement `Verified by` links to tests; a test's `Test plan` column links to its plan (not `Part of`, which builds the Systems tree); its `Reference` is the external link; its Verification Method and Phase are checked against Values.
+  - [x] Phase 4: `Test` and `Test plan` record types; requirement `Verified by` links to tests; a test's `Test plan` column links to its plan (not `Part of`, which builds the Systems tree); its `Reference` is the external link; its Verification Method and Phase are checked against Values.
   - [ ] Phase 5: XLSX mapping support for Value, Field and Test sources (Value IDs include the field, e.g. `VAL-PRIORITY-MUST`).
