@@ -898,7 +898,7 @@ function recordKind(type){
   if(!trace)return "requirement";
   const value=type?.trim();
   if(value==="")return "requirement";
-  return ["Requirement","System","Need","Source","Term"].includes(value)?value.toLowerCase():"record";
+  return ["Requirement","System","Need","Source","Term","Test","Test plan"].includes(value)?value.toLowerCase():"record";
 }
 function deleteSelectedRecord(){
   if(!developMode()||state.editingCell)return;

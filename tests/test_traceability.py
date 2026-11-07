@@ -6,11 +6,14 @@ import json
 import shutil
 import subprocess
 import unittest
+from pathlib import Path
 
 from reqtable.core import build_report_data, extract_comments_csv, load_config, read_csv_table
 from reqtable.html_report import JS, render_report
-from reqtable.traceability import TRACE_MODEL_JS
+from reqtable.traceability import TRACE_COLUMNS, TRACE_MODEL_JS
 from tests.test_core import TempFiles
+
+UAT_CSV = Path(__file__).resolve().parent.parent / "requirements-uat.csv"
 
 
 class TraceCsvTests(TempFiles):
@@ -47,7 +50,11 @@ class TraceCsvTests(TempFiles):
         self.assertIn('data-trace-view="sources"', report)
         self.assertIn('data-trace-view="glossary"', report)
         self.assertIn('id="glossary-definition"', report)
-        self.assertIn('data-trace-view="all"', report)
+        self.assertIn('data-trace-view="tests"', report)
+        self.assertLess(report.index('data-trace-view="glossary"'), report.index('data-trace-view="tests"'))
+        self.assertLess(report.index('data-trace-view="tests"'), report.index('data-trace-view="all"'))
+        for name in ("Verified by", "Test plan"):
+            self.assertIn(name, pilot["source"]["new"]["headers"])
 
         report_path = self.write("pilot.html", report)
         output_path = self.root / "saved.csv"
@@ -177,3 +184,109 @@ const remove=traceIncomingChanges(rows,"SYS",null);
 assert.deepEqual(remove.map(({row,field,value})=>[row.ID,field,value]),
   [["SUB","Part of",""],["P","Allocated to","absent; N"]]);
 """)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class TestRecordModelTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
+                       + TRACE_MODEL_JS + assertions, text=True, check=True)
+
+    def test_trace_columns_include_test_links(self):
+        self.assertIn("Verified by", TRACE_COLUMNS)
+        self.assertIn("Test plan", TRACE_COLUMNS)
+
+    def test_links_resolve_in_both_directions(self):
+        self.run_js(r"""
+const rows=[
+  {ID:"SYS",Type:"System"},
+  {ID:"R1",Type:"Requirement","Verified by":"T1; T2"},
+  {ID:"T1",Type:"Test","Test plan":"TP"},
+  {ID:"T2",Type:"Test"},
+  {ID:"TP",Type:"Test plan"}
+];
+const {records,issues}=buildTraceIndex(rows,row=>row.ID);
+assert.deepEqual(issues,[]);
+assert.deepEqual(records.get("T1").incoming.map(({field,record})=>[field,record.id]),[["Verified by","R1"]]);
+assert.deepEqual(records.get("TP").incoming.map(({field,record})=>[field,record.id]),[["Test plan","T1"]]);
+assert.equal(traceCanLink(records.get("R1"),"Verified by",records.get("TP")),false);
+assert.equal(traceCanLink(records.get("T2"),"Test plan",records.get("TP")),true);
+assert.equal(traceCanLink(records.get("R1"),"Test plan",records.get("TP")),false);
+""")
+
+    def test_invalid_test_links_are_flagged(self):
+        self.run_js(r"""
+const rows=[
+  {ID:"SYS",Type:"System"},
+  {ID:"R1",Type:"Requirement","Verified by":"TP; MISSING; R1; T1; T1"},
+  {ID:"T1",Type:"Test","Test plan":"TP; TP2","Verified by":"T1"},
+  {ID:"TP",Type:"Test plan"},
+  {ID:"TP2",Type:"Test plan"},
+  {ID:"T2",Type:"Test","Test plan":"T1"},
+  {ID:"N",Type:"Need","Test plan":"TP"}
+];
+const messages=buildTraceIndex(rows,row=>row.ID).issues.map(({id,field,message})=>`${id}|${field}|${message}`);
+for(const expected of [
+  "R1|Verified by|Target TP has type Test plan. Expected Test.",
+  "R1|Verified by|Target MISSING is missing.",
+  "R1|Verified by|A record cannot link to itself.",
+  "R1|Verified by|Duplicate reference to T1.",
+  "T1|Test plan|Select at most one target.",
+  "T1|Verified by|Verified by does not apply to Test records.",
+  "T2|Test plan|Target T1 has type Test. Expected Test plan.",
+  "N|Test plan|Test plan does not apply to Need records."
+])assert.ok(messages.includes(expected),expected+"\n"+messages.join("\n"));
+""")
+
+    def test_test_plan_links_do_not_build_the_system_tree(self):
+        self.run_js(r"""
+const rows=[{ID:"SYS",Type:"System"},{ID:"T",Type:"Test","Test plan":"TP"},{ID:"TP",Type:"Test plan"}];
+const index=buildTraceIndex(rows,row=>row.ID);
+assert.deepEqual(index.issues,[]);
+assert.equal(index.roots.length,1);
+assert.deepEqual(index.records.get("TP").incoming.filter(edge=>edge.field==="Part of"),[]);
+""")
+
+    def test_deleting_a_test_removes_requirement_links(self):
+        self.run_js(r"""
+const rows=[
+  {ID:"R1",Type:"Requirement","Verified by":"T1; T2"},
+  {ID:"T1",Type:"Test","Test plan":"TP"},
+  {ID:"TP",Type:"Test plan"}
+];
+const gone=traceIncomingChanges(rows,"T1",null).map(({row,field,value})=>[row.ID,field,value]);
+assert.deepEqual(gone,[["R1","Verified by","T2"]]);
+const plan=traceIncomingChanges(rows,"TP",null).map(({row,field,value})=>[row.ID,field,value]);
+assert.deepEqual(plan,[["T1","Test plan",""]]);
+""")
+
+    def test_verification_method_on_tests_is_checked_against_values(self):
+        self.run_js(r"""
+const HEADERS=["ID","Type","Name","Definition","Verification Method","Field","Multiple","Test plan","Verified by"];
+const rows=[
+  {ID:"V1",Type:"Value",Field:"Verification Method",Name:"Automated test",Definition:"Runs unattended."},
+  {ID:"T1",Type:"Test","Verification Method":"Automated test"},
+  {ID:"T2",Type:"Test","Verification Method":"Eyeball it"}
+];
+const {issues}=buildTraceIndex(rows,row=>row.ID,{headers:HEADERS,idColumn:"ID"});
+assert.deepEqual(issues.filter(({id})=>id==="T1"),[]);
+const flagged=issues.filter(({id})=>id==="T2");
+assert.equal(flagged.length,1);
+assert.equal(flagged[0].field,"Verification Method");
+""")
+
+    def test_shipped_uat_csv_links_tests_without_findings(self):
+        config = load_config(None, {"id_column": "ID", "traceability": True})
+        source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
+        script = (
+            'const rows=' + json.dumps(source["rows"]) + ';\n' + TRACE_MODEL_JS
+            + 'const index=buildTraceIndex(rows,row=>row.ID,{headers:' + json.dumps(source["headers"])
+            + ',idColumn:"ID"});const types=type=>[...index.records.values()].filter(r=>r.type===type);'
+            + 'console.log(JSON.stringify({issues:index.issues,tests:types("Test").length,plans:types("Test plan").length,'
+            + 'verified:types("Test").filter(r=>r.incoming.some(e=>e.field==="Verified by")).length}));'
+        )
+        result = json.loads(subprocess.run(["node"], input=script, text=True, check=True,
+                                           capture_output=True).stdout)
+        self.assertEqual(result["issues"], [])
+        self.assertEqual((result["plans"], result["tests"]), (2, 5))
+        self.assertGreaterEqual(result["verified"], 1)

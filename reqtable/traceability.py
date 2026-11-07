@@ -5,7 +5,7 @@ from .values import VALUE_COLUMNS, VALUE_MODEL_JS
 
 TRACE_COLUMNS = (
     "Type", "Name", "Requirement", "Part of", "Allocated to", "Owner",
-    "Derived from", "Source refs", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
+    "Derived from", "Source refs", "Verified by", "Test plan", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
 )
 
 TRACE_MODEL_JS = GLOSSARY_MODEL_JS + VALUE_MODEL_JS + r"""
@@ -14,7 +14,9 @@ const traceFields={
   "Allocated to": {from:["Requirement"],to:["System"]},
   "Owner": {from:["Requirement"],to:["System"],single:true},
   "Derived from": {from:["Requirement"],to:["Requirement"]},
-  "Source refs": {from:["Requirement","Need","Term"],to:["Need","Source"]}
+  "Source refs": {from:["Requirement","Need","Term"],to:["Need","Source"]},
+  "Verified by": {from:["Requirement"],to:["Test"]},
+  "Test plan": {from:["Test"],to:["Test plan"],single:true}
 };
 function traceType(row){
   const value=String(row.Type??"").trim();
@@ -39,7 +41,7 @@ function buildTraceIndex(rows,identify,schema={}){
     const {id,row,type}=record;
     if(id.includes(";"))issue(id,"ID","A traceable ID cannot contain a semicolon.");
     if(type==="System")systems.push(record);
-    if(!["System","Requirement","Need","Source","Term","Value","Field"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
+    if(!["System","Requirement","Need","Source","Term","Value","Field","Test","Test plan"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
     if(type==="Requirement"&&row.Origin?.trim()==="Self-derived"&&!row.Rationale?.trim()){
       issue(id,"Rationale","Explain why this self-derived requirement is needed.");
     }
@@ -162,6 +164,16 @@ const trace=(()=>{
     flexible:new Set(["Requirement","Reference"]),
     overrides:new Map(),
   };
+  const testColumnOrder=[data.meta.idColumn,"Type","Name","Test plan","Verification Method","Reference","Requirement"];
+  const testLayout={
+    defaults:new Map([[data.meta.idColumn,110],["Type",84],["Name",168],["Test plan",110],["Verification Method",150],["Reference",220],["Requirement",260]]),
+    flexible:new Set(["Requirement","Reference"]),
+    overrides:new Map(),
+  };
+  const listViews={
+    sources:{types:["Need","Source"],columns:sourceColumns,layout:sourceLayout,summary:count=>`${count} needs and sources`},
+    tests:{types:["Test","Test plan"],columns:new Set(testColumnOrder),layout:testLayout,summary:count=>`${count} test records`},
+  };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
   const glossaryKinds={
@@ -178,6 +190,8 @@ const trace=(()=>{
     "Owner":["Owner","Set owner…"],
     "Derived from":["Parent requirements","Link parent requirement…"],
     "Source refs":["Needs and sources","Link need or source…"],
+    "Verified by":["Verified by","Link test…"],
+    "Test plan":["Test plan","Set test plan…"],
   };
   let index,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
   let selected=null,selectedSystem=null,revealed=null,pending=null,previous=null;
@@ -195,7 +209,7 @@ const trace=(()=>{
 
   function columnAvailable(name){
     if(view==="requirements")return !traceMetadata.has(name);
-    if(view==="sources")return sourceColumns.has(name);
+    if(listViews[view])return listViews[view].columns.has(name);
     if(view==="glossary")return glossaryKinds[glossaryKind].columns.has(name);
     return true;
   }
@@ -249,7 +263,7 @@ const trace=(()=>{
     if(view==="systems")return false;
     const record=index.records.get(row.id);
     const type=record?.type||(row.cells.Type?.old?.trim()||"Requirement");
-    if(view==="sources")return type==="Need"||type==="Source";
+    if(listViews[view])return listViews[view].types.includes(type);
     if(view==="glossary")return glossaryKinds[glossaryKind].types.includes(type);
     if(type!=="Requirement")return false;
     if(!system&&!unallocated)return true;
@@ -318,6 +332,7 @@ const trace=(()=>{
     selectedLinks.hidden=inSystems;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
+    $("#trace-test-actions").hidden=!developMode()||view!=="tests";
     const inGlossary=view==="glossary";
     $("#trace-glossary-kind").hidden=!inGlossary;
     for(const button of $("#trace-glossary-kind").querySelectorAll("[data-glossary-kind]")){
@@ -408,7 +423,7 @@ const trace=(()=>{
     }
     const {id,row,type}=record;
     const incomingLabels={"Part of":"Subsystems","Allocated to":"Allocated requirements","Owner":"Owned requirements",
-      "Derived from":"Child requirements","Source refs":"Referenced by"};
+      "Derived from":"Child requirements","Source refs":"Referenced by","Verified by":"Verifies","Test plan":"Tests"};
     const sections=[];
     for(const [field,rule] of Object.entries(traceFields)){
       const ids=[...new Set(traceIds(row[field]))];
@@ -447,13 +462,13 @@ const trace=(()=>{
     pending=null;
     renderDetail();
   }
-  function recordView(id){
-    const record=index.records.get(id),type=record?.type;
+  function viewForType(type){
     if(type==="System")return "systems";
-    if(type==="Need"||type==="Source")return "sources";
     if(type==="Term"||type==="Value"||type==="Field")return "glossary";
-    return type==="Requirement"?"requirements":"all";
+    if(type==="Requirement")return "requirements";
+    return Object.keys(listViews).find(name=>listViews[name].types.includes(type))??"all";
   }
+  const recordView=id=>viewForType(index.records.get(id)?.type);
   function openPanel(id){
     closeReview();
     closeQuality();
@@ -587,8 +602,10 @@ const trace=(()=>{
     $("#trace-record-name-field").hidden=type==="Requirement";
     $("#trace-record-content").value="";
     $("#trace-record-content").required=type==="Requirement"||type==="Term"||type==="Value";
+    $("#trace-test-plan-label").hidden=type!=="Test";
+    if(type==="Test")optionList($("#trace-test-plan"),[...index.records.values()].filter(({type})=>type==="Test plan"),"No test plan");
     $("#trace-record-content-field").hidden=type==="System";
-    $("#trace-record-content-label").textContent=type==="Term"||type==="Value"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":"Requirement statement";
+    $("#trace-record-content-label").textContent=type==="Term"||type==="Value"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":type==="Test"||type==="Test plan"?"Description":"Requirement statement";
     $("#trace-term-options").hidden=type!=="Term";
     $("#trace-term-aliases").value="";
     $("#trace-term-single-word").checked=false;
@@ -677,6 +694,8 @@ const trace=(()=>{
   $("#trace-view-add").addEventListener("click",()=>{if(canNavigate())addRequirement("end");});
   $("#trace-need-add").addEventListener("click",()=>editRecord("Need"));
   $("#trace-source-add").addEventListener("click",()=>editRecord("Source"));
+  $("#trace-test-plan-add").addEventListener("click",()=>editRecord("Test plan"));
+  $("#trace-test-add").addEventListener("click",()=>editRecord("Test"));
   $("#trace-term-add").addEventListener("click",()=>editRecord("Term"));
   $("#trace-value-add").addEventListener("click",()=>editRecord("Value"));
   $("#trace-glossary-kind").addEventListener("click",event=>{
@@ -807,6 +826,7 @@ const trace=(()=>{
         if(system)row["Allocated to"]=system;
       }
       if(type!=="System")row[{Term:"Definition",Value:"Definition",Source:"Reference"}[type]??"Requirement"]=content;
+      if(type==="Test")row["Test plan"]=$("#trace-test-plan").value;
       if(type==="Value"){
         row.Field=valueField;
         row.Aliases=$("#trace-value-aliases").value.trim();
@@ -818,7 +838,7 @@ const trace=(()=>{
       state.currentRows.push(row);
     }
     updateDirty();
-    const destination=type==="System"?"systems":type==="Requirement"?"requirements":type==="Term"||type==="Value"?"glossary":"sources";
+    const destination=viewForType(type);
     if(type==="System")selectedSystem=id;
     if(!switchView(destination,null,type==="Value"?"values":"terms"))render();
     if(view!=="systems"&&!visible(id)){revealed=id;render();}
@@ -855,17 +875,18 @@ const trace=(()=>{
   }
 
   return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
-    columnLayout:()=>view==="sources"?sourceLayout:null,
-    columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name):0,
+    columnLayout:()=>listViews[view]?.layout??null,
+    columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
+      :view==="tests"?testColumnOrder.indexOf(name):0,
     linkGlossary:()=>glossaryPopover.decorate(index.glossary),
     revealed:id=>view!=="systems"&&id===revealed,
-    scoped:()=>["systems","sources","glossary"].includes(view)||(view==="requirements"&&(!!system||unallocated))||!!revealed,
+    scoped:()=>view==="systems"||view==="glossary"||!!listViews[view]||(view==="requirements"&&(!!system||unallocated))||!!revealed,
     rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
     entry:()=>view==="requirements"||view==="all",
     systemsView:()=>view==="systems",
     gridSummary:count=>{
       if(view==="systems")return `${index.systems.length} systems`;
-      if(view==="sources")return `${count} needs and sources`;
+      if(listViews[view])return listViews[view].summary(count);
       if(view==="glossary")return glossaryKinds[glossaryKind].summary(count);
       if(view==="all")return `${count} of ${data.rows.length} records`;
       return `${count} requirements`;
@@ -904,6 +925,7 @@ TRACE_WORKSPACE = """
     <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
     <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
     <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
+    <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
     <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
   </nav>
   <div id="trace-scope">
@@ -921,6 +943,10 @@ TRACE_WORKSPACE = """
   <span id="trace-source-actions" hidden>
     <button id="trace-need-add" type="button">Add need…</button>
     <button id="trace-source-add" type="button">Add source…</button>
+  </span>
+  <span id="trace-test-actions" hidden>
+    <button id="trace-test-plan-add" type="button">Add test plan…</button>
+    <button id="trace-test-add" type="button">Add test…</button>
   </span>
   <p id="trace-status" class="meta" role="status"></p>
 </section>
@@ -975,6 +1001,7 @@ TRACE_HTML = """
       <label id="trace-record-name-field">Name <input id="trace-record-name"></label>
       <label id="trace-record-content-field"><span id="trace-record-content-label"></span>
         <textarea id="trace-record-content" rows="3"></textarea></label>
+      <label id="trace-test-plan-label" hidden>Test plan <select id="trace-test-plan"></select></label>
       <label id="trace-value-aliases-label" hidden>Aliases (separated by semicolons) <input id="trace-value-aliases"></label>
       <div id="trace-term-options" hidden>
         <label>Aliases (separated by semicolons) <input id="trace-term-aliases"></label>
