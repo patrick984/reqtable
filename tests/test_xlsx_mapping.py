@@ -139,7 +139,9 @@ class FixtureMappingTests(MappingCase):
         unedited = self.root / "template.json"
         unedited.write_text(out, encoding="utf-8")
         code, _, err = run_cli(str(FIXTURE), "-c", str(unedited), "-o", str(self.root / "a.html"))
-        self.assertEqual(code, 3)  # Table2 has no ID values: the template is a starting point to edit
+        self.assertEqual(code, 2)
+        self.assertIn("xlsx source 'Table2' has no 'ID' column", err)
+        self.assertIn("id_prefix", err)
 
         edited = copy.deepcopy(template)
         edited["xlsx"]["sources"] = [sources[1], {**glossary, "type": "Term", "id_prefix": "TERM-"}]

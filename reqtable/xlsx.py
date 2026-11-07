@@ -410,6 +410,11 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
                     f"{where}: row {number} has no ID and no Aliases or Name to build one from for id_prefix"
                 )
             row[at] = source["id_prefix"] + slug
+    elif id_column and id_column not in out_headers:
+        raise ConfigError(
+            f"{where} has no {id_column!r} column: map one of its columns to {id_column!r}, "
+            f"set id_prefix to generate IDs, or remove the source"
+        )
     return Block(block.name, [out_headers, *rows])
 
 
