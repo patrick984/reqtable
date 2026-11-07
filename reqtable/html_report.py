@@ -82,6 +82,16 @@ function focusGridCell(row,column){const cells=gridCells();if(!cells.length)retu
 const arrowSteps={
   ArrowLeft:[0,-1],ArrowRight:[0,1],ArrowUp:[-1,0],ArrowDown:[1,0]
 };
+const keyboardMode=$("#keyboard-mode");
+function vimKeys(){return !developMode()||keyboardMode.value==="vim";}
+keyboardMode.addEventListener("change",()=>{pendingG=null;restoreSelectedCell();});
+function tabNeighbor(cell,backward){
+  const sibling=backward?"previousElementSibling":"nextElementSibling";
+  const neighbor=cell[sibling];
+  if(neighbor?.matches("[data-grid-cell]"))return neighbor;
+  const cells=cell.parentElement[sibling]?.querySelectorAll("[data-grid-cell]");
+  return cells?.[backward?cells.length-1:0];
+}
 let pendingG=null;
 function jumpGridRegion(row,column,dr,dc){
   const rows=sortedRows(),columns=visibleColumns();
@@ -126,7 +136,7 @@ document.addEventListener("keydown",e=>{
   const cell=e.target.closest("[data-grid-cell]");
   if(!cell)return;
   let row=+cell.dataset.rowIndex,column=+cell.dataset.columnIndex;
-  const develop=developMode(),key=e.key.toLowerCase(),step=Object.hasOwn(arrowSteps,e.key)&&arrowSteps[e.key];
+  const develop=developMode(),vim=vimKeys(),key=e.key.toLowerCase(),step=Object.hasOwn(arrowSteps,e.key)&&arrowSteps[e.key];
   const lastColumn=visibleColumns().length-1;
   if(modified){
     if(e.shiftKey)return;
@@ -140,43 +150,42 @@ document.addEventListener("keydown",e=>{
     row=e.key==="Home"?0:develop?sortedRows().length-1:Number.MAX_SAFE_INTEGER;
     column=e.key==="Home"?0:lastColumn;
   }else if(develop&&e.key==="Tab"&&e.target===cell){
-    const direction=e.shiftKey?-1:1;
-    column+=direction;
-    if(column<0||column>lastColumn){
-      const nextRow=cell.parentElement[e.shiftKey?"previousElementSibling":"nextElementSibling"];
-      if(!nextRow)return;
-      row+=direction;
-      column=e.shiftKey?lastColumn:0;
-    }
+    const next=tabNeighbor(cell,e.shiftKey);
+    if(!next)return;
+    row=+next.dataset.rowIndex;
+    column=+next.dataset.columnIndex;
   }else if(step){
     row+=step[0];
     column+=step[1];
-  }else if(key==="h")column--;
-  else if(key==="l")column++;
-  else if(key==="k")row--;
-  else if(key==="j")row++;
-  else if(e.key==="Home"||e.key==="0")column=0;
-  else if(e.key==="End"||e.key==="$")column=lastColumn;
+  }else if(vim&&key==="h")column--;
+  else if(vim&&key==="l")column++;
+  else if(vim&&key==="k")row--;
+  else if(vim&&key==="j")row++;
+  else if(e.key==="Home"||(vim&&e.key==="0"))column=0;
+  else if(e.key==="End"||(vim&&e.key==="$"))column=lastColumn;
   else if(e.key==="PageUp")row-=10;
   else if(e.key==="PageDown")row+=10;
-  else if(key==="g"){
+  else if(vim&&key==="g"){
     if(develop&&!e.shiftKey){
       e.preventDefault();
       if(e.repeat||previousG!==cell){pendingG=cell;return;}
     }
     row=e.shiftKey?Number.MAX_SAFE_INTEGER:0;
-  }else if(develop&&key==="i"&&e.target===cell){
+  }else if(develop&&(vim&&key==="i")&&e.target===cell){
     e.preventDefault();
     startCellEdit(cell);
     return;
-  }else if(develop&&key==="o"&&e.target===cell&&!state.editingCell){
+  }else if(develop&&(vim&&key==="o")&&e.target===cell&&!state.editingCell){
     e.preventDefault();
     if(!e.repeat)addRequirement(e.shiftKey?"above":"below");
     return;
-  }else if((e.key==="Enter"||key==="c")&&data.options.commentsEnabled&&cell.dataset.column!==data.meta.idColumn){
+  }else if((e.key==="Enter"||(vim&&key==="c"))&&data.options.commentsEnabled&&cell.dataset.column!==data.meta.idColumn){
     if(e.key==="Enter"&&e.target!==cell)return;
     e.preventDefault();
     cell.querySelector(".comment-button")?.click();
+    return;
+  }else if(develop&&!vim&&e.target===cell&&[...e.key].length===1){
+    if(startCellEdit(cell,false,e.key))e.preventDefault();
     return;
   }else return;
   e.preventDefault();
@@ -343,15 +352,19 @@ function moveRequirement(delta){
 }
 function renameRequirement(){if(!developMode())return;const oldId=selectedRequirementId(),row=oldId&&findCurrentRow(oldId);if(!row){alert("Select a current requirement before renaming it.");return;}const proposed=prompt(`Rename requirement ${oldId}:`,oldId);if(proposed===null)return;const id=validateNewId(proposed,oldId);if(!id||id===oldId)return;remember();row[data.meta.idColumn]=id;for(const comment of state.comments)if(comment.requirementId===oldId)comment.requirementId=id;if(state.commentContext?.rid===oldId)state.commentContext.rid=id;const column=visibleColumns()[state.focus.column]?.name;updateDirty();render();focusRequirement(id,column);}
 function deleteRequirement(){if(!developMode())return;const id=selectedRequirementId(),index=state.currentRows.findIndex(row=>rowId(row)===id);if(index<0){alert("Select a current requirement before deleting it.");return;}const commentCount=state.comments.filter(c=>c.requirementId===id).length,message=commentCount?`Delete requirement ${id} and its ${commentCount} attached comment${commentCount===1?'':'s'}?`:`Delete requirement ${id}?`;if(!confirm(message))return;remember();state.currentRows.splice(index,1);state.comments=state.comments.filter(c=>c.requirementId!==id);updateDirty();render();}
-function startCellEdit(cell,selectAll=false){
+function startCellEdit(cell,selectAll=false,initialText){
   const rid=cell?.closest("tr")?.dataset.rowId,column=cell?.dataset.column;
   if(!developMode()||state.editingCell||column===data.meta.idColumn||!data.source.new.headers.includes(column)||(rid!==""&&!findCurrentRow(rid)))return;
   state.editingCell={rid,column};
   cell.innerHTML=renderCell({id:rid,cells:{[column]:{new:findCurrentRow(rid)?.[column]??""}}},visibleColumns()[+cell.dataset.columnIndex]);
   const textarea=cell.querySelector("textarea");
   textarea.focus({preventScroll:true});
-  if(selectAll)textarea.select();
+  if(initialText!==undefined){
+    textarea.value=initialText;
+    state.editingCell.draft=initialText;
+  }else if(selectAll)textarea.select();
   ensureCellVisible(cell);
+  return true;
 }
 function cancelCellEdit(){
   const {rid,column}=state.editingCell;
@@ -359,7 +372,12 @@ function cancelCellEdit(){
   render();
   focusRequirement(rid,column);
 }
-function applyCellEdit(form){
+function applyCellEdit(form,move=0){
+  const originalCell=form.closest("[data-grid-cell]");
+  const next=move?tabNeighbor(originalCell,move<0):null;
+  const sameRow=next?.parentElement===originalCell.parentElement;
+  const nextId=next?.parentElement.dataset.rowId;
+  const nextColumn=next?.dataset.column;
   let id=form.dataset.rowId;
   const column=form.dataset.column,value=form.querySelector("textarea").value.replace(/\r\n?/g,"\n");
   const row=findCurrentRow(id);
@@ -376,6 +394,7 @@ function applyCellEdit(form){
   state.editingCell=null;
   updateDirty();
   render();
+  if(next&&focusRequirement(sameRow?id:nextId,nextColumn))return;
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
 function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function csvField(value,delimiter){const text=String(value??"");return(/["\r\n]/.test(text)||text.includes(delimiter))?'"'+text.replace(/"/g,'""')+'"':text;}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const delimiter=data.options.csvDelimiter||",",lines=[headers.map(x=>csvField(x,delimiter)).join(delimiter)];for(const source of snapshot.rows){const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}lines.push(headers.map(h=>csvField(row[h]??"",delimiter)).join(delimiter));}return"\ufeff"+lines.join("\r\n")+"\r\n";}
@@ -497,9 +516,20 @@ if(data.meta.mode==="diff")embedded.diffStatus=savedDiffStatuses();
 clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
 clone.querySelector("#requirements-body").replaceChildren();
 clone.querySelector("#comment-list").replaceChildren();
+for(const option of clone.querySelector("#keyboard-mode").options){
+  option.toggleAttribute("selected",option.value===keyboardMode.value);
+}
 clone.querySelectorAll("details[open]").forEach(d=>d.removeAttribute("open"));for(const selector of["#quick-comment","#comment-hover","#value-filter-popover","#review-panel","#dirty-indicator"])clone.querySelector(selector).hidden=true;clone.querySelector("#save-status").textContent="";clone.querySelector("#recover-draft").hidden=true;clone.querySelector("#discard-draft").hidden=true;const kind=developMode()?"developed":"reviewed",suffix=token?`-${token}`:"";downloadBlob(new Blob(['<!doctype html>\n'+clone.outerHTML],{type:"text/html;charset=utf-8"}),`${data.meta.baseFilename}-${kind}${suffix}-${filenameTimestamp()}.html`);markSaved(currentSnapshot(),`Report download initiated at ${new Date().toLocaleTimeString()}`);}
 for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteRequirement);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",saveReportCopy);
-document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{const cell=event.target.closest("[data-grid-cell]");if(cell&&developMode()&&!event.target.closest("form,button,a")){startCellEdit(cell);}},true);document.addEventListener("click",event=>{if(event.detail===3&&event.target.matches("[data-cell-editor] textarea")){event.preventDefault();event.target.select();}if(event.target.closest("[data-cancel-cell-edit]")){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}},true);document.addEventListener("keydown",event=>{const editor=event.target.closest("[data-cell-editor]");if(editor){event.stopImmediatePropagation();if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}else if(event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(editor);}return;}if(state.editingCell&&event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();return;}if(developMode()&&(event.ctrlKey||event.metaKey)&&event.key.toLocaleLowerCase()==="z"&&!event.target.matches("input,textarea,select")){event.preventDefault();event.stopImmediatePropagation();event.shiftKey?redoEdit():undoEdit();return;}if(developMode()&&(event.ctrlKey||event.metaKey)&&event.key.toLocaleLowerCase()==="y"&&!event.target.matches("input,textarea,select")){event.preventDefault();event.stopImmediatePropagation();redoEdit();return;}const cell=event.target.closest("[data-grid-cell]");if(developMode()&&cell&&!event.target.closest("button,a")&&(event.key==="Enter"||event.key==="F2")){event.preventDefault();event.stopImmediatePropagation();startCellEdit(cell,true);}},true);
+document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{const cell=event.target.closest("[data-grid-cell]");if(cell&&developMode()&&!event.target.closest("form,button,a")){startCellEdit(cell);}},true);document.addEventListener("click",event=>{if(event.detail===3&&event.target.matches("[data-cell-editor] textarea")){event.preventDefault();event.target.select();}if(event.target.closest("[data-cancel-cell-edit]")){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}},true);document.addEventListener("keydown",event=>{const editor=event.target.closest("[data-cell-editor]");if(editor){
+  event.stopImmediatePropagation();
+  if(event.isComposing)return;
+  if(event.target.matches("textarea")&&event.key==="Tab"&&!event.ctrlKey&&!event.metaKey&&!event.altKey){
+    event.preventDefault();
+    applyCellEdit(editor,event.shiftKey?-1:1);
+    return;
+  }
+  if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();}else if(event.key==="Enter"&&(event.ctrlKey||event.metaKey)){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(editor);}return;}if(state.editingCell&&event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();cancelCellEdit();return;}if(developMode()&&(event.ctrlKey||event.metaKey)&&event.key.toLocaleLowerCase()==="z"&&!event.target.matches("input,textarea,select")){event.preventDefault();event.stopImmediatePropagation();event.shiftKey?redoEdit():undoEdit();if(event.target.matches("[data-grid-cell]"))focusGridCell(state.focus.row,state.focus.column);return;}if(developMode()&&(event.ctrlKey||event.metaKey)&&event.key.toLocaleLowerCase()==="y"&&!event.target.matches("input,textarea,select")){event.preventDefault();event.stopImmediatePropagation();redoEdit();if(event.target.matches("[data-grid-cell]"))focusGridCell(state.focus.row,state.focus.column);return;}const cell=event.target.closest("[data-grid-cell]");if(developMode()&&cell&&!event.target.closest("button,a")&&(event.key==="Enter"||event.key==="F2")){event.preventDefault();event.stopImmediatePropagation();startCellEdit(cell,true);}},true);
 function matches(row){if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged")return false;if(!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!values.has(valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=review.hidden?Infinity:review.getBoundingClientRect().left,safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
 const menus=[...document.querySelectorAll(".toolbar details.popup-menu")];
 function menuItems(menu){
@@ -553,11 +583,11 @@ TEMPLATE = r"""<!doctype html>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only" aria-pressed="false">Show changes since save</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="show-help">Keyboard help</button></div></details>
 <details class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button><div id="hidden-filter-warning" class="meta"></div></div></details>
-<button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
+<label class="develop-only">Keys <select id="keyboard-mode"><option value="spreadsheet">Spreadsheet</option><option value="vim">Vim</option></select></label><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong></section>
 <div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
-<dialog id="keyboard-help" class="help-dialog"><div class="help-head"><h2>Keyboard shortcuts</h2><button id="close-help">Close</button></div><div class="help-body"><p>Focus a table cell with <kbd>Tab</kbd>, then use:</p><table class="shortcut-table"><tbody><tr><th><kbd>Arrow keys</kbd> or <kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></th><td>Move one cell</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd> or <kbd>0</kbd> / <kbd>$</kbd></th><td>First / last visible column</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>Ctrl</kbd>+<kbd>End</kbd></th><td>First / last table corner. In Develop, Cmd also works and End skips the blank entry row.</td></tr><tr><th><kbd>g</kbd> / <kbd>G</kbd></th><td>First / last table row. In Develop, press <kbd>g</kbd> twice for the first row.</td></tr><tr><th><kbd>Page Up</kbd> / <kbd>Page Down</kbd></th><td>Move ten rows</td></tr><tr class="develop-only"><th><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>Next / previous cell, wrapping across rows. Tab leaves the grid at its edges.</td></tr><tr class="develop-only"><th><kbd>Ctrl/Cmd</kbd>+<kbd>Arrow</kbd></th><td>Jump to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge.</td></tr><tr class="develop-only"><th><kbd>Enter</kbd>, <kbd>F2</kbd>, or <kbd>i</kbd></th><td>Edit a non-ID cell</td></tr><tr class="develop-only"><th><kbd>o</kbd> / <kbd>Shift</kbd>+<kbd>o</kbd></th><td>Insert a requirement below / above the selected requirement</td></tr><tr><th><kbd>C</kbd></th><td>Open comments for a non-ID cell</td></tr><tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd></th><td>Undo / redo requirement edits in Develop mode. Ctrl/Cmd+Shift+Z also redoes.</td></tr><tr><th><kbd>/</kbd></th><td>Focus the selected column filter, or comment search when browsing comments</td></tr><tr><th><kbd>Down Arrow</kbd> or <kbd>Enter</kbd> in a filter</th><td>Move to that column in the first matching row</td></tr><tr><th><kbd>?</kbd></th><td>Open this help page</td></tr><tr><th><kbd>Escape</kbd></th><td>Cancel editing or close menus, popups, or the comments sidebar</td></tr></tbody></table><p>On the menu bar, Left and Right move between menus. Down and Up open a menu and move through items. Enter activates an item, Space toggles a checkbox, and Escape closes the menu. In an editor, Ctrl/Cmd+Enter applies the edit. Column dividers can be dragged. Double-click a divider to auto-size the column on its left.</p></div></dialog>
+<dialog id="keyboard-help" class="help-dialog"><div class="help-head"><h2>Keyboard shortcuts</h2><button id="close-help">Close</button></div><div class="help-body"><p>Focus a table cell with <kbd>Tab</kbd>, then use:</p><table class="shortcut-table"><tbody><tr><th><kbd>Arrow keys</kbd> or <kbd>H</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></th><td>Move one cell</td></tr><tr><th><kbd>Home</kbd> / <kbd>End</kbd> or <kbd>0</kbd> / <kbd>$</kbd></th><td>First / last visible column</td></tr><tr><th><kbd>Ctrl</kbd>+<kbd>Home</kbd> / <kbd>Ctrl</kbd>+<kbd>End</kbd></th><td>First / last table corner. In Develop, Cmd also works and End skips the blank entry row.</td></tr><tr><th><kbd>g</kbd> / <kbd>G</kbd></th><td>First / last table row. In Develop, press <kbd>g</kbd> twice for the first row.</td></tr><tr><th><kbd>Page Up</kbd> / <kbd>Page Down</kbd></th><td>Move ten rows</td></tr><tr class="develop-only"><th><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>Next / previous cell, wrapping across rows. Tab leaves the grid at its edges.</td></tr><tr class="develop-only"><th><kbd>Ctrl/Cmd</kbd>+<kbd>Arrow</kbd></th><td>Jump to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge.</td></tr><tr class="develop-only"><th><kbd>Enter</kbd>, <kbd>F2</kbd>, or <kbd>i</kbd></th><td>Edit a non-ID cell. The i shortcut is for Vim mode.</td></tr><tr class="develop-only"><th><kbd>o</kbd> / <kbd>Shift</kbd>+<kbd>o</kbd></th><td>Insert a requirement below / above the selected requirement</td></tr><tr><th><kbd>C</kbd></th><td>Open comments for a non-ID cell</td></tr><tr><th><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd></th><td>Undo / redo requirement edits in Develop mode. Ctrl/Cmd+Shift+Z also redoes.</td></tr><tr><th><kbd>/</kbd></th><td>Focus the selected column filter, or comment search when browsing comments</td></tr><tr><th><kbd>Down Arrow</kbd> or <kbd>Enter</kbd> in a filter</th><td>Move to that column in the first matching row</td></tr><tr><th><kbd>?</kbd></th><td>Open this help page</td></tr><tr><th><kbd>Escape</kbd></th><td>Cancel editing or close menus, popups, or the comments sidebar</td></tr></tbody></table><p>On the menu bar, Left and Right move between menus. Down and Up open a menu and move through items. Enter activates an item, Space toggles a checkbox, and Escape closes the menu. In Develop mode, use the Keys selector to switch between Spreadsheet and Vim shortcuts. In Spreadsheet mode, type on a selected editable cell to replace its value. In either mode, Tab or Shift+Tab applies the edit and moves to the next or previous cell. Enter inserts a newline. Ctrl/Cmd+Enter applies the edit and stays on the cell. Column dividers can be dragged. Double-click a divider to auto-size the column on its left.</p></div></dialog>
 <script id="reqtable-data" type="application/json">__DATA__</script><script>__JS__</script></body></html>"""
 
 

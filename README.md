@@ -65,7 +65,9 @@ The toolbar reports visible and total columns, and its **Comments only** control
 
 Choose **Keyboard help**, or press `?`, for the complete shortcut list. Use the arrow keys or Vim's `h`, `j`, `k`, and `l` to move one cell. Use Home/End or `0`/`$` to reach either end of a row. Press `/` to focus the selected column's filter or, when browsing comments, the comment search field.
 
-In Develop mode, Tab and Shift+Tab move across visible cells and wrap between rows. At the outer edges they leave the grid. Ctrl/Cmd+Arrow jumps to the end of a block of filled cells, across a gap to the next filled cell, or to the grid edge. Ctrl/Cmd+Home and Ctrl/Cmd+End reach the first and last corners of the visible data. Press `gg` for the first row and Shift+G for the bottom, including the blank entry row. Press Enter, F2, or `i` to edit a non-ID cell, and `c` to open its comments. Press `o` to insert below the selected requirement or `O` (Shift+O) to insert above it. Ctrl/Cmd+Z undoes an edit and Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redoes it. The textarea keeps its normal text editing shortcuts.
+Develop reports open in **Spreadsheet** mode. Use the **Keys** selector to switch to **Vim**. In Spreadsheet mode, typing on an editable cell starts replacing its value. In Vim mode, `i` edits, `c` opens comments, and `o` / `O` insert a requirement below or above. Use `gg` and Shift+G to reach the first row or the blank entry row.
+
+In both modes, Enter or F2 opens a cell for editing. While editing, Tab and Shift+Tab apply the edit and move to the next or previous visible cell. Enter inserts a newline, Ctrl/Cmd+Enter applies in place, and Escape cancels. Outside the editor, Ctrl/Cmd+Arrow jumps through filled cells, Ctrl/Cmd+Home and Ctrl/Cmd+End reach the data corners, and Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo and redo. Ctrl/Cmd+Y also redoes an edit.
 
 ## Use as a Git diff tool
 
