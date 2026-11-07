@@ -9,6 +9,7 @@ In a traceability report, `Test` and `Test plan` records sit in the same table. 
 - `link-test` links a test to a requirement from the picker.
 - `add-test` adds a Test with an optional plan through the shared record form.
 - `method-check` flags an undefined Verification Method on a test.
+- `coverage-check` flags a requirement value that none of its Verified by tests has.
 
 ## How to get to it (user POV)
 
@@ -28,6 +29,8 @@ Preconditions:
 - **Link test.** Select REQ-001, open Links, click `[data-trace-pick="Verified by"]`. `#trace-picker` lists only Test records. Click the `TEST-CORE` button in `#trace-candidates`. REQ-001's panel then shows `TEST-CORE` under Verified by, and TEST-CORE's panel lists REQ-001 under Verifies.
 - **Add test.** In the Tests view click `#trace-test-add`. In `#trace-editor`, `#trace-test-plan` lists `No test plan`, then the plans. Set `#trace-record-id` to `TEST-NEW`, `#trace-record-name` to `New test`, choose `Automated unit tests (TP-UNIT)` with `form_input`, and submit Apply. `tr[data-row-id="TEST-NEW"]` exists with Type `Test` and Test plan `TP-UNIT`. Undo with `cmd+z` removes it.
 - **Method check.** Edit the Verification Method cell of `tr[data-row-id="TEST-NEW"]`, select all, type `Eyeball it`, press `Return`. The cell carries a `.trace-marker`, and clicking it opens `#trace-findings` with a message about an undefined value.
+
+- **Coverage check.** Select REQ-253's Verification Level cell (`Unit; System`, verified by TEST-TRACEABILITY and TEST-UAT-TRACEABILITY), press `Return`, select all, type `Unit; System; Acceptance`, press `Return`. The cell carries a `.trace-marker` titled `No test in Verified by covers “Acceptance”. Its tests have “Unit”, “System”.` Click a grid cell and press `cmd+z`: the marker is gone.
 
 ## Gotchas
 

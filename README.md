@@ -252,7 +252,7 @@ Open **Tests** to list every `Test plan` and `Test` record in table order, with 
 
 A requirement's **Verified by** column lists `Test` IDs. In its **Links** panel, choose **Link test…** to pick tests. A test's **Test plan** column holds at most one `Test plan` ID, set with **Set test plan…**. The panel shows the reverse links as **Verifies** on a test and **Tests** on a plan. The dedicated **Test plan** column keeps **Part of** for the Systems tree. Deleting a test or plan clears the links that point at it, and the confirmation lists them.
 
-A test's constrained columns, such as **Verification Method**, are checked against the table's `Value` records like any other row, so an undefined method shows a trace finding. **Trace findings** also reports links to missing or wrongly typed records.
+A test's constrained columns, such as **Verification Method**, are checked against the table's `Value` records like any other row, so an undefined method shows a trace finding. A requirement's constrained values must also be covered by the tests it links. When a requirement and at least one of its **Verified by** tests both fill a column such as **Verification Level**, each of the requirement's values needs a linked test with that value (aliases count as their value). For example, a requirement at `Unit; System` linked only to a `Unit` test gets the finding `No test in Verified by covers “System”`. A requirement with no linked tests, or whose tests leave the column blank, is not checked. **Trace findings** also reports links to missing or wrongly typed records.
 
 ## Review comments
 

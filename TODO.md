@@ -13,4 +13,4 @@
   - [x] Phase 3: Values view in the Glossary, `Add value…` in Develop, renaming a value updates the rows that use it.
   - [x] Phase 4: `Test` and `Test plan` record types; requirement `Verified by` links to tests; a test's `Test plan` column links to its plan (not `Part of`, which builds the Systems tree); its `Reference` is the external link; its Verification Method and Phase are checked against Values.
   - [x] Phase 5: XLSX mapping support for Value, Field and Test sources (Value IDs include the field, e.g. `VAL-PRIORITY-MUST`).
-- [ ] Flag a requirement whose Verification Level differs from the levels of the tests in its Verified by.
+- [x] Flag a requirement whose Verification Level differs from the levels of the tests in its Verified by.

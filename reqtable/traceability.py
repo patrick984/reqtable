@@ -28,6 +28,25 @@ function traceIds(value){
 function traceTargetTypes(field,type){
   return field==="Source refs"&&type!=="Requirement"?["Source"]:traceFields[field].to;
 }
+function definedValues(rule,cell){
+  const text=String(cell??"").trim();
+  return [...new Set((rule.multiple?traceIds(text):text?[text]:[])
+    .map(part=>rule.values.has(part)?part:rule.aliases.get(part)?.row.Name.trim()??part))];
+}
+function checkTestCoverage(records,values,issue){
+  const quote=names=>names.map(name=>`“${name}”`).join(", ");
+  for(const record of records.values()){
+    const tests=record.outgoing.get("Verified by")??[];
+    for(const [field,rule] of tests.length?values:[]){
+      const planned=definedValues(rule,record.row[field]);
+      const covered=new Set(tests.flatMap(test=>definedValues(rule,test.row[field])));
+      const missing=planned.filter(name=>!covered.has(name));
+      if(covered.size&&missing.length){
+        issue(record.id,field,`No test in Verified by covers ${quote(missing)}. Its tests have ${quote([...covered])}.`);
+      }
+    }
+  }
+}
 function buildTraceIndex(rows,identify,schema={}){
   const headers=schema.headers??[...new Set(rows.flatMap(row=>Object.keys(row)))];
   const records=new Map(rows.map(row=>{
@@ -100,6 +119,7 @@ function buildTraceIndex(rows,identify,schema={}){
   }
   const glossary=buildGlossary(records.values(),issue);
   const values=buildValueRules(records.values(),headers,schema.idColumn,issue);
+  checkTestCoverage(records,values,issue);
   return {records,systems,roots,issues,glossary,values};
 }
 function groupFindingsByCell(issues){

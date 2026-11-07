@@ -275,6 +275,27 @@ assert.equal(flagged.length,1);
 assert.equal(flagged[0].field,"Verification Method");
 """)
 
+    def test_requirement_values_must_be_covered_by_its_linked_tests(self):
+        self.run_js(r"""
+const HEADERS=["ID","Type","Name","Field","Multiple","Aliases","Definition","Level","Priority","Verified by"];
+const value=(ID,Name,Aliases="")=>({ID,Type:"Value",Field:"Level",Name,Aliases,Definition:"A level."});
+const rows=[
+  {ID:"F1",Type:"Field",Name:"Level",Multiple:"Yes",Definition:"V-model level."},
+  value("L-UNIT","Unit","Unit test"),value("L-SYS","System"),value("L-ACC","Acceptance","UAT"),
+  {ID:"P1",Type:"Value",Field:"Priority",Name:"Must",Definition:"Required."},
+  {ID:"T-UNIT",Type:"Test",Level:"Unit test"},{ID:"T-SYS",Type:"Test",Level:"System"},{ID:"T-NONE",Type:"Test"},
+  {ID:"R-GAP",Level:"Unit; System; UAT",Priority:"Must","Verified by":"T-UNIT"},
+  {ID:"R-OK",Level:"Unit; System","Verified by":"T-UNIT; T-SYS"},
+  {ID:"R-UNPLANNED","Verified by":"T-UNIT"},
+  {ID:"R-UNLEVELLED-TEST",Level:"System","Verified by":"T-NONE"},
+  {ID:"R-UNLINKED",Level:"System"}
+];
+const {issues}=buildTraceIndex(rows,row=>row.ID,{headers:HEADERS,idColumn:"ID"});
+assert.deepEqual(issues.filter(({message})=>message.startsWith("No test")).map(({id,field,message})=>`${id}|${field}|${message}`),[
+  "R-GAP|Level|No test in Verified by covers “System”, “Acceptance”. Its tests have “Unit”."
+]);
+""")
+
     def test_shipped_uat_csv_links_tests_without_findings(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
         source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
@@ -288,5 +309,5 @@ assert.equal(flagged[0].field,"Verification Method");
         result = json.loads(subprocess.run(["node"], input=script, text=True, check=True,
                                            capture_output=True).stdout)
         self.assertEqual(result["issues"], [])
-        self.assertEqual((result["plans"], result["tests"]), (2, 5))
+        self.assertEqual((result["plans"], result["tests"]), (2, 7))
         self.assertGreaterEqual(result["verified"], 1)
