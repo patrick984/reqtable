@@ -79,7 +79,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 #quality-settings-form fieldset {border:1px solid var(--line); margin-bottom:12px}
 #quality-dismiss-reason {display:block; width:100%; margin:6px 0}
 .quality-card h3,.quality-dismissed h3 {font-size:1em; margin:0}
-.quality-card,.quality-dismissed {cursor:pointer}
+.quality-card,.quality-dismissed {cursor:pointer;padding-block-start:6px}
 .quality-card-jump {background:transparent;border:0;padding:0;font-weight:700;color:var(--accent);text-align:start}
 .quality-card-jump:hover {text-decoration:underline}
 .quality-card p {margin:6px 0 10px}
