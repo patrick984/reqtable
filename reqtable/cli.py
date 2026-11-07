@@ -94,7 +94,7 @@ def git_source(spec: str, default_path: str, config: dict[str, object]) -> CsvSo
     except InputError as exc:
         raise InputError(f"cannot read {path} at {rev}: {exc}") from exc
     encoding = config["csv"]["encoding"]  # type: ignore[index]
-    label = f"{path.name} @ {rev} ({short})"
+    label = f"{path.name} @ {rev}" if rev.startswith(short) else f"{path.name} @ {rev} ({short})"
     try:
         return CsvSource(label, blob.decode(encoding), path)
     except (UnicodeError, LookupError) as exc:
