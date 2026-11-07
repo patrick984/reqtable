@@ -129,11 +129,14 @@ python reqtable.pyz --help
 python reqtable.pyz --version
 python reqtable.pyz --print-default-config
 python reqtable.pyz --list-tables WORKBOOK.xlsx
+python reqtable.pyz --xlsx-mapping-template WORKBOOK.xlsx
 ```
 
 `--print-default-config` writes a documented default JSON configuration to standard output.
 
 `--list-tables` prints each sheet of a workbook, with its state when it is hidden, and each table with its sheet, cell range and header names. It needs no other input and exits 0.
+
+`--xlsx-mapping-template` prints a complete JSON configuration for a workbook (section 7.3) and exits 0. Its `xlsx.sources` lists every table, and every sheet that has no table, with `columns` mapping each header to itself; a sheet entry carries `header_row` set to its first non-empty row. `id_column` is the first header named `ID` in any letter case, or null. The output is meant to be edited and saved for `-c`.
 
 ### 5.6 Configuration precedence
 
@@ -184,9 +187,14 @@ Proposed structure:
     "reviewer_initials": null,
     "csv_column": "Comments",
     "csv_format": "json"
+  },
+  "xlsx": {
+    "sources": []
   }
 }
 ```
+
+`xlsx.sources` is empty by default; when it is not, it maps `.xlsx` inputs as section 7.3 describes.
 
 Column names in configuration refer to original CSV header names, not display labels.
 
@@ -249,6 +257,16 @@ Cell values:
 - A merged cell has its value in the top-left cell only; the other cells read as empty.
 
 Git baselines (`--old git:REV`) read text, not workbooks. Combining one with an `.xlsx` input is an input error; commit a CSV export for that.
+
+Combining and mapping tables. When `xlsx.sources` in the configuration is non-empty, it applies to every `.xlsx` input of the run, in place of the selection above, and combining it with `--table`, `--sheet` or `--header-row` is a configuration error. CSV inputs ignore it. Each source is an object:
+
+- Exactly one of `table` or `sheet` names what to read, with the selection rules above. `header_row` is a whole number of 1 or greater and applies only with `sheet`.
+- `columns` maps source headers to output headers, and `exclude` lists source headers to drop. Excluded columns are dropped first, then the rest are renamed; headers in neither pass through. A name in either that is not a header of the source is a configuration error naming the source and listing its headers, and two columns renamed to the same output header are a configuration error.
+- `type` sets the `Type` column of the source's rows to the given record type, replacing any existing value. It requires traceability, from `--traceability` or `traceability` in the configuration; without it the run fails with a configuration error.
+- `id_prefix` fills the ID column, which must be named by `--id-column` or `id_column`, for rows whose ID is absent or blank. The ID is the prefix followed by a slug of the first non-empty alias in the mapped `Aliases` column (aliases split on `;`), or else of the mapped `Name`. A slug is upper-cased, with each run of characters other than `A-Z` and `0-9` replaced by `-` and the ends trimmed of `-`. Rows are never numbered, so IDs are stable across re-imports. A row with no usable slug is an input error naming the source and the row; equal generated IDs are caught by the duplicate-ID rule of section 7.1.
+- An unknown key, a `columns` or `exclude` of the wrong shape, or an empty string is a configuration error naming `xlsx.sources[N]`.
+
+The sources are read from one open workbook and combined into one table. The ID column comes first when any source has it, then the other headers in order of first appearance across the sources; a row gets an empty cell for each header its source lacks. The combined block is converted to CSV text and follows section 7 unchanged. Its label is `FILE.xlsx [A + B]`, joining the table or sheet names of the sources with ` + `. The CSV export described next writes the combined block.
 
 When the single input of a snapshot run is an `.xlsx` and the output path ends in `.csv`, the selected block is written as CSV instead of a report, in the format of the browser's Save CSV (section 10.14): UTF-8 with a byte-order mark and CRLF record endings, written atomically. The block is validated first with the usual rules, so the ID column is required and an export is never a CSV that reqtable would itself reject. A `.csv` output with any other input is unchanged.
 

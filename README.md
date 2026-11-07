@@ -76,6 +76,51 @@ Things to know about the numbers:
 
 Reqtable only reads workbooks; it never writes one.
 
+### Combine tables
+
+Teams often keep requirements in one table and a glossary in another, with their own column names. A saved JSON mapping combines them into the single table reqtable works on, so the same import reruns identically. Start from a template that lists every table and sheet of the workbook, each column mapped to itself:
+
+```sh
+python reqtable.pyz --xlsx-mapping-template requirements.xlsx > mapping.json
+```
+
+Edit `mapping.json`: delete the sources you do not want and change the output names. Then run it with `-c`:
+
+```sh
+python reqtable.pyz requirements.xlsx -c mapping.json --traceability -o requirements.html
+```
+
+A mapping for a requirements table with "Req ID" and "Text" columns and a glossary sheet with Term, Meaning and Abbreviation columns:
+
+```json
+{
+  "id_column": "ID",
+  "xlsx": {
+    "sources": [
+      {
+        "table": "Requirements",
+        "columns": {"Req ID": "ID", "Text": "Requirement"},
+        "exclude": ["Internal"]
+      },
+      {
+        "sheet": "Glossary",
+        "header_row": 2,
+        "columns": {"Term": "Name", "Meaning": "Definition", "Abbreviation": "Aliases"},
+        "type": "Term",
+        "id_prefix": "TERM-"
+      }
+    ]
+  }
+}
+```
+
+- Each source names one `table` or one `sheet` (with an optional `header_row`). `columns` renames headers and `exclude` drops them; other headers pass through. A name that is not a header of that source is an error that lists the real headers.
+- `type` sets the `Type` column on that source's rows, so glossary rows become `Term` records. It needs `--traceability` (or `"traceability": true`).
+- `id_prefix` gives an ID to rows that have none: the prefix plus the first alias, or the name when there is no alias, in capitals with other characters turned into `-`. `Identifier` with alias `ID` becomes `TERM-ID`. The ID depends only on the row, so it survives a re-import. Two rows that generate the same ID are a duplicate-ID error; give one of them a different alias.
+- Columns that share a name across sources line up, and cells a source lacks stay empty.
+- The mapping applies to every `.xlsx` input of the run and cannot be combined with `--table`, `--sheet` or `--header-row`. CSV inputs ignore it.
+- `-o combined.csv` exports the combined table, so you can edit it as CSV from then on.
+
 ## Configuration
 
 Generate the default JSON configuration:
