@@ -312,8 +312,10 @@ const trace=(()=>{
       const toggle=children(record).length?`<button type="button" data-trace-collapse="${escapeHtml(record.id)}"
         aria-label="${expanded?"Collapse":"Expand"} ${escapeHtml(label(record))}" aria-expanded="${expanded}">${expanded?"▾":"▸"}</button>`:'<span class="trace-tree-leaf"></span>';
       return `<li style="--trace-depth:${Math.min(depth,8)}">
-        ${toggle}
-        <button type="button" data-trace-system="${escapeHtml(record.id)}" aria-pressed="${selectedSystem===record.id}">${escapeHtml(caption(record))}</button>
+        <div class="trace-tree-node">
+          ${toggle}
+          <button type="button" data-trace-system="${escapeHtml(record.id)}" aria-pressed="${selectedSystem===record.id}">${escapeHtml(caption(record))}</button>
+        </div>
         <span class="meta">${count} allocated</span></li>`;
     }).join(""):"<li>No systems yet.</li>";
     const record=index.records.get(selectedSystem),actions=$("#trace-system-actions");
@@ -886,10 +888,15 @@ TRACE_CSS = """
 #trace-system-actions {align-self:start;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
 .trace-actions+.trace-actions {margin-top:8px}
 #trace-tree,#trace-record ul,#trace-candidates {list-style:none;padding:0;margin:4px 0 8px}
-#trace-tree li {display:flex;align-items:center;gap:6px;padding-inline-start:calc(var(--trace-depth,0) * .8rem);margin-bottom:4px}
-#trace-tree [data-trace-system] {flex:1;text-align:start;overflow-wrap:anywhere}
+#trace-tree {display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:4px 6px}
+#trace-tree li {display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center}
+.trace-tree-node {
+  display:flex;align-items:center;gap:6px;min-width:0;
+  padding-inline-start:calc(var(--trace-depth,0) * .8rem);
+}
+#trace-tree [data-trace-system] {flex:1;min-width:0;text-align:start;overflow-wrap:anywhere}
 #trace-tree [data-trace-collapse],.trace-tree-leaf {width:26px;flex:none}
-#trace-tree .meta {white-space:nowrap}
+#trace-tree .meta {white-space:nowrap;text-align:end;font-variant-numeric:tabular-nums}
 .trace-row-marker {position:absolute;inset-block-start:5px;inset-inline-end:4px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 #trace-panel {width:min(380px,100vw)}
 #trace-panel h3 {font-size:1.05em;margin:8px 0 4px}
