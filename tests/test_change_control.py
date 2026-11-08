@@ -70,7 +70,7 @@ const all=run(null);
 assert.deepEqual([all.error,all.total,all.failing],[null,fixture.rows.length+2,["R2","R5","R6","R7"]]);
 assert.equal(gateCheckFailed(all),true);
 const sysB=run("SYS-B");
-assert.deepEqual([sysB.failing.includes("R2"),sysB.failing.includes("R5"),sysB.failing.includes("R7")],[false,true,true]);
+assert.deepEqual([sysB.failing.includes("R2"),sysB.failing.includes("R5"),sysB.failing.includes("R7")],[false,true,false]);
 assert.deepEqual(run(null,{applies_to:{type:"System"}}).failing,["R7"]);
 const clean=evaluateGateCheck({id:"c",description:"d",unchanged_since:true},fixture.rows,"ID",fixture.headers,null,[],null);
 assert.deepEqual([clean.total,clean.failing,gateCheckFailed(clean)],[fixture.rows.length,[],false]);

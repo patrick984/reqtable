@@ -65,7 +65,11 @@ class NoFindingsTests(unittest.TestCase):
 
 class UnchangedSinceTests(unittest.TestCase):
     check = {"id": "u", "description": "u", "unchanged_since": True}
-    controls = {"baselines": [], "records": {"R1": {}, "R3": {}, "GONE": {}, "GONE2": {}}}
+    controls = {"baselines": [], "records": {
+        "R1": {"row": {}}, "R3": {"row": {}},
+        "GONE": {"row": {"ID": "GONE", "Allocated to": "SYS-B"}},
+        "GONE2": {"row": {"ID": "GONE2", "Allocated to": "SYS-A"}},
+    }}
 
     def run_check(self, findings, system=None, controls=controls, **extra):
         return evaluate_check(
@@ -86,10 +90,11 @@ class UnchangedSinceTests(unittest.TestCase):
         ]
         self.assertEqual(self.run_check(findings)["failing"], ["GONE", "R3"])
 
-    def test_system_scope_keeps_removed_ids(self) -> None:
+    def test_system_scope_keeps_only_removals_from_its_subtree(self) -> None:
         findings = [
             ("R3", "Priority", "Changed since PDR (Priority) without an approved change request."),
             ("GONE", "ID", "Removed since PDR without an approved change request."),
+            ("GONE2", "ID", "Removed since PDR without an approved change request."),
         ]
         scoped = self.run_check(findings, "SYS-B")
         everything = self.run_check([])

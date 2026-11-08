@@ -50,7 +50,12 @@ function evaluateGateCheck(check,rows,idColumn,headers,system,findings,controls=
   }
   const applicable=scoped.filter(applies.matches),{passes}=gateConditions[condition.name];
   if(condition.name==="unchanged_since"){
-    const removed=Object.keys(controls?.records??{}).filter(removedId=>!context.records.has(removedId));
+    let removed=Object.keys(controls?.records??{}).filter(removedId=>!context.records.has(removedId));
+    if(system&&removed.length){
+      const all=[...rows,...removed.map(removedId=>controls.records[removedId].row)];
+      const scope=baselineScopeIds(all,idColumn,system,[...new Set(all.map(row=>cell(row,"Type")||"Requirement"))]);
+      removed=removed.filter(removedId=>scope.has(removedId));
+    }
     const counted=new Set([...applicable.map(id),...removed]);
     const changed=[...new Set(findings.filter(finding=>changeFindingMessage.test(finding.message)).map(finding=>finding.id))];
     return {...base,total:applicable.length+removed.length,failing:changed.filter(changedId=>counted.has(changedId)),global:[],error:null};

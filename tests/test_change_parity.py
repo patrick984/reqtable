@@ -57,3 +57,24 @@ class ChangeControlParityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to run the report's gate checks")
+class ScopedRemovalTests(unittest.TestCase):
+    def test_a_system_gate_counts_only_removals_from_its_own_subtree(self) -> None:
+        from reqtable.gate_checks import GATE_CHECKS_JS
+        from reqtable.gates import evaluate_check
+
+        rows = [row for row in FIXTURE["rows"] if row["ID"] != "R1"]
+        check = {"id": "c", "description": "d", "unchanged_since": True}
+        findings = [(f.id, f.field, f.message) for f in trace_findings(rows, FIXTURE["headers"], "ID", FIXTURE["controls"])]
+        python = evaluate_check(check, rows, FIXTURE["headers"], "ID", "SYS-B", findings, FIXTURE["controls"])
+        script = TRACE_MODEL_JS + "\n" + COMPARISON_JS + "\n" + GATE_CHECKS_JS + "\nconst rows=" + json.dumps(rows) + ";\n" + (
+            "const controls=" + json.dumps(FIXTURE["controls"]) + ",headers=" + json.dumps(FIXTURE["headers"]) + ";\n"
+            "const issues=buildTraceIndex(rows,row=>String(row.ID??\"\").trim(),{headers,idColumn:\"ID\",controls}).issues;\n"
+            "console.log(JSON.stringify(evaluateGateCheck(" + json.dumps(check) + ",rows,\"ID\",headers,\"SYS-B\",issues,controls)));")
+        report = json.loads(subprocess.run(["node"], input=script, text=True, capture_output=True, check=True).stdout)
+        self.assertEqual(python["failing"], ["R5"])
+        self.assertEqual(python["total"], 6)
+        self.assertEqual(report["failing"], python["failing"])
+        self.assertEqual(report["total"], python["total"])

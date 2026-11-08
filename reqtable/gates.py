@@ -157,8 +157,14 @@ def _no_findings(records: list[dict[str, str]], table: Table) -> Outcome:
     return Outcome(failing + ([""] if messages else []), len(records) + bool(messages), messages)
 
 
-def _unchanged_since(records: list[dict[str, str]], table: Table, controls: dict[str, Any] | None) -> Outcome:
+def _unchanged_since(
+    records: list[dict[str, str]], table: Table, controls: dict[str, Any] | None, system: str | None, id_column: str
+) -> Outcome:
     removed = [record_id for record_id in (controls["records"] if controls else {}) if record_id not in table.record_ids]
+    if system and removed:
+        gone = [controls["records"][record_id]["row"] for record_id in removed]
+        in_scope = {table.rid(row) for row in select_scope([*table.all_rows, *gone], id_column, system, RECORD_TYPES)}
+        removed = [record_id for record_id in removed if record_id in in_scope]
     counted = {*map(table.rid, records), *removed}
     changed = dict.fromkeys(finding[0] for finding in table.findings if CHANGE_FINDING.fullmatch(finding[2]))
     return Outcome([record_id for record_id in changed if record_id in counted], len(records) + len(removed), [])
@@ -186,7 +192,7 @@ def evaluate_check(
     if key == "no_findings":
         outcome = _no_findings(records, table)
     elif key == "unchanged_since":
-        outcome = _unchanged_since(records, table, controls)
+        outcome = _unchanged_since(records, table, controls, system, id_column)
     else:
         failing = [table.rid(row) for row in records if not condition.passes(check[key], check, row, table)]
         outcome = Outcome(failing, len(records), [])
