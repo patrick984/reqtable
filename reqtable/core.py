@@ -33,7 +33,9 @@ class OutputError(ReqtableError):
     pass
 
 
-RECORD_TYPES = ("System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan")
+RECORD_TYPES = (
+    "System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan", "Change request",
+)
 
 
 def _preset_gate(

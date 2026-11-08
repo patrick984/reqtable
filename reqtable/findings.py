@@ -8,8 +8,11 @@ runs both implementations against the same tables.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Container, Iterable
 from dataclasses import dataclass, field
+from typing import Any
+
+from .baselines import select_scope
 
 # String.prototype.trim strips this set, which differs from str.strip() (\x1c-\x1f, \x85, \ufeff).
 _JS_WHITESPACE = (
@@ -25,9 +28,19 @@ TRACE_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], bool]] = {
     "Source refs": (("Requirement", "Need", "Term"), ("Need", "Source"), False),
     "Verified by": (("Requirement",), ("Test",), False),
     "Test plan": (("Test",), ("Test plan",), True),
+    "Affects": (
+        ("Change request",), ("Requirement", "System", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan"), False,
+    ),
 }
-RECORD_TYPES = ("System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan")
-VERIFICATION_STATES = {"Compliance": ("Requirement", "requirements"), "Result": ("Test", "tests")}
+RECORD_TYPES = (
+    "System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan", "Change request",
+)
+VERIFICATION_STATES = {
+    "Compliance": ("Requirement", "requirements"),
+    "Result": ("Test", "tests"),
+    "Change status": ("Change request", "change requests"),
+}
+APPROVED_CHANGE_STATES = ("Approved", "Implemented")
 _YES_OR_NO = re.compile(r"(?:yes|no)", re.IGNORECASE | re.ASCII)
 
 
@@ -54,6 +67,7 @@ class ValueRule:
 
 
 Issue = Callable[[str | None, str, str], None]
+Controls = dict[str, Any]
 
 
 def _trim(value: str) -> str:
@@ -277,7 +291,7 @@ def build_value_rules(records: Iterable[Record], headers: list[str], id_column: 
     return rules
 
 
-def link_records(records: dict[str, Record], issue: Issue) -> list[Record]:
+def link_records(records: dict[str, Record], issue: Issue, controlled: Container[str] = frozenset()) -> list[Record]:
     systems = []
     for record in records.values():
         record_id, row, record_type = record.id, record.row, record.type
@@ -309,7 +323,8 @@ def link_records(records: dict[str, Record], issue: Issue) -> list[Record]:
                 if target_id == record_id:
                     issue(record_id, field_name, "A record cannot link to itself.")
                 elif not target:
-                    issue(record_id, field_name, f"Target {target_id} is missing.")
+                    if field_name != "Affects" or target_id not in controlled:
+                        issue(record_id, field_name, f"Target {target_id} is missing.")
                 elif target.type not in expected:
                     issue(record_id, field_name, f"Target {target_id} has type {target.type}. Expected {' or '.join(expected)}.")
                 else:
@@ -341,8 +356,54 @@ def find_cycles(records: dict[str, Record], field_name: str, issue: Issue) -> No
                 stack.append((target, iter(target.outgoing.get(field_name, []))))
 
 
-def trace_findings(rows: list[dict[str, str]], headers: list[str], id_column: str) -> list[Finding]:
-    """Return the findings buildTraceIndex reports for these rows, in the same order."""
+def check_changes(
+    rows: list[dict[str, str]], id_column: str, records: dict[str, Record], values: dict[str, ValueRule],
+    headers: list[str], controls: Controls, issue: Issue,
+) -> None:
+    baselines, controlled = controls["baselines"], controls["records"]
+    authorised = {
+        target for record in records.values()
+        if record.type == "Change request"
+        and verification_state(values, "Change status", record.row.get("Change status")) in APPROVED_CHANGE_STATES
+        for target in trace_ids(record.row.get("Affects"))
+    }
+    scopes = [
+        {_trim(_cell(row, id_column)) for row in select_scope(rows, id_column, baseline["system"], baseline["includes"])}
+        for baseline in baselines
+    ]
+    for row in rows:
+        record_id = _trim(_cell(row, id_column))
+        if record_id in authorised:
+            continue
+        if record_id in controlled:
+            name, old = controlled[record_id]["baseline"], controlled[record_id]["row"]
+            baseline = next(item for item in baselines if item["name"] == name)
+            ignored = () if baseline["capturesStatus"] else baseline["statusColumns"]
+            changed = [column for column in dict.fromkeys([*headers, *old, *row])
+                       if column not in ignored and _cell(old, column) != _cell(row, column)]
+            if changed:
+                columns = ", ".join(changed)
+                issue(record_id, changed[0], f"Changed since {name} ({columns}) without an approved change request.")
+            continue
+        latest = None
+        for baseline, scope in zip(baselines, scopes):
+            if record_id in scope and (latest is None or baseline["created"] > latest["created"]):
+                latest = baseline
+        if latest:
+            issue(record_id, id_column, f"Added since {latest['name']} without an approved change request.")
+    present = {_trim(_cell(row, id_column)) for row in rows}
+    for record_id, entry in controlled.items():
+        if record_id not in present and record_id not in authorised:
+            issue(record_id, id_column, f"Removed since {entry['baseline']} without an approved change request.")
+
+
+def trace_findings(
+    rows: list[dict[str, str]], headers: list[str], id_column: str, controls: Controls | None = None
+) -> list[Finding]:
+    """Return the findings buildTraceIndex reports for these rows, in the same order.
+
+    With controls, the change-control findings follow the others (tests/fixtures/change_control.json).
+    """
     findings: list[Finding] = []
 
     def issue(record_id: str | None, field_name: str, message: str) -> None:
@@ -352,7 +413,7 @@ def trace_findings(rows: list[dict[str, str]], headers: list[str], id_column: st
     for row in rows:
         record_id = _trim(_cell(row, id_column))
         records[record_id] = Record(record_id, row, trace_type(row))
-    systems = link_records(records, issue)
+    systems = link_records(records, issue, controls["records"] if controls else frozenset())
     roots = [system for system in systems if not trace_ids(system.row.get("Part of"))]
     if len(roots) != 1:
         issue(None, "Part of", f"Expected one top-level system. Found {len(roots)}.")
@@ -362,4 +423,6 @@ def trace_findings(rows: list[dict[str, str]], headers: list[str], id_column: st
     values = build_value_rules(records.values(), headers, id_column, issue)
     check_test_coverage(records, values, issue)
     check_verification(records, values, issue)
+    if controls is not None:
+        check_changes(rows, id_column, records, values, headers, controls, issue)
     return findings
