@@ -5,7 +5,7 @@ from .values import VALUE_COLUMNS, VALUE_MODEL_JS
 
 TRACE_COLUMNS = (
     "Type", "Name", "Requirement", "Part of", "Allocated to", "Owner",
-    "Derived from", "Source refs", "Verified by", "Test plan", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
+    "Derived from", "Source refs", "Verified by", "Test plan", "Affects", "Change status", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
 )
 
 TRACE_MODEL_JS = GLOSSARY_MODEL_JS + VALUE_MODEL_JS + r"""
