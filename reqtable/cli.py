@@ -7,8 +7,8 @@ from pathlib import Path
 
 from . import __version__
 from .baselines import (
-    create_baseline, find_gate, load_baselines, open_store, require_scope_args, require_system_record, run_git,
-    sort_manifests,
+    BaselineStore, build_controls, create_baseline, find_gate, load_baselines, open_store, require_scope_args,
+    require_system_record, run_git, sort_manifests,
 )
 from .core import (
     DEFAULT_CONFIG,
@@ -156,6 +156,10 @@ def input_source(path: str, selection: XlsxSelection, config: dict[str, object])
     return xlsx_source(path, selection, config) if is_xlsx(path) else file_source(path)
 
 
+def table_store(path: str, selection: XlsxSelection, config: dict[str, object]) -> BaselineStore:
+    return open_store(path, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
+
+
 def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> None:
     if args.create_baseline and args.list_baselines:
         raise ConfigError("--create-baseline and --list-baselines cannot be combined")
@@ -166,7 +170,7 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
     path = args.input or (args.new if args.list_baselines else None)
     if not path:
         raise ConfigError("--create-baseline and --list-baselines need an input CSV or .xlsx")
-    store = open_store(path, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
+    store = table_store(path, selection, config)
     if args.list_baselines:
         manifests = sort_manifests(store.list(), config)
         for manifest in manifests:
@@ -185,7 +189,7 @@ REVIEW_FLAGS = ("sign_off", "verify_baseline", "gate_package", "import_decisions
 def run_review_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
     if not args.input:
         raise ConfigError("--sign-off, --verify-baseline, --gate-package and --import-decisions need an input CSV or .xlsx")
-    store = open_store(args.input, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
+    store = table_store(args.input, selection, config)
     if args.sign_off:
         if not args.role or not args.decision:
             raise ConfigError("--sign-off needs --role and --decision")
@@ -221,7 +225,8 @@ def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: d
     if config["traceability"]:
         table, _ = prepare_trace_table(table, config)
     require_system_record(table, args.system)
-    findings = table_findings(table.rows, table.headers, config["id_column"])  # type: ignore[arg-type]
+    controls = build_controls(table_store(args.input, selection, config), config)
+    findings = table_findings(table.rows, table.headers, config["id_column"], controls)  # type: ignore[arg-type]
     configured = next(entry for entry in config["gates"] if entry["id"] == gate.id)  # type: ignore[attr-defined]
     result = evaluate_gate(configured, table.rows, table.headers, config["id_column"], args.system, findings)  # type: ignore[arg-type]
     print("\n".join(format_result(result)))
@@ -304,15 +309,13 @@ def run(argv: list[str] | None = None) -> int:
             assert source.text is not None
             atomic_write_text(args.output, "\ufeff" + source.text)
             return 0
+    store = table_store(args.new if diff_mode else args.input, selection, config)
     embedded = []
     if args.baselines:
         names = [name.strip() for name in args.baselines.split(",") if name.strip()]
-        store = open_store(
-            args.new if diff_mode else args.input, config,
-            lambda found: read_csv_source(input_source(str(found), selection, config), config),
-        )
         embedded = load_baselines(store, config, names)
-    data = build_report_data(new, config, Path(args.output).name, old=old, baselines=embedded)
+    controls = build_controls(store, config)
+    data = build_report_data(new, config, Path(args.output).name, old=old, baselines=embedded, controls=controls)
     for warning in data["meta"].get("warnings", []):
         print(f"warning: {warning}", file=sys.stderr)
     atomic_write_text(args.output, render_report(data))

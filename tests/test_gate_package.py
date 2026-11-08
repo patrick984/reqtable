@@ -57,6 +57,7 @@ class PackageFlow:
         self.assertEqual(package["approval"]["approved"], False)
         self.assertEqual(package["decisionOptions"], ["Reviewed", "Changes requested", "Approved", "Rejected"])
         self.assertEqual(data["decisions"], [])
+        self.assertIsNone(data["controls"])
         self.assertEqual([g["id"] for g in data["gates"]], ["SFR"])
         self.assertEqual(data["options"]["initialCompareWith"], "baseline:SRR")
         self.assertEqual([b["name"] for b in data["baselines"]], ["SRR"])

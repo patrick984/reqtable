@@ -196,8 +196,10 @@ def evaluate_gate(
     return {"gate": gate["id"], "name": gate.get("name", gate["id"]), "system": system, "ready": ready, "checks": checks}
 
 
-def table_findings(rows: Sequence[dict[str, str]], headers: Sequence[str], id_column: str) -> list[Finding]:
-    return [(f.id, f.field, f.message) for f in trace_findings(list(rows), list(headers), id_column)]
+def table_findings(
+    rows: Sequence[dict[str, str]], headers: Sequence[str], id_column: str, controls: dict[str, Any] | None = None
+) -> list[Finding]:
+    return [(f.id, f.field, f.message) for f in trace_findings(list(rows), list(headers), id_column, controls)]
 
 
 def format_result(result: dict[str, Any]) -> list[str]:

@@ -17,12 +17,14 @@ from typing import Any, Callable, Iterable, Sequence
 
 from .core import (
     ConfigError,
+    ReqtableError,
     CsvSource,
     CsvTable,
     InputError,
     OutputError,
     atomic_write_text,
     generation_time,
+    prepare_trace_table,
     read_csv_source,
 )
 from .signoff import CheckedSignOff, SignOff, approval_status, slug
@@ -669,3 +671,46 @@ def load_baselines(
             "approval": approval_status(gate_roles(config, found.gate), checked),
         })
     return entries
+
+
+def build_controls(store: BaselineStore, config: dict[str, Any]) -> dict[str, Any] | None:
+    """The controlling baseline row of every baselined record, or None when there is nothing to control.
+
+    A record's controlling baseline is the latest created one whose scope holds it. Among baselines created at
+    the same moment the later gate, then the higher number, controls, and the list puts it first because the
+    report's checkChanges keeps the first of equal creation times.
+    """
+    if not config["baselines"]["change_control"]:
+        return None
+    try:
+        manifests = store.list()
+    except ReqtableError:
+        return None
+    if not manifests:
+        return None
+    order = {gate["id"]: index for index, gate in enumerate(config["gates"])}
+    manifests.sort(key=lambda m: (m.created, -order.get(m.gate, len(order)), -m.number, m.name))
+    id_column = config["id_column"]
+    records: dict[str, dict[str, Any]] = {}
+    created: dict[str, str] = {}
+    try:
+        for manifest in manifests:
+            table = store.read(manifest)
+            if config["traceability"]:
+                table, _ = prepare_trace_table(table, config)
+            for row in select_scope(table.rows, id_column, manifest.system, manifest.includes):
+                record_id = row[id_column].strip()
+                if record_id not in records or manifest.created > created[record_id]:
+                    records[record_id] = {"baseline": manifest.name, "row": row}
+                    created[record_id] = manifest.created
+    except ReqtableError as exc:
+        store.warn(f"change control is off: {exc}")
+        return None
+    return {
+        "baselines": [
+            {"name": m.name, "created": m.created, "system": m.system, "includes": m.includes,
+             "capturesStatus": m.captures_status, "statusColumns": m.status_columns}
+            for m in manifests
+        ],
+        "records": records,
+    }

@@ -131,6 +131,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "files": {"directory": "baselines"},
         "enforcement": "advisory",
         "status_columns": ["Compliance", "Result"],
+        "change_control": True,
     },
     "gates": PRESET_GATES,
 }
@@ -276,6 +277,8 @@ def validate_baselines(baselines: dict[str, Any]) -> None:
     columns = baselines["status_columns"]
     if not isinstance(columns, list) or not all(isinstance(x, str) for x in columns):
         raise ConfigError("baselines.status_columns must be an array of strings")
+    if not isinstance(baselines["change_control"], bool):
+        raise ConfigError("baselines.change_control must be true or false")
 
 
 _GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff"}
@@ -657,6 +660,7 @@ def build_report_data(
     output_name: str,
     old: CsvTable | None = None,
     baselines: Sequence[dict[str, Any]] = (),
+    controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     comments = []
     traceability = config["traceability"]
@@ -784,6 +788,7 @@ def build_report_data(
         },
         "comments": comments,
         "baselines": list(baselines),
+        "controls": controls,
         "gates": config["gates"],
     }
 
