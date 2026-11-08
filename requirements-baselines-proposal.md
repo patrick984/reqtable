@@ -34,8 +34,9 @@ The content hash is the keystone. A CSV in Git, an XLSX in SharePoint, an HTML p
 
 The hash covers what the requirements say, not how a file stores them:
 
-- headers and rows after XLSX mapping, in table order
+- headers and rows after XLSX mapping, in table order, limited to the gate's scope and record types
 - cell values exactly as read, with line endings normalised to LF
+- status columns only when the gate captures status (see Status columns)
 - no formatting, column widths, comments, quality settings or report state
 
 It is computed by the Python generator, embedded in every report, and recomputed by the report's JavaScript when it checks a comparison source.
@@ -45,10 +46,28 @@ It is computed by the Python generator, embedded in every report, and recomputed
 A baseline covers either the whole table or one system and its subsystems. Early gates such as SRR usually cover the whole table. A detailed design review (DDR) usually covers one subsystem in depth.
 
 - A gate declares `"scope": "table"` (the default) or `"scope": "system"`. A system-scoped gate is baselined once per system, for example `--create-baseline DDR --system SYS-REPORT`.
-- A system-scoped baseline contains the System records in that subtree and the requirements allocated to any of them, using the same rule as the report's **Include subsystems** scope. Test and Value records are not part of it.
+- A system-scoped baseline contains the System records in that subtree and the requirements allocated to any of them, using the same rule as the report's **Include subsystems** scope. Other record types follow the gate's `includes` list. Included tests are those the in-scope requirements list in **Verified by**, and included test plans are those of included tests.
 - The scope is part of the canonical content, so the hash covers the scope as well as the rows.
 - Comparison, readiness checks and sign-off all work within the scope. Comparing the whole table with a DDR baseline shows changes only for that subtree.
 - A requirement can sit in several scoped baselines. That is expected, because a shared requirement is allocated to several systems.
+
+### Record types
+
+Each gate lists the record types its baseline covers in `includes`. The default is `["Requirement", "System"]`.
+
+- A requirements baseline already freezes which tests verify each requirement, because **Verified by**, Verification Method and Verification Level are columns on the requirement row. Leaving Test records out only leaves out the tests' own content.
+- Tests are often shared across subsystems and owned by a separate test team with its own approvers. Including them in every design baseline would make one test edit show as a change in several baselines, and would have design approvers sign test content.
+- So the preset includes `Test` and `Test plan` records at TRR, where test procedures are approved. A project that wants tests in an earlier baseline adds them to that gate's `includes`.
+- Need, Source, Term, Value and Field records can be included the same way, for example to freeze the glossary or the allowed values at SRR.
+
+### Status columns
+
+Some columns record progress rather than agreement. Compliance moves from Not verified to Compliant during verification, and a test's Result moves from Not run to Passed. Hashing them in an early baseline would make every verification update look like a change since that baseline.
+
+- `baselines.status_columns` lists these columns. The default is `["Compliance", "Result"]`.
+- A gate captures status only when it sets `"captures_status": true`. Otherwise status columns are left out of its hash and of its change checks.
+- Comparisons still show status changes against any baseline, so progress since a gate is visible. Against a baseline without status they are shown as progress, never as unauthorised changes.
+- The preset captures status at the gates where results are what is approved: SVR and FCA, which confirm the system meets its functional baseline, and PCA, which freezes the as-built product baseline. After those gates, a status change such as Compliant to Non-compliant counts as a change since the baseline.
 
 ## Configuration
 
@@ -60,7 +79,8 @@ Gates and baseline storage live in the existing JSON configuration. The preset b
     "store": "git",
     "git": {"tag_prefix": "baseline/"},
     "files": {"directory": "baselines"},
-    "enforcement": "advisory"
+    "enforcement": "advisory",
+    "status_columns": ["Compliance", "Result"]
   },
   "gates": [
     {
@@ -102,7 +122,7 @@ Gates and baseline storage live in the existing JSON configuration. The preset b
 }
 ```
 
-The full preset adds SFR, CDR, TRR and SVR in the usual DoD and INCOSE order. A project renames, removes, reorders or adds gates by editing this list. Gate IDs are free text.
+The full preset adds SFR, CDR, TRR, SVR, FCA and PCA in the usual DoD and INCOSE order. TRR includes Test and Test plan records, and SVR, FCA and PCA capture status. A project renames, removes, reorders or adds gates by editing this list. Gate IDs are free text.
 
 ### Check vocabulary
 
@@ -116,7 +136,7 @@ Each check names the records it applies to and one condition. The vocabulary reu
 | `linked` | The named link column has at least one target. `leaf: true` requires the target to have no subsystems. |
 | `no_findings` | No trace findings, or none of a listed kind. |
 | `signoffs_complete` | The gate's sign-off roles have their minimum decisions (phase 3). |
-| `unchanged_since` | No baselined requirement changed since the named baseline without an approved change request (phase 4). |
+| `unchanged_since` | No record in the named baseline changed since it without an approved change request. Status columns count only when that baseline captured status (phase 4). |
 
 A check that uses an unknown key is a configuration error at generation time, not a silent pass.
 
@@ -202,7 +222,7 @@ The gate's `signoff` list sets the required roles and counts. The `signoffs_comp
 
 | Phase | Delivers | Proves |
 |---|---|---|
-| 1. Baseline identity | Canonical content hash, table and system scopes, Git and file stores, manifest, numbered re-baselines, `--create-baseline`, `--baselines` and **Compare with** in the report. | A baseline from Git or from an XLSX folder compares identically, and a scoped baseline covers exactly its subtree. |
+| 1. Baseline identity | Canonical content hash, table and system scopes, included record types, status columns, Git and file stores, manifest, numbered re-baselines, `--create-baseline`, `--baselines` and **Compare with** in the report. | A baseline from Git or from an XLSX folder compares identically, and a scoped baseline covers exactly its subtree. |
 | 2. Gate readiness | Gate configuration, check vocabulary, shipped preset, Gates view, `--check-gate`. | A project can change the gate list and checks without code changes. |
 | 3. Package and sign-off | Gate package with cover page and hash, review decisions, sign-off roles, Git signed-tag verification, manifest sign-offs, `--verify-baseline`. | A signed tag or signed PDF can be traced to exactly one baseline. |
 | 4. Change control | Change request records, `Changed by` links, the unapproved-change finding, `unchanged_since`. | A post-baseline edit without a change request is flagged. |
@@ -216,8 +236,9 @@ Recorded on 2026-11-08 from the first review of this proposal.
 2. **PDF signatures** are not validated by ReqTable. The content hash printed in the signed PDF is enough to tie it to a baseline, and viewers such as Acrobat validate the signature on open.
 3. **Re-baselining** creates `SRR-2`, `SRR-3` and so on, because explicit names are clearer than replacing `SRR`. This is provisional.
 4. **Scope** can be the whole table or one system's subtree, so that subsystem gates such as DDR can be baselined per system.
+5. **Record types** are chosen per gate. Design baselines default to requirements and systems. Tests and test plans are baselined at TRR, where they are approved.
+6. **Status columns** such as Compliance and Result are left out of baselines until gates that approve results. SVR, FCA and PCA capture them.
 
 ## Open questions
 
 1. **SharePoint locking.** It is not yet known whether target tenants offer retention labels or record declaration. Until then, the content hash and the signed PDF are the integrity controls, and locking is an optional extra the project applies in SharePoint.
-2. **Scope boundary.** Should a system-scoped baseline also include the tests that verify its requirements, so a DDR package carries its test evidence? The current proposal leaves tests out of the hash and shows them only in the package.
