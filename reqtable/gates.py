@@ -5,7 +5,8 @@ from functools import cached_property
 from typing import Any, Callable, Sequence
 
 from .baselines import links, record_type, select_scope
-from .core import RECORD_TYPES, ConfigError, InputError
+from .core import RECORD_TYPES, ConfigError
+from .findings import trace_findings
 
 Finding = tuple["str | None", str, str]
 
@@ -196,11 +197,7 @@ def evaluate_gate(
 
 
 def table_findings(rows: Sequence[dict[str, str]], headers: Sequence[str], id_column: str) -> list[Finding]:
-    try:
-        from . import findings
-    except ImportError as exc:
-        raise InputError("trace findings are unavailable: reqtable.findings is missing from this build") from exc
-    return [(f.id, f.field, f.message) for f in findings.trace_findings(list(rows), list(headers), id_column)]
+    return [(f.id, f.field, f.message) for f in trace_findings(list(rows), list(headers), id_column)]
 
 
 def format_result(result: dict[str, Any]) -> list[str]:

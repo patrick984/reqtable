@@ -78,13 +78,13 @@ class CheckGateCliTests(unittest.TestCase):
     def test_input_errors_exit_three(self) -> None:
         self.assertEqual(run_cli(self.path, *BASE, "--check-gate", "DDR", "--system", "R1")[0], 3)
 
-    def test_missing_findings_module_is_an_input_error(self) -> None:
+    def test_real_findings_fail_the_no_findings_check(self) -> None:
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.dict("sys.modules", {"reqtable.findings": None}), \
-                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-            code = main([self.path, *BASE, "--check-gate", "SRR"])
-        self.assertEqual(code, 3)
-        self.assertIn("reqtable.findings", err.getvalue())
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main([self.path, *BASE, "--check-gate", "SFR"])
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL sfr-no-findings", out.getvalue())
+        self.assertIn("(table)", out.getvalue())
 
 
 class EmbeddedGatesTests(unittest.TestCase):
