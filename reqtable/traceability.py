@@ -1061,6 +1061,16 @@ const trace=(()=>{
     }
   });
   $("#trace-query").addEventListener("input",showCandidates);
+  picker.addEventListener("keydown",event=>{
+    if(event.key!=="ArrowDown"&&event.key!=="ArrowUp")return;
+    const query=$("#trace-query"),options=[...$("#trace-candidates").querySelectorAll("[data-trace-target]")];
+    const at=options.indexOf(document.activeElement);
+    if(document.activeElement!==query&&at<0)return;
+    event.preventDefault();
+    const next=document.activeElement===query?(event.key==="ArrowDown"?0:-1):at+(event.key==="ArrowDown"?1:-1);
+    if(next<0)query.focus();
+    else options[Math.min(next,options.length-1)]?.focus();
+  });
   $("#trace-picker-cancel").addEventListener("click",()=>picker.close());
   $("#trace-picker-apply").addEventListener("click",()=>{
     const {id,field,checked}=linkEdit;
@@ -1410,6 +1420,7 @@ TRACE_CSS = """
 }
 .quality-marker~.trace-marker {right:22px}
 #trace-query {display:block;width:100%}
+#trace-picker {width:min(900px,calc(100vw - 24px));max-height:calc(100vh - 80px)}
 #trace-candidates button,#trace-candidates label {display:flex;align-items:baseline;gap:12px;width:100%;text-align:start;margin-top:4px}
 .trace-candidate-name {flex:none;max-width:60%;overflow-wrap:anywhere}
 .trace-candidate-detail {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
