@@ -37,6 +37,11 @@ Preconditions:
 - **Scope.** Click `[data-compare="baseline:DDR/SYS-EXTRACT"]`. No row is changed, because REQ-099 is outside SYS-EXTRACT.
 - **Live scope.** In All fields, allocate an unallocated requirement into a scoped baseline's subtree. It becomes `row-added` against that baseline.
 
+- **Gates view.** In a Develop report of `requirements-uat.csv` built with `--traceability`, open `#view=gates`. SRR and SFR show `✓ Ready`. PDR shows `✗ Not ready` with `pdr-allocated-leaf` 31 of 267 failing and `pdr-level` 1 of 267 failing (REQ-178). Click the first `button[data-gate-show]`: the Requirements view shows 31 rows and the chip `Gate check pdr-allocated-leaf: 31 records`. Browser Back returns to Gates.
+- **System gate.** In Gates, set `#trace-system` to `system:SYS-EXTRACT`. `section.gate[data-gate="DDR"]` shows `ddr-verified` 13 of 13 failing.
+- **Live update.** Give REQ-178 a Verification Level and return to Gates: `pdr-level` passes.
+- **CLI parity.** `python3 -m reqtable requirements-uat.csv --id-column ID --traceability --check-gate PDR` prints the same counts and exits 1. `--check-gate DDR --system SYS-EXTRACT` lists 13 failing records.
+
 ## Gotchas
 
 - Comparing starts with unchanged rows hidden, like Last save. A change to a System record shows only in Systems or All fields.

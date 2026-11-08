@@ -18,7 +18,7 @@
 - [x] Printable/exportable VCRM matrix page with I/A/D/T and per-level columns.
 - [ ] Gate baselines (requirements-baselines-proposal.md)
   - [x] Phase 1: content hash, table and system scopes, record types, status columns, Git and file stores, `--create-baseline`, `--list-baselines`, `--baselines`, View → Compare with.
-  - [ ] Phase 2: gate readiness checks, Gates view, `--check-gate`.
+  - [x] Phase 2: gate readiness checks, Gates view, `--check-gate`, and a Python port of trace findings with parity tests.
   - [ ] Phase 3: gate package, review decisions, sign-off roles, signed-tag verification, `--verify-baseline`.
   - [ ] Phase 4: change requests and the unapproved-change finding.
   - [ ] Phase 5: strict enforcement.

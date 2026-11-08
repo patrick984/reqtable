@@ -373,6 +373,37 @@ Baselines are stored according to `baselines.store`:
 
 In the report, **View → Compare with** lists Nothing, Last save, the old file of a diff report, and each embedded baseline. Comparing with a baseline marks added, removed and changed records within its scope and record types, and leaves everything else unchanged. Against a baseline that does not capture status, a changed status shows a muted `was <old value>` note but does not mark the row changed. The line above the grid names the baseline, its date and hash, and warns if the embedded content no longer matches its recorded hash.
 
+### Gate readiness checks
+
+Each gate in the configuration can list `checks`, declarative conditions that say whether the table is ready for that review. A check has an `id`, a `description`, an optional `applies_to` and one condition:
+
+| Condition | Passes when |
+|---|---|
+| `filled: "Column"` | The cell is not blank. |
+| `in: {"Column": ["A", "B"]}` | The cell is not blank and every `;`-separated value is in the list. |
+| `linked: "Column"` | At least one listed ID is a record in the table. Add `"leaf": true` to require a System with no subsystems. |
+| `no_findings: true` | No record in scope has a trace finding, and the table has no table-level findings. |
+
+`applies_to` selects the records a check covers. It defaults to `{"type": "Requirement"}` (or every record for `no_findings`). `type` takes a record type or a list, and any other key is a column whose value must equal the given text or be one of a list. A check that names a column the table lacks reports an error rather than passing. For a system-scoped gate such as DDR, checks cover only that system's scope.
+
+```json
+{"id": "pdr-level", "description": "Every requirement has a verification level",
+ "applies_to": {"type": "Requirement", "Priority": ["Must", "Should"]}, "filled": "Verification Level"}
+```
+
+The default gates ship with checks. For example, SRR needs requirement text, a verification method and a priority. PDR needs allocation to a leaf system and a verification level. TRR needs every test to have a test plan and a method. SVR, FCA and PCA need Compliant or Waived requirements, and SVR also needs passing tests. Every gate also needs no trace findings. Replace the `gates` list in your configuration to use your own.
+
+The **Gates** view in the report lists each gate as ready or not ready, with each check's result. Results update as you edit in Develop mode. For a system-scoped gate, choose the system in the System selector. **Show records** opens the failing records with a removable filter.
+
+In the CLI, `--check-gate` runs the same checks for CI. It prints one line per check and exits 0 when the gate is ready and 1 when it is not:
+
+```sh
+python -m reqtable requirements.csv -c config.json --check-gate PDR
+python -m reqtable requirements.csv -c config.json --check-gate DDR --system SYS-REPORT
+```
+
+The CLI evaluates trace findings with a Python port of the report's rules, so it needs only the standard library. Parity tests run both implementations on the same tables and require identical findings.
+
 ## Build and test
 
 ```sh
