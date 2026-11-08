@@ -184,7 +184,7 @@ function configuredPixels(column,fallback=column.estimatedWidth||160){const raw=
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
 const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,idFilter:null,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,compareWith:data.meta.mode==="diff"?"old":null,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
 state.qualityReview=cloneValue(data.qualityReview??{settings:data.options.quality??{},dismissals:[]});
-state.decisions=cloneValue(data.decisions??[]);
+state.decisions=cloneValue(data.decisions??[]);state.savedDecisions=cloneValue(state.decisions);
 {const key=data.options.initialCompareWith;if(key&&key!==state.compareWith&&(key==="old"?data.source.old:baselineByKey(key)))setCompareWith(key);}
 state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
@@ -776,10 +776,12 @@ function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
   state.qualityDirty=JSON.stringify(state.qualityReview)!==JSON.stringify(state.savedQualityReview);
-  state.dirty=state.requirementsDirty||state.commentsDirty||state.qualityDirty;
+  state.decisionsDirty=JSON.stringify(state.decisions)!==JSON.stringify(state.savedDecisions);
+  state.dirty=state.requirementsDirty||state.commentsDirty||state.qualityDirty||state.decisionsDirty;
   const changed=[];
   if(state.requirementsDirty)changed.push("requirements");
   if(state.commentsDirty)changed.push("comments");
+  if(state.decisionsDirty)changed.push("decisions");
   if(state.qualityDirty)changed.push("quality settings and dismissals (save a report copy)");
   const label=changed.length?"Unsaved "+changed.join(" and "):"";
   $("#dirty-details").textContent=label;
@@ -791,7 +793,7 @@ function updateDirty(){
   draftChanged();
 }
 window.addEventListener("beforeunload",event=>{if(!state.dirty)return;event.preventDefault();event.returnValue="";});
-function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);}updateDirty();}
+function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);state.savedDecisions=cloneValue(state.decisions);}updateDirty();}
 function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);if(snapshot.qualityReview)state.qualityReview=cloneValue(snapshot.qualityReview);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
 function selectedRequirementId(){return document.querySelector("[data-grid-cell].selected-cell")?.closest("tr")?.dataset.rowId||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The requirement ID cannot be empty.");return null;}if(trace&&id.includes(";")){alert("A traceable ID cannot contain a semicolon.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`Requirement ID ${id} already exists.`);return null;}return id;}
 function nextRecordId(preferredPrefix=null){
@@ -1145,7 +1147,7 @@ function applyCellEdit(form,next,continueAtEntry=false){
 }
 function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const rows=snapshot.rows.map(source=>{const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}return row;});return csvText(headers,rows,data.options.csvDelimiter||",");}
 function currentSnapshot(){
-  return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments),qualityReview:cloneValue(state.qualityReview)};
+  return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments),decisions:cloneValue(state.decisions),qualityReview:cloneValue(state.qualityReview)};
 }
 let csvHandle=null,writingCsv=false,autosaveTimer=null;
 function scheduleAutosave(){
@@ -1158,6 +1160,7 @@ function scheduleAutosave(){
 function markSaved(snapshot,message){
   state.savedRows=snapshot.rows;
   state.savedComments=snapshot.comments;
+  state.savedDecisions=snapshot.decisions;
   updateDirty();
   if(state.compareWith==="saved"&&!state.editingCell)render();
   $("#save-status").textContent=message;
@@ -1275,7 +1278,7 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
   }
 
   const clone=document.documentElement.cloneNode(true),snapshot=currentSnapshot();
-  const embedded={...data,comments:snapshot.comments,qualityReview:snapshot.qualityReview,
+  const embedded={...data,comments:snapshot.comments,...(data.package&&{decisions:snapshot.decisions}),qualityReview:snapshot.qualityReview,
     source:{...data.source,new:{...data.source.new,rows:snapshot.rows}}};
   delete embedded.rows;
   if(forReview)prepareReviewCopy(clone,embedded,withChanges);

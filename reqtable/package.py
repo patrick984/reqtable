@@ -69,7 +69,8 @@ function signoffItem(s){
   return `<li class="signoff${s.counts?"":" signoff-excluded"}">${escapeHtml(s.user)}: ${escapeHtml(s.decision)}, ${escapeHtml(s.date)}, ${escapeHtml(s.verification)}${s.counts?"":" (does not count)"}${s.note?` <span class="meta">${escapeHtml(s.note)}</span>`:""}</li>`;
 }
 function pendingItem(d){
-  return `<li class="decision-recorded">${escapeHtml(d.user)}: ${escapeHtml(d.decision)}, ${escapeHtml(displayTimestamp(d.date))}${d.note?` <span class="meta">${escapeHtml(d.note)}</span>`:""}</li>`;
+  const index=state.decisions.findIndex(x=>sameDecision(x,d));
+  return `<li class="decision-recorded">${escapeHtml(d.user)}: ${escapeHtml(d.decision)}, ${escapeHtml(displayTimestamp(d.date))}${d.note?` <span class="meta">${escapeHtml(d.note)}</span>`:""}<button type="button" class="decision-remove" data-remove-decision="${index}" aria-label="Remove ${escapeHtml(d.decision)} by ${escapeHtml(d.user)} as ${escapeHtml(d.role)}">Remove</button></li>`;
 }
 function renderPackage(){
   if(!packageCover)return;
@@ -85,9 +86,37 @@ function buildPackageCover(){
 <dl class="package-facts" id="package-facts">${packageFacts(pkg)}</dl>
 <p id="package-hash-warning" class="package-warning" role="alert" ${pkg.baseline.hashOk?"hidden":""}>The baseline content does not match its recorded hash.</p>
 <div id="package-approval" class="package-approval"></div>
-<table class="signoff-table" id="package-signoff-table"><thead><tr><th scope="col">Role</th><th scope="col">Required</th><th scope="col">Recorded sign-offs</th><th scope="col">Recorded in this package, not yet imported</th></tr></thead><tbody id="package-signoffs"></tbody></table>`;
+<table class="signoff-table" id="package-signoff-table"><thead><tr><th scope="col">Role</th><th scope="col">Required</th><th scope="col">Recorded sign-offs</th><th scope="col">Recorded in this package, not yet imported</th></tr></thead><tbody id="package-signoffs"></tbody></table>
+<form id="package-decision-form" class="decision-form" aria-label="Record decision">
+<label>Name<input id="package-decision-user" maxlength="80" autocomplete="off" value="${escapeHtml(reviewerInitials())}"></label>
+<label>Role<select id="package-decision-role">${pkg.roles.map(r=>`<option>${escapeHtml(r.role)}</option>`).join("")}</select></label>
+<label>Decision<select id="package-decision-decision">${pkg.decisionOptions.map(o=>`<option>${escapeHtml(o)}</option>`).join("")}</select></label>
+<label class="decision-note">Note (optional)<input id="package-decision-note" maxlength="500" autocomplete="off"></label>
+<button type="submit" id="package-decision-submit" class="primary">Record decision</button>
+<span id="package-decision-status" class="meta" role="status"></span></form>`;
   packageCover.hidden=false;
   renderPackage();
+  $("#package-decision-user").addEventListener("focus",e=>{if(!e.target.value)e.target.value=reviewerInitials();});
+  $("#package-decision-form").addEventListener("submit",e=>{
+    e.preventDefault();
+    const field=id=>$("#package-decision-"+id),result=createDecision({role:field("role").value,user:field("user").value,decision:field("decision").value,note:field("note").value},new Date());
+    if(result.error){field("status").textContent=result.error;return;}
+    state.decisions.push(result.record);
+    field("note").value="";
+    field("status").textContent=`Recorded ${result.record.decision} for ${result.record.role}. Save a report copy to keep it.`;
+    updateDirty();
+    renderPackage();
+  });
+  packageCover.addEventListener("click",e=>{
+    const button=e.target.closest("[data-remove-decision]");
+    if(!button)return;
+    const record=state.decisions[Number(button.dataset.removeDecision)];
+    if(!record)return;
+    state.decisions=removeDecision(state.decisions,record);
+    $("#package-decision-status").textContent=`Removed ${record.decision} for ${record.role}.`;
+    updateDirty();
+    renderPackage();
+  });
 }
 function packageClearCopy(clone){
   clone.querySelector("#package-cover")?.replaceChildren();

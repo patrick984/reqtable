@@ -32,23 +32,25 @@ function changedCommentCount(saved,comments){
   const before=new Set(saved.map(c=>JSON.stringify(c))),after=new Set(comments.map(c=>JSON.stringify(c)));
   return Math.max([...after].filter(json=>!before.has(json)).length,[...before].filter(json=>!after.has(json)).length);
 }
-function buildDraft({path,fingerprint,title,headers,rows,baseRows,comments,savedComments,rowsDirty,commentsDirty,idOf,now}){
+function buildDraft({path,fingerprint,title,headers,rows,baseRows,comments,savedComments,rowsDirty,commentsDirty,idOf,now,decisions=[],decisionsDirty=false}){
   return {key:path,fingerprint,savedAt:now.toISOString(),title,headers:[...headers],
     rows:rowsDirty?JSON.parse(JSON.stringify(rows)):null,
     comments:commentsDirty?JSON.parse(JSON.stringify(comments)):null,
     changedCount:rowsDirty?changedRowCount(baseRows,rows,idOf):0,
-    changedComments:commentsDirty?changedCommentCount(savedComments,comments):0};
+    changedComments:commentsDirty?changedCommentCount(savedComments,comments):0,
+    decisions:decisionsDirty?JSON.parse(JSON.stringify(decisions)):null};
 }
 function draftIsStale(record,now){
   const age=now-Date.parse(record.savedAt);
   return !(age<=DRAFT_MAX_AGE_MS);
 }
-function draftOffer({record,fingerprint,developMode,savedRows,savedComments}){
+function draftOffer({record,fingerprint,developMode,savedRows,savedComments,savedDecisions=[]}){
   if(!record)return null;
   if(record.fingerprint!==fingerprint)return developMode&&record.rows?"download":null;
   const rows=developMode&&record.rows&&JSON.stringify(record.rows)!==JSON.stringify(savedRows),
-    comments=record.comments&&JSON.stringify(record.comments)!==JSON.stringify(savedComments);
-  return rows||comments?"restore":null;
+    comments=record.comments&&JSON.stringify(record.comments)!==JSON.stringify(savedComments),
+    decisions=record.decisions&&JSON.stringify(record.decisions)!==JSON.stringify(savedDecisions);
+  return rows||comments||decisions?"restore":null;
 }
 function draftMessage(record,offer,formatDate){
   const when=formatDate(record.savedAt),count=(n,noun)=>`${n} ${noun}${n===1?"":"s"} changed`;
@@ -56,6 +58,7 @@ function draftMessage(record,offer,formatDate){
   const parts=[];
   if(record.rows)parts.push(count(record.changedCount,"row"));
   if(record.comments)parts.push(count(record.changedComments,"comment"));
+  if(record.decisions)parts.push("decisions changed");
   return`Unsaved edits from ${when}`+(parts.length?` (${parts.join(", ")}).`:".");
 }
 
@@ -91,7 +94,7 @@ const draftStore={
 };
 
 const drafts={phase:"none",timer:0,record:null,enabled:false,fingerprint:""};
-function draftWanted(){return $("#autosave").checked&&(state.commentsDirty||(developMode()&&state.requirementsDirty));}
+function draftWanted(){return $("#autosave").checked&&(state.commentsDirty||(developMode()&&state.requirementsDirty)||state.decisionsDirty);}
 function draftChanged(){
   if(!drafts.enabled||drafts.phase==="offered")return;
   clearTimeout(drafts.timer);
@@ -110,7 +113,7 @@ function draftFlush(){
   draftStore.put(buildDraft({path:location.pathname,fingerprint:drafts.fingerprint,title:data.meta.title,
     headers:data.source.new.headers,rows:state.currentRows,baseRows:data.source.new.rows,comments:state.comments,
     savedComments:state.savedComments,rowsDirty:developMode()&&state.requirementsDirty,commentsDirty:state.commentsDirty,
-    idOf:rowId,now:new Date()}));
+    idOf:rowId,now:new Date(),decisions:state.decisions,decisionsDirty:state.decisionsDirty}));
 }
 function closeDraftBanner(){
   $("#draft-banner").hidden=true;
@@ -122,7 +125,7 @@ async function draftsStart(){
   drafts.fingerprint=reportFingerprint(data.source.new);
   await draftStore.prune(Date.now());
   const record=await draftStore.get(location.pathname),
-    offer=draftOffer({record,fingerprint:drafts.fingerprint,developMode:developMode(),savedRows:state.savedRows,savedComments:state.savedComments});
+    offer=draftOffer({record,fingerprint:drafts.fingerprint,developMode:developMode(),savedRows:state.savedRows,savedComments:state.savedComments,savedDecisions:state.savedDecisions});
   drafts.enabled=true;
   if(offer&&!state.dirty){
     drafts.record=record;
@@ -141,6 +144,7 @@ $("#draft-restore").addEventListener("click",()=>{
   if(!record||(state.dirty&&!confirm("Replace the current changes with the unsaved draft?")))return;
   closeDraftBanner();
   remember();
+  if(record.decisions)state.decisions=cloneValue(record.decisions);
   restoreHistory({rows:developMode()&&record.rows?record.rows:state.currentRows,comments:record.comments??state.comments});
   $("#save-status").textContent="Unsaved edits restored";
   restoreSelectedCell();

@@ -69,6 +69,11 @@ assert.equal(offer({record:null}),null);
 const comments=draft({rowsDirty:false,commentsDirty:true,comments:[{text:"a"}]});
 assert.equal(offer({record:comments,developMode:false}),"restore");
 assert.equal(offer({record:comments,developMode:false,savedComments:[{text:"a"}]}),null);
+const decisions=draft({rowsDirty:false,decisions:[{role:"reviewer"}],decisionsDirty:true});
+assert.equal(offer({record:decisions,developMode:false}),"restore");
+assert.equal(offer({record:decisions,developMode:false,savedDecisions:[{role:"reviewer"}]}),null);
+assert.equal(draft().decisions,null);
+assert.equal(draftMessage(decisions,"restore",()=>"then"),"Unsaved edits from then (decisions changed).");
 """)
 
     def test_banner_message(self):
