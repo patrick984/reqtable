@@ -238,6 +238,26 @@ function traceIncomingChanges(rows,oldId,newId){
   }
   return changes;
 }
+function traceLocationHash(place){
+  const params=new URLSearchParams();
+  const put=(key,value,fallback)=>{if(value!==fallback)params.set(key,value);};
+  put("view",place.view,"requirements");
+  if(place.view==="glossary")put("kind",place.kind,"terms");
+  put("mode",place.mode??"","");
+  put("system",place.system??"","");
+  put("unallocated",place.unallocated?"1":"0","0");
+  put("descendants",place.descendants===false?"0":"1","1");
+  put("record",place.record??"","");
+  const text=params.toString();
+  return text?"#"+text:"";
+}
+function parseTraceLocation(hash){
+  const params=new URLSearchParams(String(hash??"").replace(/^#/,""));
+  const text=key=>params.get(key)??"";
+  const flag=(key,fallback)=>{const value=params.get(key);return value==="1"?true:value==="0"?false:fallback;};
+  return {view:text("view")||"requirements",kind:text("kind")==="values"?"values":"terms",mode:text("mode"),system:text("system"),
+    unallocated:flag("unallocated",false),descendants:flag("descendants",true),record:text("record")};
+}
 """
 
 TRACE_UI_JS = GLOSSARY_UI_JS + r"""

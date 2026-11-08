@@ -195,6 +195,39 @@ class TestRecordModelTests(unittest.TestCase):
         subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
                        + TRACE_MODEL_JS + assertions, text=True, check=True)
 
+    def test_location_hash_omits_defaults(self):
+        self.run_js(r"""
+const home={view:"requirements",kind:"terms",mode:"",system:"",unallocated:false,descendants:true,record:""};
+assert.equal(traceLocationHash(home),"");
+assert.equal(traceLocationHash({...home,kind:"values"}),"");
+assert.equal(traceLocationHash({...home,view:"glossary",kind:"values"}),"#view=glossary&kind=values");
+assert.equal(traceLocationHash({...home,view:"glossary"}),"#view=glossary");
+assert.equal(traceLocationHash({...home,descendants:false}),"#descendants=0");
+assert.equal(traceLocationHash({...home,view:"verification",mode:"matrix",system:"SYS-REPORT",record:"REQ-003"}),
+  "#view=verification&mode=matrix&system=SYS-REPORT&record=REQ-003");
+""")
+
+    def test_location_round_trips_and_encodes_ids(self):
+        self.run_js(r"""
+const full={view:"verification",kind:"terms",mode:"matrix",system:"SYS A&B",unallocated:true,descendants:false,record:"REQ #1&x=2"};
+const hash=traceLocationHash(full);
+assert.ok(!hash.slice(1).includes("#")&&!/ |&x=2/.test(hash));
+assert.deepEqual(parseTraceLocation(hash),full);
+const glossary={view:"glossary",kind:"values",mode:"",system:"",unallocated:false,descendants:true,record:"VAL 1"};
+assert.deepEqual(parseTraceLocation(traceLocationHash(glossary)),glossary);
+""")
+
+    def test_location_parse_ignores_invalid_and_foreign_input(self):
+        self.run_js(r"""
+const home={view:"requirements",kind:"terms",mode:"",system:"",unallocated:false,descendants:true,record:""};
+for(const hash of ["","#","#top","#trace-matrix","trace-matrix",undefined,null,"#=&&=","#%E0%A4%A"]){
+  assert.deepEqual(parseTraceLocation(hash),home,String(hash));
+}
+assert.deepEqual(parseTraceLocation("#unallocated=yes&descendants=maybe&kind=other&bogus=1&view=tests"),{...home,view:"tests"});
+assert.equal(parseTraceLocation("#view=tests&view=all").view,"tests");
+assert.equal(traceLocationHash(parseTraceLocation("#view=tests&bogus=1")),"#view=tests");
+""")
+
     def test_trace_columns_include_test_links(self):
         self.assertIn("Verified by", TRACE_COLUMNS)
         self.assertIn("Test plan", TRACE_COLUMNS)
