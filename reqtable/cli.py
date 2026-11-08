@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .baselines import create_baseline, load_baselines, open_store, run_git, sort_manifests
+from .baselines import (
+    create_baseline, find_gate, load_baselines, open_store, require_scope_args, require_system_record, run_git,
+    sort_manifests,
+)
 from .core import (
     DEFAULT_CONFIG,
     ConfigError,
@@ -16,10 +19,12 @@ from .core import (
     ReqtableError,
     atomic_write_text,
     build_report_data,
+    prepare_trace_table,
     extract_comments_csv,
     load_config,
     read_csv_source,
 )
+from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
 from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
@@ -58,11 +63,15 @@ def parser() -> argparse.ArgumentParser:
         help="print a JSON configuration that maps every table and sheet of a workbook, and exit",
     )
     result.add_argument("--create-baseline", metavar="GATE", help="freeze the input as a baseline for this review gate, and exit")
-    result.add_argument("--system", metavar="ID", help="System ID for --create-baseline on a system-scoped gate")
+    result.add_argument("--system", metavar="ID", help="System ID for --create-baseline or --check-gate on a system-scoped gate")
     result.add_argument("--list-baselines", action="store_true", help="list the baselines of the input (or --new), and exit")
     result.add_argument(
         "--baselines", metavar="NAME[,NAME...]",
         help="embed these gate baselines in the report so it can compare against them",
+    )
+    result.add_argument(
+        "--check-gate", metavar="GATE",
+        help="evaluate this review gate's readiness checks on the input; exit 0 when ready, 1 when not",
     )
     result.add_argument("--print-default-config", action="store_true")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -148,6 +157,26 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
     print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
 
 
+def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
+    if args.create_baseline or args.list_baselines or args.baselines or args.old or args.new or args.extract_comments:
+        raise ConfigError(
+            "--check-gate cannot be combined with --create-baseline, --list-baselines, --baselines, --old, --new or --extract-comments"
+        )
+    if not args.input:
+        raise ConfigError("--check-gate needs an input CSV or .xlsx")
+    gate = find_gate(config, args.check_gate)
+    require_scope_args(gate, args.system, config)
+    table = read_csv_source(input_source(args.input, selection, config), config)
+    if config["traceability"]:
+        table, _ = prepare_trace_table(table, config)
+    require_system_record(table, args.system)
+    findings = table_findings(table.rows, table.headers, config["id_column"])  # type: ignore[arg-type]
+    configured = next(entry for entry in config["gates"] if entry["id"] == gate.id)  # type: ignore[attr-defined]
+    result = evaluate_gate(configured, table.rows, table.headers, config["id_column"], args.system, findings)  # type: ignore[arg-type]
+    print("\n".join(format_result(result)))
+    return 0 if result["ready"] else 1
+
+
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.print_default_config:
@@ -160,9 +189,9 @@ def run(argv: list[str] | None = None) -> int:
         print(json.dumps(mapping_template(args.xlsx_mapping_template), indent=2))
         return 0
     baseline_command = bool(args.create_baseline or args.list_baselines)
-    if args.system and not args.create_baseline:
-        raise ConfigError("--system applies only to --create-baseline")
-    if not args.output and not baseline_command:
+    if args.system and not (args.create_baseline or args.check_gate):
+        raise ConfigError("--system applies only to --create-baseline and --check-gate")
+    if not args.output and not baseline_command and not args.check_gate:
         raise ConfigError("--output is required")
     selection = XlsxSelection(args.table, args.sheet, args.header_row)
     inputs = [path for path in (args.input, args.old, args.new) if path]
@@ -171,6 +200,8 @@ def run(argv: list[str] | None = None) -> int:
     config = load_config(args.config, _overrides(args))
     if selection.given and config["xlsx"]["sources"]:
         raise ConfigError("--table, --sheet and --header-row cannot be combined with xlsx.sources in the configuration")
+    if args.check_gate:
+        return run_check_gate(args, selection, config)
     if baseline_command:
         run_baseline_command(args, selection, config)
         return 0

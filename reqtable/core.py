@@ -779,6 +779,7 @@ def build_report_data(
         },
         "comments": comments,
         "baselines": list(baselines),
+        "gates": config["gates"],
     }
 
 

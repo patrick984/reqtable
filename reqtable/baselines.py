@@ -439,8 +439,7 @@ def open_store(
     return store(Path(input_path), config, read_file, warn)
 
 
-def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None) -> Manifest:
-    gate = find_gate(config, gate_id)
+def require_scope_args(gate: Gate, system: str | None, config: dict[str, Any]) -> None:
     if gate.scope == "system":
         if not system:
             raise ConfigError(f"gate {gate.id} is system-scoped; give --system with a System ID")
@@ -448,12 +447,22 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
             raise ConfigError("system-scoped baselines need --traceability")
     elif system:
         raise ConfigError(f"gate {gate.id} covers the whole table; --system applies only to system-scoped gates")
+
+
+def require_system_record(table: CsvTable, system: str | None) -> None:
+    if system is None:
+        return
+    record = table.by_id.get(system)
+    if record is None or record_type(record) != "System":
+        raise InputError(f"{system!r} is not a System record in {table.label}")
+
+
+def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None) -> Manifest:
+    gate = find_gate(config, gate_id)
+    require_scope_args(gate, system, config)
     table = store.current()
     id_column = config["id_column"]
-    if system is not None:
-        record = table.by_id.get(system)
-        if record is None or record_type(record) != "System":
-            raise InputError(f"{system!r} is not a System record in {table.label}")
+    require_system_record(table, system)
     status_columns = config["baselines"]["status_columns"]
     digest = content_hash(
         table.headers, select_scope(table.rows, id_column, system, gate.includes),
