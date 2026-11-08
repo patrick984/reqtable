@@ -333,16 +333,24 @@ const trace=(()=>{
     flexible:new Set(["Requirement"]),
     overrides:new Map(),
   };
+  const changesColumns=()=>[data.meta.idColumn,"Name","Change status","Affects","Requirement","Reference"];
+  const changesLayout={
+    defaults:new Map([[data.meta.idColumn,110],["Name",200],["Change status",120],["Affects",200],["Requirement",280],["Reference",220]]),
+    flexible:new Set(["Requirement","Reference"]),
+    overrides:new Map(),
+  };
   const listViews={
     sources:{types:["Need","Source"],columns:sourceColumns,layout:sourceLayout,summary:count=>`${count} needs and sources`},
     tests:{types:testTypes,get columns(){return new Set(testColumnOrder());},layout:testLayout,order:testColumnOrder,summary:count=>`${count} test records`},
     verification:{types:["Requirement"],systemScope:true,get columns(){return new Set(verificationColumns());},order:verificationColumns,
       layout:verificationLayout,summary:count=>`${count} requirements`,modes:{grid:"Grid",matrix:"Matrix"},
       cells:{"Verification Method":methodCell,"Verified by":verifiedByCell},strip:verificationStrip},
+    changes:{types:["Change request"],get columns(){return new Set(changesColumns());},layout:changesLayout,order:changesColumns,
+      summary:count=>`${count} change ${count===1?"request":"requests"}`},
     gates:{types:[],systemScope:true,columns:new Set([data.meta.idColumn]),summary:()=>`${gates.length} ${gates.length===1?"gate":"gates"}`},
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
-  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
+  const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple","Change status",...glossaryFields]);
   const glossaryKinds={
     terms:{types:["Term"],columns:new Set([data.meta.idColumn,"Name",...glossaryFields]),
       summary:count=>`${count} glossary ${count===1?"term":"terms"}`},
@@ -359,7 +367,9 @@ const trace=(()=>{
     "Source refs":["Needs and sources","Link need or source…"],
     "Verified by":["Verified by","Link test…"],
     "Test plan":["Test plan","Set test plan…"],
+    "Affects":["Affects","Link affected record…"],
   };
+  const removedSince=id=>data.controls&&Object.hasOwn(data.controls.records,id)?data.controls.records[id].baseline:null;
   let index,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
   let selected=null,selectedSystem=null,revealed=null,pending=null;
   let scope=new Set(),recordEdit=null,linkEdit=null,deleteEdit=null;
@@ -515,7 +525,7 @@ const trace=(()=>{
       :traceIds(row.cells["Allocated to"]?.old);
     return unallocated?!allocated.length:allocated.some(id=>scope.has(id));
   }
-  const buildIndex=()=>buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn});
+  const buildIndex=()=>buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn,controls:data.controls});
   function refresh(){
     glossaryPopover.close();
     index=buildIndex();
@@ -585,6 +595,7 @@ const trace=(()=>{
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
     $("#trace-test-actions").hidden=!developMode()||view!=="tests";
+    $("#trace-change-actions").hidden=!developMode()||view!=="changes";
     const inGlossary=view==="glossary";
     $("#trace-glossary-kind").hidden=!inGlossary;
     for(const button of $("#trace-glossary-kind").querySelectorAll("[data-glossary-kind]")){
@@ -608,7 +619,7 @@ const trace=(()=>{
   function renderGates(){
     const headers=data.source.new.headers;
     gateEvaluations=gates.map(gate=>gate.scope==="system"&&!system?null
-      :gate.checks.map(check=>evaluateGateCheck(check,state.currentRows,data.meta.idColumn,headers,gate.scope==="system"?system:null,index.issues)));
+      :gate.checks.map(check=>evaluateGateCheck(check,state.currentRows,data.meta.idColumn,headers,gate.scope==="system"?system:null,index.issues,data.controls??null)));
     gatesPage.innerHTML=gates.length?gates.map((gate,gateIndex)=>{
       const results=gateEvaluations[gateIndex],ready=results&&!results.some(gateCheckFailed);
       const badge=!results?"":ready?'<span class="gate-badge gate-pass">✓ Ready</span>':'<span class="gate-badge gate-fail">✗ Not ready</span>';
@@ -674,7 +685,7 @@ const trace=(()=>{
   function renderIssues(){
     $("#trace-findings").querySelector("summary").textContent=`Trace findings (${index.issues.length})`;
     $("#trace-issues").innerHTML=index.issues.length?index.issues.map(({id,field,message})=>
-      `<li data-finding-id="${escapeHtml(id??"")}" data-finding-field="${escapeHtml(field)}">${id?link(id,id)+" · ":""}<strong>${escapeHtml(field)}</strong><br>${escapeHtml(message)}</li>`
+      `<li data-finding-id="${escapeHtml(id??"")}" data-finding-field="${escapeHtml(field)}">${id?(index.records.has(id)?link(id,id):escapeHtml(id))+" · ":""}<strong>${escapeHtml(field)}</strong><br>${escapeHtml(message)}</li>`
     ).join(""):"<li>No trace findings.</li>";
   }
   function showFindings(id,column){
@@ -721,7 +732,7 @@ const trace=(()=>{
     }
     const {id,row,type}=record;
     const incomingLabels={"Part of":"Subsystems","Allocated to":"Allocated requirements","Owner":"Owned requirements",
-      "Derived from":"Child requirements","Source refs":"Referenced by","Verified by":"Verifies","Test plan":"Tests"};
+      "Derived from":"Child requirements","Source refs":"Referenced by","Verified by":"Verifies","Test plan":"Tests","Affects":"Change requests"};
     const sections=[];
     for(const [field,rule] of Object.entries(traceFields)){
       const ids=[...new Set(traceIds(row[field]))];
@@ -731,7 +742,8 @@ const trace=(()=>{
         const target=index.records.get(targetId);
         const remove=writable()? ` <button type="button" class="trace-remove" data-trace-remove="${escapeHtml(field)}"
           data-trace-target="${escapeHtml(targetId)}" aria-label="Remove ${escapeHtml(heading)} link to ${escapeHtml(targetId)}">×</button>`:"";
-        return `<li>${target?link(targetId,caption(target)):escapeHtml(targetId)+" (missing)"}${remove}</li>`;
+        const gone=removedSince(targetId);
+        return `<li>${target?link(targetId,caption(target)):escapeHtml(targetId)+(gone?` (removed since ${escapeHtml(gone)})`:" (missing)")}${remove}</li>`;
       });
       const edit=writable()&&rule.from.includes(type)?` <button type="button" data-trace-pick="${escapeHtml(field)}">${action}</button>`:"";
       sections.push(`<section><h4>${heading}</h4>${targets.length?`<ul>${targets.join("")}</ul>`:'<p class="meta">None</p>'}${edit}</section>`);
@@ -925,6 +937,12 @@ const trace=(()=>{
       return `<span class="trace-candidate-name">${escapeHtml(name)}</span>`
         +(detail?`<span class="trace-candidate-detail" title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>`:"");
     };
+    if(field==="Affects"){
+      for(const removedId of Object.keys(data.controls?.records??{})){
+        const label=`${removedId} (removed since ${removedSince(removedId)})`;
+        if(!index.records.has(removedId)&&!traceIds(record.row.Affects).includes(removedId)&&matches(label))names.set(removedId,label);
+      }
+    }
     if(checked){
       for(const id of checked){
         const target=index.records.get(id);
@@ -969,7 +987,7 @@ const trace=(()=>{
     $("#trace-test-plan-label").hidden=type!=="Test";
     if(type==="Test")optionList($("#trace-test-plan"),[...index.records.values()].filter(({type})=>type==="Test plan"),"No test plan");
     $("#trace-record-content-field").hidden=type==="System";
-    $("#trace-record-content-label").textContent=type==="Term"||type==="Value"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":type==="Test"||type==="Test plan"?"Description":"Requirement statement";
+    $("#trace-record-content-label").textContent=type==="Term"||type==="Value"?"Definition":type==="Source"?"Citation":type==="Need"?"Need statement":type==="Test"||type==="Test plan"||type==="Change request"?"Description":"Requirement statement";
     $("#trace-term-options").hidden=type!=="Term";
     $("#trace-term-aliases").value="";
     $("#trace-term-single-word").checked=false;
@@ -1051,6 +1069,10 @@ const trace=(()=>{
     if(gateIndex>=0)showGateRecords(gates[gateIndex],gateEvaluations[gateIndex][checkIndex]);
   });
   index=buildIndex();
+  if(!data.controls&&!data.source.new.headers.some(name=>name==="Change status"||name==="Affects")
+      &&![...index.records.values()].some(record=>record.type==="Change request")){
+    viewBar.querySelector('[data-trace-view="changes"]').remove();
+  }
   state.hidden=defaultHidden();
   wrap.hidden=false;
   viewBar.addEventListener("click",event=>{
@@ -1072,6 +1094,7 @@ const trace=(()=>{
   $("#trace-source-add").addEventListener("click",()=>editRecord("Source"));
   $("#trace-test-plan-add").addEventListener("click",()=>editRecord("Test plan"));
   $("#trace-test-add").addEventListener("click",()=>editRecord("Test"));
+  $("#trace-change-add").addEventListener("click",()=>editRecord("Change request"));
   $("#trace-term-add").addEventListener("click",()=>editRecord("Term"));
   $("#trace-value-add").addEventListener("click",()=>editRecord("Value"));
   $("#trace-glossary-kind").addEventListener("click",event=>{
@@ -1183,7 +1206,8 @@ const trace=(()=>{
     const targetId=event.target.closest("button[data-trace-target]")?.dataset.traceTarget;
     if(!targetId||!linkEdit)return;
     const {id,field}=linkEdit,record=index.records.get(id),target=index.records.get(targetId);
-    if(!writable()||!record||!target||!traceCanLink(record,field,target))return;
+    const removed=field==="Affects"&&!target&&removedSince(targetId)!==null&&!traceIds(record?.row.Affects).includes(targetId);
+    if(!writable()||!record||!(removed||(target&&traceCanLink(record,field,target))))return;
     picker.close();
     const value=traceFields[field].single?targetId:[...traceIds(record.row[field]),targetId].join("; ");
     updateLink(record,field,value);
@@ -1223,6 +1247,7 @@ const trace=(()=>{
       }
       if(type!=="System")row[{Term:"Definition",Value:"Definition",Source:"Reference"}[type]??"Requirement"]=content;
       if(type==="Test")row["Test plan"]=$("#trace-test-plan").value;
+      if(type==="Change request"&&"Change status" in row)row["Change status"]="Proposed";
       if(type==="Value"){
         row.Field=valueField;
         row.Aliases=$("#trace-value-aliases").value.trim();
@@ -1337,6 +1362,7 @@ TRACE_WORKSPACE = """
       <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
       <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
       <button type="button" data-trace-view="gates" aria-pressed="false">Gates</button>
+      <button type="button" data-trace-view="changes" aria-pressed="false">Changes</button>
     </div>
     <div role="group" aria-label="Reference">
       <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
@@ -1367,6 +1393,9 @@ TRACE_WORKSPACE = """
   <span id="trace-test-actions" hidden>
     <button id="trace-test-plan-add" type="button">Add test plan…</button>
     <button id="trace-test-add" type="button">Add test…</button>
+  </span>
+  <span id="trace-change-actions" hidden>
+    <button id="trace-change-add" type="button">Add change request…</button>
   </span>
   </div>
   <p id="trace-status" class="meta" role="status"></p>
