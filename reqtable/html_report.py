@@ -43,6 +43,9 @@ CSS = r"""
 .toolbar .popover button:disabled{opacity:.55;cursor:default}
 .toolbar .popover label:not([hidden]){padding:5px 12px;cursor:pointer}
 .toolbar .popover kbd{font:inherit;font-size:.8em;color:var(--muted);white-space:nowrap;border:0;padding:0}
+.toolbar .popover .menu-label{padding:3px 12px;color:var(--muted);font-size:.85em}
+.toolbar .popover .compare-group{border-bottom:1px solid var(--line);margin-bottom:4px;padding-bottom:4px}
+.comparison-line{color:var(--muted);padding-inline-end:7px}.comparison-line .warning{color:var(--comment);font-weight:600}
 .toolbar .popover .menu-section{border-top:1px solid var(--line);margin-top:4px;padding-top:4px}
 .toolbar .popover #hidden-filter-warning:not(:empty){padding:5px 12px}
 .toolbar.has-active-filters {
@@ -727,6 +730,31 @@ function renderLayout(){
   positionCellEditor();
 }
 function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const canDrag=canDragRows(),rows=sortedRows(),cols=visibleColumns(),display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;tableBody.innerHTML=display.map((row,ri)=>`<tr class="${row.id===""?"entry-row":`row-${row.status}`}" data-row-id="${escapeHtml(row.id)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,ri,ci,canDrag)).join("")}</tr>`).join("");resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);paintQualityMarkers();trace?.paintMarkers();trace?.paintStrip();trace?.linkGlossary();renderQualityPanel();positionCellEditor();}
+function renderCompareMenu(){
+  const baselines=data.baselines??[],hasOld=data.meta.mode==="diff"&&Boolean(data.source.old),box=$("#compare-baselines"),old=$("#compare-old");
+  $("#compare-menu").hidden=!developMode()&&!hasOld&&!baselines.length;
+  old.hidden=!hasOld;
+  if(hasOld)old.textContent=data.meta.oldFilename??"Old version";
+  if(!box.childElementCount)for(const baseline of baselines){
+    const button=document.createElement("button");
+    button.type="button";
+    button.dataset.compare="baseline:"+baseline.name;
+    button.textContent=`${baseline.name} · ${baseline.created.slice(0,10)}`;
+    box.append(button);
+  }
+  for(const button of $("#compare-menu").querySelectorAll("[data-compare]"))button.setAttribute("aria-pressed",String(button.dataset.compare===(state.compareWith??"none")));
+  const active=baselineByKey(state.compareWith),line=$("#comparison-line");
+  line.hidden=!active;
+  line.replaceChildren();
+  if(!active)return;
+  line.append(`Comparing with ${active.name} (${active.produces}, ${active.created.slice(0,10)}) · ${active.hash.slice(0,"sha256:".length+12)}`);
+  if(!active.hashOk){
+    const warning=document.createElement("span");
+    warning.className="warning";
+    warning.textContent=" · content does not match its recorded hash";
+    line.append(warning);
+  }
+}
 function syncModeUi(){
   const comparison=$("#review-comparison");
   comparison.hidden=!data.options.reviewComparison;
@@ -736,7 +764,7 @@ function syncModeUi(){
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
     $("#rename-requirement").disabled=trace.systemsView();
   }
-  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.compareWith==="saved"?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
@@ -1593,7 +1621,7 @@ tableBody.addEventListener("click",event=>{
     applyCellEdit(editor,cell);
   }
 });
-for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{setCompareWith(state.compareWith==="saved"?(data.meta.mode==="diff"?"old":null):"saved");render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy({forReview:true}));$("#export-review-changes").addEventListener("click",()=>saveReportCopy({forReview:true,withChanges:true}));
+for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#compare-menu").addEventListener("click",event=>{const button=event.target.closest("[data-compare]");if(!button)return;setCompareWith(button.dataset.compare==="none"?null:button.dataset.compare);render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy({forReview:true}));$("#export-review-changes").addEventListener("click",()=>saveReportCopy({forReview:true,withChanges:true}));
 document.addEventListener("click",event=>{const cell=event.target.closest("[data-bool-toggle]")?.closest("[data-grid-cell]");if(cell)toggleBooleanCell(cell);});
 document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
   const cell=event.target.closest("[data-grid-cell]");
@@ -1861,10 +1889,10 @@ __DRAFTS_HTML__
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label></div></details>
 <details id="edit-menu" class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button><div class="menu-section"><button id="copy-cells" disabled>Copy <kbd data-shortcut="Mod C"></kbd></button><button id="paste-cells" disabled>Paste <kbd data-shortcut="Mod V"></kbd></button><button id="clear-cells" disabled>Clear cells <kbd data-shortcut="Delete" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section diff-only"><button id="revert-selected-cell" disabled>Revert selected cell</button><button id="restore-deleted-requirement" disabled>Restore deleted requirement</button></div></div></details>
-<details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="review-comparison" hidden>Show current requirements</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
+<details class="popup-menu"><summary>View</summary><div class="popover"><div id="compare-menu" class="compare-group" role="group" aria-labelledby="compare-label" hidden><div id="compare-label" class="menu-label">Compare with</div><button id="compare-nothing" data-compare="none">Nothing</button><button id="unsaved-diff" class="develop-only" data-compare="saved">Last save</button><button id="compare-old" data-compare="old" hidden></button><div id="compare-baselines"></div></div><button id="review-comparison" hidden>Show current requirements</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
 <details id="columns-menu" class="popup-menu"><summary>Columns</summary><div class="popover"><div id="column-list"></div><div class="menu-section"><button id="show-all-columns">Show all</button><button id="default-columns">Defaults</button></div><div id="hidden-filter-warning" class="meta"></div></div></details>
-<details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><strong id="result-count" aria-live="polite"></strong>
+<details class="popup-menu"><summary>Help</summary><div class="popover"><button id="show-help">Keyboard help <kbd data-shortcut="?"></kbd></button><button id="search-menus">Search menus <kbd data-shortcut="Alt /"></kbd></button></div></details><span class="spacer"></span><span id="comparison-line" class="comparison-line" hidden></span><strong id="result-count" aria-live="polite"></strong>
 <details id="active-filters" class="popup-menu" hidden>
   <summary aria-label="Active filters">
     <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M2 3h12L9.5 8v4l-3 1V8z"/></svg>
