@@ -9,6 +9,7 @@ from .glossary import GLOSSARY_CSS, GLOSSARY_HTML
 from .drafts import DRAFTS_CSS, DRAFTS_HTML, DRAFTS_JS
 from .comparison import COMPARISON_JS
 from .gate_checks import GATE_CHECKS_JS
+from .package import PACKAGE_CSS, PACKAGE_HTML, PACKAGE_JS
 from .values import VALUE_EDIT_JS
 from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
@@ -183,6 +184,8 @@ function configuredPixels(column,fallback=column.estimatedWidth||160){const raw=
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
 const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,idFilter:null,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,compareWith:data.meta.mode==="diff"?"old":null,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
 state.qualityReview=cloneValue(data.qualityReview??{settings:data.options.quality??{},dismissals:[]});
+state.decisions=cloneValue(data.decisions??[]);
+{const key=data.options.initialCompareWith;if(key&&key!==state.compareWith&&(key==="old"?data.source.old:baselineByKey(key)))setCompareWith(key);}
 state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
 const $=s=>document.querySelector(s),table=$("#requirements-table"),tableBody=$("#requirements-body"),headRow=$("#heading-row"),filterRow=$("#filter-row"),resultCount=$("#result-count"),quick=$("#quick-comment"),hover=$("#comment-hover"),valuePopover=$("#value-filter-popover"),review=$("#review-panel"),help=$("#keyboard-help");
@@ -768,7 +771,7 @@ function syncModeUi(){
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
     $("#rename-requirement").disabled=trace.pageView();
   }
-  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();renderPackage?.();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
@@ -1291,6 +1294,7 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
     clone.querySelector("#"+id).hidden=true;
   }
   trace?.clearCopy(clone);
+  if(data.package)packageClearCopy(clone);
   clone.querySelectorAll("details[open],dialog[open]").forEach(element=>element.removeAttribute("open"));
   clone.querySelector("#quality-dismiss-reason").replaceChildren();
   clone.querySelector("#reviewer-initials").setAttribute("value",initials);
@@ -1891,6 +1895,7 @@ TEMPLATE = r"""<!doctype html>
   <div class="print-details meta">__META__<div class="summary">__SUMMARY__</div></div>
 </header>
 __DRAFTS_HTML__
+__PACKAGE_HTML__
 <section class="toolbar" aria-label="Table controls">
 <details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label></div></details>
 <details id="edit-menu" class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button><div class="menu-section"><button id="copy-cells" disabled>Copy <kbd data-shortcut="Mod C"></kbd></button><button id="paste-cells" disabled>Paste <kbd data-shortcut="Mod V"></kbd></button><button id="clear-cells" disabled>Clear cells <kbd data-shortcut="Delete" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section diff-only"><button id="revert-selected-cell" disabled>Revert selected cell</button><button id="restore-deleted-requirement" disabled>Restore deleted requirement</button></div></div></details>
@@ -1983,6 +1988,7 @@ def render_report(data: dict[str, Any]) -> str:
     if meta["mode"] == "diff":
         embedded["diffStatus"] = {row["id"]: row["status"] for row in data["rows"]}
     traceability = data["options"].get("traceability", False)
+    has_package = bool(data.get("package"))
     trace_js = TRACE_MODEL_JS + TRACE_UI_JS if traceability else "const trace=null;\n"
     return (
         TEMPLATE.replace("__TRACE_MENU__", TRACE_MENU if traceability else "")
@@ -1990,13 +1996,14 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__TRACE_WORKSPACE__", TRACE_WORKSPACE if traceability else "")
         .replace("__TRACE_SYSTEMS__", TRACE_SYSTEMS if traceability else "")
         .replace("__DRAFTS_HTML__", DRAFTS_HTML)
+        .replace("__PACKAGE_HTML__", PACKAGE_HTML if has_package else "")
         .replace("__TITLE__", title)
         .replace("__DOCUMENT_MODE_LABEL__", "Develop mode" if document_mode == "develop" else "Review mode")
         .replace("__DOCUMENT_MODE__", document_mode)
         .replace("__META__", description)
         .replace("__SUMMARY__", summary)
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
-        .replace("__CSS__", CSS + DRAFTS_CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
+        .replace("__CSS__", CSS + DRAFTS_CSS + (PACKAGE_CSS if has_package else "") + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
+        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + JS + FILTER_JS + VALUE_EDIT_JS + trace_js + (PACKAGE_JS if has_package else "const renderPackage=null;\n") + DRAFTS_JS + INITIAL_RENDER_JS)
     )
