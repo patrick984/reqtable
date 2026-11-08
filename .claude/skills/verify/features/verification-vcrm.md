@@ -8,12 +8,15 @@ In a traceability report, the **Verification** tab lists requirements with ID, R
 - `scope` keeps the tab when the System selector changes and scopes the strip.
 - `compliance-check` flags Compliant with an unpassed linked test, and stays quiet when every linked test passed.
 - `method-edit` opens the normal editor on the raw Verification Method text.
+- `matrix` switches to the Matrix layout: an X table with Method and Level column groups, Tests, Compliance and a totals row, following the System scope.
+- `matrix-export` runs Print… and Download CSV.
 
 ## How to get to it (user POV)
 
 - Click **Verification** in the view bar (after Tests).
 - Pick a system in the **System** selector while on the tab.
 - Edit a Compliance or Verification Method cell with `Return`, `F2` or a double-click.
+- Click **Matrix** next to the System selector, then **Print…** or **Download CSV**.
 
 ## Driving it with the browser pane
 
@@ -26,8 +29,13 @@ Preconditions:
 - **Compliance check.** Select REQ-252's Compliance cell, press `Return`, `cmd+a`, `Delete`, type `Compliant`, press `Return`. No `.trace-marker` appears and the strip shows `Compliant 1`. The selection moves down a row after commit, so press `Escape` and `Up` before editing REQ-253 the same way. Its cell carries a `.trace-marker` titled `Compliant, but TEST-UAT-TRACEABILITY is “Not run”.`
 - **Method edit.** Select a Verification Method cell and press `Return`. The focused textarea holds the raw text, such as `Test`, not the slots.
 
+- **Matrix.** Click `[data-view-mode="matrix"]`. `#trace-matrix` is visible and `.table-wrap` is hidden. `#trace-matrix-table` has 267 body rows, a header with `Method` and `Level` groups over Inspection, Analysis, Demonstration, Test, Unit, Integration, System, Acceptance, and a footer reading `Totals 3 1 160 121 86 30 154 14 Not verified 267`. Setting `#trace-system` to `system:SYS-EXTRACT` gives 13 rows and the caption `13 requirements · System: Comment extraction (SYS-EXTRACT) and subsystems`. Click `[data-view-mode="grid"]` to return.
+- **Matrix export.** Stub `window.print` and hook `URL.createObjectURL` per SKILL.md. `#trace-matrix-print` calls print once. `#trace-matrix-csv` downloads `<report>-vcrm.csv` that starts with a UTF-8 BOM, uses CRLF, and has the header `ID,Requirement,Inspection,Analysis,Demonstration,Test,Unit,Integration,System,Acceptance,Tests,Compliance`. The REQ-253 line ends `TEST-TRACEABILITY (Passed); TEST-UAT-TRACEABILITY (Not run),Not verified`.
+
 ## Gotchas
 
 - `cmd+a` then typing can append instead of replace in a cell editor that already had text typed into it. Press `Delete` after `cmd+a`.
 - `Pass` is an alias of the test Result `Passed`, not of Compliance. Typed into Compliance it is an undefined value.
 - Changed cells in a diff report show their diff markup, not the slots or badges.
+- The pane cannot open a print preview, so the matrix print CSS (landscape page, repeated header, black borders) is unproven here. Check it with the browser's own Print dialog.
+- `Blob.text()` strips a BOM. Read the first bytes with `arrayBuffer()` to see it.
