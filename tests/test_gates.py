@@ -63,6 +63,49 @@ class NoFindingsTests(unittest.TestCase):
         self.assertEqual((result["total"], result["failing"]), (3, []))
 
 
+class UnchangedSinceTests(unittest.TestCase):
+    check = {"id": "u", "description": "u", "unchanged_since": True}
+    controls = {"baselines": [], "records": {"R1": {}, "R3": {}, "GONE": {}, "GONE2": {}}}
+
+    def run_check(self, findings, system=None, controls=controls, **extra):
+        return evaluate_check(
+            {**self.check, **extra}, FIXTURE["rows"], FIXTURE["headers"], "ID", system, findings, controls
+        )
+
+    def test_counts_removed_ids_as_records(self) -> None:
+        result = self.run_check([])
+        self.assertEqual((result["total"], result["failing"], result["global"]), (10, [], []))
+
+    def test_fails_change_findings_in_finding_order_once(self) -> None:
+        findings = [
+            ("GONE", "ID", "Removed since PDR without an approved change request."),
+            ("R3", "Priority", "Changed since PDR (Priority) without an approved change request."),
+            ("R1", "x", "Target R9 is missing."),
+            ("R3", "Priority", "Changed since PDR (Priority) without an approved change request."),
+            ("NOPE", "ID", "Removed since PDR without an approved change request."),
+        ]
+        self.assertEqual(self.run_check(findings)["failing"], ["GONE", "R3"])
+
+    def test_system_scope_keeps_removed_ids(self) -> None:
+        findings = [
+            ("R3", "Priority", "Changed since PDR (Priority) without an approved change request."),
+            ("GONE", "ID", "Removed since PDR without an approved change request."),
+        ]
+        scoped = self.run_check(findings, "SYS-B")
+        everything = self.run_check([])
+        self.assertEqual(scoped["failing"], ["GONE"])
+        self.assertLess(scoped["total"], everything["total"])
+
+    def test_without_controls_passes(self) -> None:
+        result = self.run_check([], controls=None)
+        self.assertEqual((result["total"], result["failing"]), (8, []))
+
+    def test_applies_to_narrows_records(self) -> None:
+        findings = [("T2", "ID", "Added since TRR without an approved change request.")]
+        self.assertEqual(self.run_check(findings, applies_to={"type": "Requirement"})["failing"], [])
+        self.assertEqual(self.run_check(findings)["failing"], ["T2"])
+
+
 class GateTests(unittest.TestCase):
     def test_ready_needs_no_failures_and_no_errors(self) -> None:
         run = lambda *checks: evaluate_gate(
@@ -101,7 +144,15 @@ class ValidationTests(unittest.TestCase):
         validate_gates(DEFAULT_CONFIG["gates"])
         ids = [check["id"] for gate in DEFAULT_CONFIG["gates"] for check in gate["checks"]]
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(len(ids), 23)
+        self.assertEqual(len(ids), 31)
+        change = {gate["id"]: [c for c in gate["checks"] if "unchanged_since" in c] for gate in DEFAULT_CONFIG["gates"]}
+        self.assertEqual(change.pop("SRR"), [])
+        for gate_id, checks in change.items():
+            self.assertEqual(checks, [{
+                "id": f"{gate_id.lower()}-change-control",
+                "description": "Every change since the last baseline has an approved change request",
+                "unchanged_since": True,
+            }])
 
     def test_rejections(self) -> None:
         self.reject("needs exactly one condition", check_with())
@@ -118,8 +169,9 @@ class ValidationTests(unittest.TestCase):
         self.reject("unknown record type", check_with(filled="A", applies_to={"type": "Nope"}))
         self.reject("applies_to.Priority", check_with(filled="A", applies_to={"Priority": 3}))
 
-    def test_reserved_conditions_name_their_phase(self) -> None:
-        self.reject("phase 4", check_with(unchanged_since="SRR"))
+    def test_unchanged_since_must_be_true(self) -> None:
+        validate_gates(gate_with(check_with(unchanged_since=True)))
+        self.reject("must be true", check_with(unchanged_since="SRR"))
 
     def test_signoffs_complete_is_an_unknown_key(self) -> None:
         self.reject("unknown configuration key", check_with(signoffs_complete=True))

@@ -228,7 +228,7 @@ def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: d
     controls = build_controls(table_store(args.input, selection, config), config)
     findings = table_findings(table.rows, table.headers, config["id_column"], controls)  # type: ignore[arg-type]
     configured = next(entry for entry in config["gates"] if entry["id"] == gate.id)  # type: ignore[attr-defined]
-    result = evaluate_gate(configured, table.rows, table.headers, config["id_column"], args.system, findings)  # type: ignore[arg-type]
+    result = evaluate_gate(configured, table.rows, table.headers, config["id_column"], args.system, findings, controls)  # type: ignore[arg-type]
     print("\n".join(format_result(result)))
     return 0 if result["ready"] else 1
 

@@ -155,3 +155,31 @@ class ReportEmbeddingTests(CliTestCase):
         self.csv.write_text(self.csv.read_text(encoding="utf-8").replace("One", "Uno"), encoding="utf-8")
         code, out, _ = self.run_main(str(self.csv), "--check-gate", "SFR")
         self.assertIn("  FAIL sfr-no-findings  There are no trace findings: 2 of 5 records: R1, (table)", out)
+
+
+@unittest.skipUnless(shutil.which("git"), "git is not on PATH")
+class CheckGateChangeControlTests(CliTestCase):
+    store = "git"
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", "-C", str(self.root), *args], check=True, capture_output=True)
+
+    def test_edit_after_a_baseline_needs_an_approved_change_request(self) -> None:
+        self.csv.write_text(table("One", "Two").replace(",SYS-A,Two", ",SYS-B,Two"), encoding="utf-8")
+        for args in (("init", "-q"), ("config", "user.name", "T"), ("config", "user.email", "t@example.com"),
+                     ("add", "requirements.csv"), ("commit", "-q", "-m", "first")):
+            self.git(*args)
+        self.assertEqual(self.run_main(str(self.csv), "--create-baseline", "PDR")[0], 0)
+        self.assertEqual(self.run_main(str(self.csv), "--check-gate", "PDR")[0], 0)
+        edited = self.csv.read_text(encoding="utf-8").replace("One", "Uno")
+        self.csv.write_text(edited, encoding="utf-8")
+        code, out, _ = self.run_main(str(self.csv), "--check-gate", "PDR")
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "  FAIL pdr-change-control  Every change since the last baseline has an approved change request: "
+            "1 of 4 records: R1", out,
+        )
+        self.csv.write_text(edited + "CR1,Change request,Reword R1,,,,,,,R1,Approved\n", encoding="utf-8")
+        code, out, _ = self.run_main(str(self.csv), "--check-gate", "PDR")
+        self.assertEqual(code, 0, out)
+        self.assertIn("  pass pdr-change-control", out)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Callable, Sequence
@@ -10,8 +11,8 @@ from .findings import trace_findings
 
 Finding = tuple["str | None", str, str]
 
-RESERVED_PHASE = {"unchanged_since": 4}
 MAX_LISTED = 10
+CHANGE_FINDING = re.compile(r"(?:Changed|Added|Removed) since .+ without an approved change request\.")
 
 
 @dataclass
@@ -68,7 +69,7 @@ def _validate_in(value: Any, where: str) -> None:
         raise ConfigError(f"{where}: must be an object with one column and a non-empty array of allowed values")
 
 
-def _validate_no_findings(value: Any, where: str) -> None:
+def _validate_true(value: Any, where: str) -> None:
     if value is not True:
         raise ConfigError(f"{where}: must be true")
 
@@ -92,10 +93,12 @@ CONDITIONS: dict[str, Condition] = {condition.key: condition for condition in (
     Condition("filled", _validate_column, lambda v: [v], _filled),
     Condition("in", _validate_in, lambda v: list(v), _in),
     Condition("linked", _validate_column, lambda v: [v], _linked),
-    Condition("no_findings", _validate_no_findings, lambda v: [], lambda v, c, row, t: True),
+    Condition("no_findings", _validate_true, lambda v: [], lambda v, c, row, t: True),
+    Condition("unchanged_since", _validate_true, lambda v: [], lambda v, c, row, t: True),
 )}
+WHOLE_RECORD_CONDITIONS = ("no_findings", "unchanged_since")
 
-CHECK_KEYS = {"id", "description", "applies_to", "leaf", *CONDITIONS, *RESERVED_PHASE}
+CHECK_KEYS = {"id", "description", "applies_to", "leaf", *CONDITIONS}
 
 
 def _validate_applies_to(applies: Any, where: str) -> None:
@@ -128,9 +131,6 @@ def validate_checks(checks: Any, gate_where: str) -> None:
         unknown = sorted(set(check) - CHECK_KEYS)
         if unknown:
             raise ConfigError(f"unknown configuration key: {where}.{unknown[0]}")
-        for key, phase in RESERVED_PHASE.items():
-            if key in check:
-                raise ConfigError(f"{where}: '{key}' is not available yet; phase {phase} adds it")
         used = [key for key in CONDITIONS if key in check]
         if len(used) != 1:
             raise ConfigError(f"{where} needs exactly one condition: {', '.join(CONDITIONS)}")
@@ -142,7 +142,7 @@ def validate_checks(checks: Any, gate_where: str) -> None:
 
 
 def _applies(check: dict[str, Any], row: dict[str, str]) -> bool:
-    default = {} if "no_findings" in check else {"type": "Requirement"}
+    default = {} if any(key in check for key in WHOLE_RECORD_CONDITIONS) else {"type": "Requirement"}
     for key, wanted in check.get("applies_to", default).items():
         allowed = wanted if isinstance(wanted, list) else [wanted]
         if (record_type(row) if key == "type" else row.get(key, "").strip()) not in allowed:
@@ -157,6 +157,13 @@ def _no_findings(records: list[dict[str, str]], table: Table) -> Outcome:
     return Outcome(failing + ([""] if messages else []), len(records) + bool(messages), messages)
 
 
+def _unchanged_since(records: list[dict[str, str]], table: Table, controls: dict[str, Any] | None) -> Outcome:
+    removed = [record_id for record_id in (controls["records"] if controls else {}) if record_id not in table.record_ids]
+    counted = {*map(table.rid, records), *removed}
+    changed = dict.fromkeys(finding[0] for finding in table.findings if CHANGE_FINDING.fullmatch(finding[2]))
+    return Outcome([record_id for record_id in changed if record_id in counted], len(records) + len(removed), [])
+
+
 def evaluate_check(
     check: dict[str, Any],
     rows: Sequence[dict[str, str]],
@@ -164,6 +171,7 @@ def evaluate_check(
     id_column: str,
     system: str | None,
     findings: Sequence[Finding],
+    controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"id": check["id"], "description": check["description"], "error": None}
     key = next(key for key in CONDITIONS if key in check)
@@ -177,6 +185,8 @@ def evaluate_check(
     records = [row for row in scoped if _applies(check, row)]
     if key == "no_findings":
         outcome = _no_findings(records, table)
+    elif key == "unchanged_since":
+        outcome = _unchanged_since(records, table, controls)
     else:
         failing = [table.rid(row) for row in records if not condition.passes(check[key], check, row, table)]
         outcome = Outcome(failing, len(records), [])
@@ -190,8 +200,9 @@ def evaluate_gate(
     id_column: str,
     system: str | None,
     findings: Sequence[Finding],
+    controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    checks = [evaluate_check(check, rows, headers, id_column, system, findings) for check in gate.get("checks", [])]
+    checks = [evaluate_check(check, rows, headers, id_column, system, findings, controls) for check in gate.get("checks", [])]
     ready = all(check["error"] is None and not check["failing"] for check in checks)
     return {"gate": gate["id"], "name": gate.get("name", gate["id"]), "system": system, "ready": ready, "checks": checks}
 

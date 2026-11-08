@@ -56,6 +56,13 @@ def _no_findings(prefix: str) -> dict[str, Any]:
     return _check(f"{prefix}-no-findings", "There are no trace findings", no_findings=True)
 
 
+def _change_control(prefix: str) -> dict[str, Any]:
+    return _check(
+        f"{prefix}-change-control", "Every change since the last baseline has an approved change request",
+        unchanged_since=True,
+    )
+
+
 _COMPLIANT = {"Compliance": ["Compliant", "Waived"]}
 _TESTS = {"type": "Test"}
 
@@ -69,37 +76,45 @@ PRESET_GATES = [
     _preset_gate("SFR", "System Functional Review", "Functional baseline", [
         _check("sfr-allocated", "Every requirement is allocated to a system", linked="Allocated to"),
         _no_findings("sfr"),
+        _change_control("sfr"),
     ]),
     _preset_gate("PDR", "Preliminary Design Review", "Allocated baseline", [
         _check("pdr-allocated-leaf", "Every requirement is allocated to a leaf system", linked="Allocated to", leaf=True),
         _check("pdr-level", "Every requirement has a verification level", filled="Verification Level"),
         _no_findings("pdr"),
+        _change_control("pdr"),
     ]),
     _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", [
         _check("ddr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
         _no_findings("ddr"),
+        _change_control("ddr"),
     ], reviewers=1, scope="system"),
     _preset_gate("CDR", "Critical Design Review", "Product baseline", [
         _check("cdr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
         _no_findings("cdr"),
+        _change_control("cdr"),
     ]),
     _preset_gate("TRR", "Test Readiness Review", "Test baseline", [
         _check("trr-test-plan", "Every test belongs to a test plan", applies_to=_TESTS, linked="Test plan"),
         _check("trr-test-method", "Every test has a verification method", applies_to=_TESTS, filled="Verification Method"),
         _no_findings("trr"),
+        _change_control("trr"),
     ], includes=["Requirement", "System", "Test", "Test plan"]),
     _preset_gate("SVR", "System Verification Review", "Verified baseline", [
         _check("svr-results", "Every test has passed", applies_to=_TESTS, **{"in": {"Result": ["Passed"]}}),
         _check("svr-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
         _no_findings("svr"),
+        _change_control("svr"),
     ], captures_status=True),
     _preset_gate("FCA", "Functional Configuration Audit", "Functional audit baseline", [
         _check("fca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
         _no_findings("fca"),
+        _change_control("fca"),
     ], captures_status=True),
     _preset_gate("PCA", "Physical Configuration Audit", "As-built product baseline", [
         _check("pca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
         _no_findings("pca"),
+        _change_control("pca"),
     ], captures_status=True),
 ]
 
