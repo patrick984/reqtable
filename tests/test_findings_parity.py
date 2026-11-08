@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 import shutil
 import subprocess
 import unittest
 from pathlib import Path
 
 from reqtable.core import build_report_data, load_config, read_csv_table
-from reqtable.findings import Finding, trace_findings
+from reqtable.findings import TRACE_FIELDS, Finding, trace_findings, trace_ids
 from reqtable.traceability import TRACE_MODEL_JS
 
 UAT_CSV = Path(__file__).resolve().parent.parent / "requirements-uat.csv"
@@ -19,10 +20,30 @@ def uat_source() -> dict:
     return build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
 
 
-def js_findings(cases: list[dict]) -> list[list[tuple]]:
-    script = TRACE_MODEL_JS + "\nconst cases=" + json.dumps(cases) + r""";
-console.log(JSON.stringify(cases.map(({rows,headers,idColumn})=>buildTraceIndex(rows,row=>String(row[idColumn]??"").trim(),
-  {headers,idColumn}).issues.map(({id,field,message})=>[id,field,message]))));
+def apply_edits(base: list[dict], edits: list[list]) -> list[dict]:
+    rows = copy.deepcopy(base)
+    for op, index, *rest in edits:
+        if op == "set":
+            rows[index][rest[0]] = rest[1]
+        else:
+            rows.insert(index, dict(rest[0]))
+    return rows
+
+
+def js_findings(cases: list[dict], base: list[dict] | None = None) -> list[list[tuple]]:
+    """Run buildTraceIndex per case. A case with edits is built from base so the payload stays small."""
+    payload = [{key: value for key, value in item.items() if key != "rows" or "edits" not in item} for item in cases]
+    script = TRACE_MODEL_JS + "\nconst base=" + json.dumps(base) + ";\nconst cases=" + json.dumps(payload) + r""";
+const build=edits=>{
+  const rows=structuredClone(base);
+  for(const [op,index,...rest] of edits){
+    if(op==="set")rows[index][rest[0]]=rest[1];
+    else rows.splice(index,0,{...rest[0]});
+  }
+  return rows;
+};
+console.log(JSON.stringify(cases.map(({rows,edits,headers,idColumn})=>buildTraceIndex(edits?build(edits):rows,
+  row=>String(row[idColumn]??"").trim(),{headers,idColumn}).issues.map(({id,field,message})=>[id,field,message]))));
 """
     output = subprocess.run(["node"], input=script, text=True, check=True, capture_output=True).stdout
     return [[tuple(finding) for finding in findings] for findings in json.loads(output)]
@@ -253,6 +274,7 @@ MUTATIONS = {
     "duplicate Value name": {"VAL-PRIORITY-COULD": {"Name": "MUST"}},
     "clashing Value alias": {"VAL-RESULT-FAILED": {"Aliases": "pass"}},
     "Field record with bad Multiple": {"FIELD-PRIORITY": {"Multiple": "Maybe"}},
+    "Field record with a long s in Multiple": {"FIELD-PRIORITY": {"Multiple": "yeſ"}},
     "Field record for a reserved column": {"FIELD-PRIORITY": {"Name": "Owner"}},
     "two Field records for one column": {"FIELD-EXECUTION": {"Name": "Priority"}},
     "glossary term without a definition": {"TERM-UAT": {"Definition": ""}},
@@ -260,6 +282,58 @@ MUTATIONS = {
     "duplicate glossary name": {"TERM-HTML": {"Name": "comma-separated values"}},
     "self-derived requirement without rationale": {"REQ-005": {"Origin": "Self-derived", "Rationale": ""}},
 }
+
+SWEEP_SEED = 20261108
+SWEEP_ITERATIONS = 400
+SWEEP_COLUMNS = (
+    *TRACE_FIELDS, "Type", "ID", "Priority", "Verification Method", "Verification Level", "Compliance", "Execution", "Result",
+    "Name", "Definition", "Aliases", "Auto Link", "Field", "Multiple", "Origin", "Rationale",
+)
+# JavaScript trim and Python strip disagree on some of these characters.
+SWEEP_ODD_TOKENS = ("", " ", "\u00a0", "\ufeff", "\x1c", "\x85", "\u2028", ";", ";;", " ; ", "Yes", "yes", "No", "NO", "Maybe",
+                    "yeſ", "Self-derived", "self-derived", "Unknown", "X", "x; X", "ſ", "K", "İ", "ΑΣ")
+
+
+def sweep_edits(base: list[dict], rng: random.Random) -> list[list]:
+    columns = sorted({key for row in base for key in row})
+    tokens = sorted({row[column].strip() for row in base for column in ("ID", "Name", "Field", "Type") if row.get(column, "").strip()}
+                    | {alias for row in base for alias in trace_ids(row.get("Aliases"))})
+    tokens += [token.lower() for token in tokens[::7]] + [token.upper() for token in tokens[::11]] + list(SWEEP_ODD_TOKENS)
+    rows, edits = [dict(row) for row in base], []
+
+    def token() -> str:
+        value = rng.choice(tokens)
+        pad = rng.choice(("", "", "", " ", "\u00a0", "\ufeff", "\x1c"))
+        return pad + value + pad if rng.random() < 0.3 else value
+
+    for _ in range(rng.randint(1, 6)):
+        index, column = rng.randrange(len(rows)), rng.choice(SWEEP_COLUMNS)
+        current = rows[index].get(column, "")
+        choice = rng.random()
+        if choice < 0.15:
+            value = ""
+        elif choice < 0.45:
+            value = token()
+        elif choice < 0.65:
+            value = "; ".join([current or token(), token()])
+        elif choice < 0.75:
+            value = f"{current}; {current}"
+        elif choice < 0.85:
+            value = rng.choice(rows).get(column, "")
+        elif choice < 0.92:
+            value = rng.choice((current.upper(), current.lower(), current.swapcase()))
+        else:
+            row = dict(rng.choice(rows))
+            if rng.random() < 0.5:
+                row["ID"] = token()
+            row[rng.choice(columns)] = token()
+            edit = ["insert", rng.randrange(len(rows) + 1), row]
+            rows.insert(edit[1], dict(row))
+            edits.append(edit)
+            continue
+        rows[index][column] = value
+        edits.append(["set", index, column, value])
+    return edits
 
 
 @unittest.skipUnless(shutil.which("node"), "Node is needed to run the report's JavaScript")
@@ -288,6 +362,16 @@ class FindingParityTests(unittest.TestCase):
         cases = [mutated(self.source, name, edits) for name, edits in MUTATIONS.items()]
         for item, findings in zip(cases, self.assert_parity(cases)):
             self.assertTrue(findings, item["name"])
+
+    def test_random_mutation_sweep(self):
+        rng, base, headers = random.Random(SWEEP_SEED), self.source["rows"], self.source["headers"]
+        cases = [{"name": f"sweep {n}", "edits": sweep_edits(base, rng), "headers": headers, "idColumn": "ID"}
+                 for n in range(SWEEP_ITERATIONS)]
+        expected = js_findings(cases, base)
+        for item, js in zip(cases, expected, strict=True):
+            with self.subTest(item["name"], edits=item["edits"]):
+                self.assertEqual(py_findings({**item, "rows": apply_edits(base, item["edits"])}), js)
+        self.assertGreater(sum(1 for findings in expected if findings), SWEEP_ITERATIONS // 2)
 
     def test_findings_are_frozen_values(self):
         self.assertEqual(Finding(None, "Part of", "x"), Finding(None, "Part of", "x"))
