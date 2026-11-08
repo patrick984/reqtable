@@ -1,0 +1,311 @@
+{
+ "description": "Shared gate readiness check cases. The Python evaluator (CLI) and the report's JavaScript evaluator must both return exactly 'total' (records the check applies to) and 'failing' (their IDs, in table order), or exactly 'error' when the check cannot be evaluated. Rows are scoped first when 'system' is given, using the baseline scope rule with every record type included. Type blank means Requirement. Multi-value cells are ';'-separated. 'linked' needs at least one target ID that exists as a record; 'leaf' needs at least one target that is a System with no subsystems. 'in' needs a non-empty cell whose every value is in the list. applies_to field values match the trimmed cell exactly; a list matches any.",
+ "id_column": "ID",
+ "headers": [
+  "ID",
+  "Type",
+  "Name",
+  "Part of",
+  "Allocated to",
+  "Verified by",
+  "Test plan",
+  "Requirement",
+  "Verification Method",
+  "Priority",
+  "Compliance",
+  "Result"
+ ],
+ "rows": [
+  {
+   "ID": "SYS-A",
+   "Type": "System",
+   "Name": "Product",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "",
+   "Verification Method": "",
+   "Priority": "",
+   "Compliance": "",
+   "Result": ""
+  },
+  {
+   "ID": "SYS-B",
+   "Type": "System",
+   "Name": "Sub B",
+   "Part of": "SYS-A",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "",
+   "Verification Method": "",
+   "Priority": "",
+   "Compliance": "",
+   "Result": ""
+  },
+  {
+   "ID": "R1",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-B",
+   "Verified by": "T1",
+   "Test plan": "",
+   "Requirement": "R one",
+   "Verification Method": "Test",
+   "Priority": "Must",
+   "Compliance": "Compliant",
+   "Result": ""
+  },
+  {
+   "ID": "R2",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-A",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "R two",
+   "Verification Method": "",
+   "Priority": "",
+   "Compliance": "Not verified",
+   "Result": ""
+  },
+  {
+   "ID": "R3",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "R three",
+   "Verification Method": "Inspection; Test",
+   "Priority": "Should",
+   "Compliance": "Waived",
+   "Result": ""
+  },
+  {
+   "ID": "T1",
+   "Type": "Test",
+   "Name": "Test one",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "P1",
+   "Requirement": "",
+   "Verification Method": "Test",
+   "Priority": "",
+   "Compliance": "",
+   "Result": "Passed"
+  },
+  {
+   "ID": "T2",
+   "Type": "Test",
+   "Name": "Test two",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "",
+   "Verification Method": "Test",
+   "Priority": "",
+   "Compliance": "",
+   "Result": "Failed"
+  },
+  {
+   "ID": "P1",
+   "Type": "Test plan",
+   "Name": "Plan one",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "",
+   "Requirement": "",
+   "Verification Method": "",
+   "Priority": "",
+   "Compliance": "",
+   "Result": ""
+  }
+ ],
+ "cases": [
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "filled": "Verification Method"
+   },
+   "total": 3,
+   "failing": [
+    "R2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement",
+     "Priority": "Must"
+    },
+    "filled": "Verification Method"
+   },
+   "total": 1,
+   "failing": []
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement",
+     "Priority": [
+      "Must",
+      "Should"
+     ]
+    },
+    "filled": "Allocated to"
+   },
+   "total": 2,
+   "failing": [
+    "R3"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "linked": "Allocated to"
+   },
+   "total": 3,
+   "failing": [
+    "R3"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "linked": "Allocated to",
+    "leaf": true
+   },
+   "total": 3,
+   "failing": [
+    "R2",
+    "R3"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "in": {
+     "Compliance": [
+      "Compliant",
+      "Waived"
+     ]
+    }
+   },
+   "total": 3,
+   "failing": [
+    "R2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "in": {
+     "Verification Method": [
+      "Test",
+      "Inspection"
+     ]
+    }
+   },
+   "total": 3,
+   "failing": [
+    "R2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Test"
+    },
+    "linked": "Test plan"
+   },
+   "total": 2,
+   "failing": [
+    "T2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Test"
+    },
+    "in": {
+     "Result": [
+      "Passed"
+     ]
+    }
+   },
+   "total": 2,
+   "failing": [
+    "T2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": [
+      "Requirement",
+      "Test"
+     ]
+    },
+    "filled": "Verification Method"
+   },
+   "total": 5,
+   "failing": [
+    "R2"
+   ]
+  },
+  {
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "filled": "Owner"
+   },
+   "error": "The table has no “Owner” column."
+  },
+  {
+   "system": "SYS-B",
+   "check": {
+    "applies_to": {
+     "type": "Requirement"
+    },
+    "filled": "Verification Method"
+   },
+   "total": 1,
+   "failing": []
+  },
+  {
+   "system": "SYS-B",
+   "check": {
+    "applies_to": {
+     "type": "Test"
+    },
+    "in": {
+     "Result": [
+      "Passed"
+     ]
+    }
+   },
+   "total": 1,
+   "failing": []
+  }
+ ]
+}
