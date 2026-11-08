@@ -73,6 +73,16 @@ function verificationMatrixMarks(row,kind,names){
   const extra=kind==="methods"?row.extraMethods:row.extraLevels;
   return names.map((name,i)=>[row[kind].includes(name)?"X":"",i===names.length-1?extra.join("; "):""]);
 }
+function verificationMatrixLabels(names){
+  const upper=names.map(name=>name.trim().toUpperCase());
+  return upper.map(name=>{
+    for(let length=1;length<name.length;length++){
+      const label=name.slice(0,length);
+      if(!label.endsWith(" ")&&upper.every(other=>other===name||!other.startsWith(label)))return label;
+    }
+    return name;
+  });
+}
 function verificationMatrixTest(test){return `${test.id} (${test.result||"No result"})`;}
 function verificationMatrixCsvRows(matrix){
   const marks=(row,kind,names)=>verificationMatrixMarks(row,kind,names).map(parts=>parts.filter(Boolean).join("; "));
@@ -345,12 +355,19 @@ const trace=(()=>{
     const marks=(row,kind,names)=>verificationMatrixMarks(row,kind,names)
       .map(([mark,extra])=>`<td class="vcrm-mark">${mark}${extra?` <span class="vcrm-extra">${escapeHtml(extra)}</span>`:""}</td>`).join("");
     const count=(totals,names)=>names.map(name=>`<td class="vcrm-mark">${totals[name]}</td>`).join("");
-    const head=names=>names.map(name=>`<th scope="col">${escapeHtml(name)}</th>`).join("");
+    const head=names=>{
+      const labels=verificationMatrixLabels(names);
+      return names.map((name,i)=>`<th scope="col" class="vcrm-mark"><abbr title="${escapeHtml(name)}">${escapeHtml(labels[i])}</abbr></th>`).join("");
+    };
+    const legend=(names,group)=>{
+      const labels=verificationMatrixLabels(names);
+      return names.length?`<span>${group}: ${names.map((name,i)=>`<b>${escapeHtml(labels[i])}</b> ${escapeHtml(name)}`).join(", ")}</span>`:"";
+    };
     const scopeText=filters().map(([text])=>text).join(" · ");
-    $("#trace-matrix-table").innerHTML=`<caption>${matrix.rows.length} ${matrix.rows.length===1?"requirement":"requirements"}${scopeText?" · "+escapeHtml(scopeText):""}</caption>
+    $("#trace-matrix-table").innerHTML=`<caption>${matrix.rows.length} ${matrix.rows.length===1?"requirement":"requirements"}${scopeText?" · "+escapeHtml(scopeText):""}<span class="vcrm-legend">${legend(matrix.methods,"Method")}${legend(matrix.levels,"Level")}</span></caption>
 <thead><tr><th scope="col" rowspan="2">ID</th><th scope="col" rowspan="2">Requirement</th>${cols(matrix.methods,"Method")}${cols(matrix.levels,"Level")}<th scope="col" rowspan="2">Tests</th><th scope="col" rowspan="2">Compliance</th></tr>
 <tr>${head(matrix.methods)}${head(matrix.levels)}</tr></thead>
-<tbody>${matrix.rows.map(row=>`<tr><th scope="row">${escapeHtml(row.id)}</th><td>${escapeHtml(row.requirement)}</td>${marks(row,"methods",matrix.methods)}${marks(row,"levels",matrix.levels)}<td>${row.tests.map(test=>`<span class="vcrm-test">${escapeHtml(verificationMatrixTest(test))}</span>`).join("")}</td><td>${escapeHtml(row.compliance)}</td></tr>`).join("")}</tbody>
+<tbody>${matrix.rows.map(row=>`<tr><th scope="row">${escapeHtml(row.id)}</th><td>${escapeHtml(row.requirement)}</td>${marks(row,"methods",matrix.methods)}${marks(row,"levels",matrix.levels)}<td>${row.tests.map(test=>`<span class="vcrm-test"><span class="vcrm-nowrap">${escapeHtml(test.id)}</span> <span class="vcrm-nowrap">(${escapeHtml(test.result||"No result")})</span></span>`).join("")}</td><td>${escapeHtml(row.compliance)}</td></tr>`).join("")}</tbody>
 <tfoot><tr><th scope="row" colspan="2">Totals</th>${count(matrix.totals.methods,matrix.methods)}${count(matrix.totals.levels,matrix.levels)}<td></td><td>${escapeHtml(Object.entries(matrix.totals.compliance).map(([name,total])=>`${name} ${total}`).join(" · "))}</td></tr></tfoot>`;
   }
   function downloadMatrix(){
@@ -1302,17 +1319,29 @@ TRACE_CSS = """
 #trace-matrix-table tfoot {font-weight:600;background:var(--bg)}
 #trace-matrix-table .vcrm-mark {text-align:center;font-weight:700}
 #trace-matrix-table .vcrm-extra {font-weight:400;color:var(--muted);font-size:.85em}
-#trace-matrix-table th,#trace-matrix-table td:nth-last-child(-n+2) {overflow-wrap:normal;white-space:nowrap}
-#trace-matrix-table tbody td:nth-child(2) {min-width:16rem;width:100%}
+#trace-matrix-table th,#trace-matrix-table td:last-child {overflow-wrap:normal;white-space:nowrap}
+#trace-matrix-table .vcrm-mark {width:2.4em;min-width:2.4em;padding-inline:2px}
+#trace-matrix-table abbr {text-decoration:none;cursor:help}
+#trace-matrix-table .vcrm-nowrap {white-space:nowrap}
+.vcrm-legend {display:flex;flex-wrap:wrap;gap:2px 18px;font-weight:400;color:var(--muted);margin-top:3px}
+#trace-matrix-table tbody td:nth-child(2) {min-width:12rem;width:100%}
 #trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
 @page matrix {size:landscape}
 @media print {
+  body:has(#trace-matrix:not([hidden])) {page:matrix}
+  body:has(#trace-matrix:not([hidden])),body:has(#trace-matrix:not([hidden])) .page {background:#fff}
   body:has(#trace-matrix:not([hidden])) .print-details,body:has(#trace-matrix:not([hidden])) .mode-badge,.trace-matrix-actions {display:none}
-  #trace-matrix {page:matrix;padding:0;background:none}
-  #trace-matrix-table {color:#000}
-  #trace-matrix-table th,#trace-matrix-table td {border:1px solid #000;font-size:9pt}
+  body:has(#trace-matrix:not([hidden])) .report-identity h1 {color:#000}
+  #trace-matrix {padding:0;background:none}
+  .trace-matrix-scroll {overflow:visible}
+  #trace-matrix-table {color:#000;width:100%}
+  #trace-matrix-table caption,.vcrm-legend {color:#000}
+  #trace-matrix-table th,#trace-matrix-table td {border:1px solid #000;font-size:8.5pt;padding:2px 4px}
+  #trace-matrix-table thead th,#trace-matrix-table tbody th,#trace-matrix-table tfoot th {background:none;color:#000}
+  #trace-matrix-table td:last-child {white-space:normal}
+  #trace-matrix-table tbody td:nth-child(2) {min-width:0}
   #trace-matrix-table thead {display:table-header-group}
   #trace-matrix-table tfoot {display:table-row-group}
   #trace-matrix-table tr {break-inside:avoid}

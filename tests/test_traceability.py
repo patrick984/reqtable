@@ -420,6 +420,14 @@ assert.deepEqual(m.rows[0].methods,[]);
 assert.deepEqual(m.rows[0].extraMethods,["Test"]);
 """)
 
+    def test_matrix_headers_use_the_shortest_unique_prefix(self):
+        self.run_js(r"""
+assert.deepEqual(verificationMatrixLabels(["Inspection","Analysis","Demonstration","Test"]),["I","A","D","T"]);
+assert.deepEqual(verificationMatrixLabels(["Unit","Integration","System","Acceptance"]),["U","I","S","A"]);
+assert.deepEqual(verificationMatrixLabels(["System","Safety","Sim"]),["SY","SA","SI"]);
+assert.deepEqual(verificationMatrixLabels(["Test","Test run"]),["TEST","TEST R"]);
+""")
+
     def test_matrix_csv_rows_mark_methods_levels_tests_and_extras(self):
         self.run_js(self.MATRIX_PRELUDE + r"""
 const m=build([
