@@ -266,7 +266,9 @@ const trace=(()=>{
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
   const viewBar=$("#trace-views"),systemSelect=$("#trace-system"),status=$("#trace-status");
   const wrap=$(".table-wrap"),systemsPage=$("#trace-systems"),matrixPage=$("#trace-matrix"),modeBar=$("#trace-view-mode");
-  const selectedLinks=$("#trace-selected-links");
+  const selectedLinks=$("#trace-selected-links"),gatesPage=$("#trace-gates");
+  const gates=data.gates??[];
+  let gateEvaluations=[];
   const requirementsDefaults=new Set([
     data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
   ]);
@@ -299,6 +301,7 @@ const trace=(()=>{
     verification:{types:["Requirement"],systemScope:true,get columns(){return new Set(verificationColumns());},order:verificationColumns,
       layout:verificationLayout,summary:count=>`${count} requirements`,modes:{grid:"Grid",matrix:"Matrix"},
       cells:{"Verification Method":methodCell,"Verified by":verifiedByCell},strip:verificationStrip},
+    gates:{types:[],systemScope:true,columns:new Set([data.meta.idColumn]),summary:()=>`${gates.length} ${gates.length===1?"gate":"gates"}`},
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
   const traceMetadata=new Set([...Object.keys(traceFields),"Type","Name","Reference","Origin","Field","Multiple",...glossaryFields]);
@@ -527,19 +530,20 @@ const trace=(()=>{
     for(const button of viewBar.querySelectorAll("[data-trace-view]")){
       button.setAttribute("aria-pressed",String(button.dataset.traceView===view));
     }
-    const inSystems=view==="systems";
+    const inSystems=view==="systems",inGates=view==="gates",inPage=inSystems||inGates;
     const inMatrix=matrixShown();
-    wrap.hidden=inSystems||inMatrix;
+    wrap.hidden=inPage||inMatrix;
     systemsPage.hidden=!inSystems;
+    gatesPage.hidden=!inGates;
     matrixPage.hidden=!inMatrix;
     modeBar.hidden=!listViews[view]?.modes;
     for(const button of modeBar.querySelectorAll("[data-view-mode]")){
       button.setAttribute("aria-pressed",String(button.dataset.viewMode===viewMode()));
     }
-    $("#columns-menu").hidden=inSystems||inMatrix;
-    $("#filter-menu").hidden=inSystems;
+    $("#columns-menu").hidden=inPage||inMatrix;
+    $("#filter-menu").hidden=inPage;
     $("#trace-scope").hidden=!usesScope();
-    selectedLinks.hidden=inSystems;
+    selectedLinks.hidden=inPage;
     $("#trace-view-add").hidden=!developMode()||view!=="requirements";
     $("#trace-source-actions").hidden=!developMode()||view!=="sources";
     $("#trace-test-actions").hidden=!developMode()||view!=="tests";
@@ -552,14 +556,60 @@ const trace=(()=>{
     $("#trace-value-add").hidden=!developMode()||!inGlossary||glossaryKind!=="values";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
     if(usesScope()){
-      const options=[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
+      const options=inGates?[new Option("No system chosen","all")]:[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
       for(const [record,depth] of systemEntries())options.push(new Option("  ".repeat(Math.min(depth,8))+caption(record),"system:"+record.id));
       systemSelect.replaceChildren(...options);
-      systemSelect.value=unallocated?"unallocated":system?"system:"+system:"all";
+      systemSelect.value=unallocated&&!inGates?"unallocated":system?"system:"+system:"all";
+      $("#trace-descendants").closest("label").hidden=inGates;
       $("#trace-descendants").checked=descendants;
       $("#trace-descendants").disabled=!system;
     }
     if(inSystems)renderTree();
+    if(inGates)renderGates();
+  }
+  function renderGates(){
+    const headers=data.source.new.headers;
+    gateEvaluations=gates.map(gate=>gate.scope==="system"&&!system?null
+      :gate.checks.map(check=>evaluateGateCheck(check,state.currentRows,data.meta.idColumn,headers,gate.scope==="system"?system:null,index.issues)));
+    gatesPage.innerHTML=gates.length?gates.map((gate,gateIndex)=>{
+      const results=gateEvaluations[gateIndex],ready=results&&!results.some(gateCheckFailed);
+      const badge=!results?"":ready?'<span class="gate-badge gate-pass">✓ Ready</span>':'<span class="gate-badge gate-fail">✗ Not ready</span>';
+      const scopeText=gate.scope==="system"&&system?` · Scope: ${escapeHtml(caption(index.records.get(system)))}`:"";
+      const body=results?`<ul class="gate-checks">${results.map((result,checkIndex)=>gateCheckItem(result,gateIndex,checkIndex)).join("")}</ul>`
+        :'<p class="meta">Choose a system in the System selector to check this gate.</p>';
+      return `<section class="gate" data-gate="${escapeHtml(gate.id)}" aria-labelledby="gate-title-${gateIndex}">
+<header><h2 id="gate-title-${gateIndex}">${escapeHtml(gate.name||gate.id)} <span class="meta">(${escapeHtml(gate.id)})</span></h2>${badge}</header>
+<p class="meta">Produces: ${escapeHtml(gate.produces||"nothing recorded")}${scopeText}</p>${body}</section>`;
+    }).join(""):"<p>No gates are configured.</p>";
+  }
+  function gateCheckItem(result,gateIndex,checkIndex){
+    const [tone,mark]=result.error?["gate-error","! Error"]:gateCheckFailed(result)?["gate-fail","✗ Fail"]:["gate-pass","✓ Pass"];
+    const records=result.error?[]:result.failing.filter(Boolean);
+    const count=result.error?escapeHtml(result.error):`${result.failing.length} of ${result.total} failing`;
+    const show=records.length?` <button type="button" data-gate-show="${gateIndex}:${checkIndex}">Show records</button>`:"";
+    const table=result.global?.length?`<ul class="gate-table-findings"><li><strong>Table-level findings</strong> (${result.global.length}): ${result.global.map(escapeHtml).join(" ")}</li></ul>`:"";
+    return `<li data-check="${escapeHtml(result.id)}"><span class="gate-mark ${tone}">${mark}</span> ${escapeHtml(result.description||result.id)} <span class="meta">${count}</span>${show}${table}</li>`;
+  }
+  function gateDestination(ids){
+    const views=new Set(ids.map(id=>{
+      const type=index.records.get(id)?.type;
+      return type==="Requirement"?"requirements":viewForType(type);
+    }));
+    const [only]=views;
+    return views.size===1&&["requirements","tests","sources"].includes(only)?only:"all";
+  }
+  function showGateRecords(gate,check){
+    const result={...check,failing:check.failing.filter(Boolean)};
+    if(!canNavigate())return;
+    close();
+    step(()=>{
+      if(gate.scope==="system")descendants=true;
+      else{system="";unallocated=false;}
+      revealed=null;
+      switchView(gateDestination(result.failing));
+      showIdFilter(`Gate check ${result.id}: ${result.failing.length} ${result.failing.length===1?"record":"records"}`,result.failing);
+      render();
+    });
   }
   function renderTree(){
     const entries=systemEntries(true);
@@ -940,6 +990,8 @@ const trace=(()=>{
     clone.querySelector("#trace-back").hidden=true;
     clone.querySelector(".table-wrap").hidden=false;
     clone.querySelector("#trace-systems").hidden=true;
+    clone.querySelector("#trace-gates").hidden=true;
+    clone.querySelector("#trace-gates").replaceChildren();
     clone.querySelector("#trace-matrix").hidden=true;
     clone.querySelector("#trace-matrix-table").replaceChildren();
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
@@ -955,6 +1007,11 @@ const trace=(()=>{
     }
   }
 
+  if(!gates.length)viewBar.querySelector('[data-trace-view="gates"]').remove();
+  gatesPage.addEventListener("click",event=>{
+    const [gateIndex,checkIndex]=(event.target.closest("[data-gate-show]")?.dataset.gateShow??"").split(":").map(Number);
+    if(gateIndex>=0)showGateRecords(gates[gateIndex],gateEvaluations[gateIndex][checkIndex]);
+  });
   index=buildIndex();
   state.hidden=defaultHidden();
   wrap.hidden=false;
@@ -1194,7 +1251,7 @@ const trace=(()=>{
     scoped:()=>view==="systems"||view==="glossary"||!!listViews[view]||(view==="requirements"&&(!!system||unallocated))||!!revealed,
     rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
     entry:()=>view==="requirements"||view==="all",
-    systemsView:()=>view==="systems",
+    pageView:()=>view==="systems"||view==="gates",
     gridSummary:count=>{
       if(view==="systems")return `${index.systems.length} systems`;
       if(listViews[view])return listViews[view].summary(count);
@@ -1241,6 +1298,7 @@ TRACE_WORKSPACE = """
     <div role="group" aria-label="Verify">
       <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
       <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
+      <button type="button" data-trace-view="gates" aria-pressed="false">Gates</button>
     </div>
     <div role="group" aria-label="Reference">
       <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
@@ -1286,6 +1344,7 @@ TRACE_SYSTEMS = """
   </div>
   <div class="trace-matrix-scroll"><table id="trace-matrix-table"></table></div>
 </section>
+<section id="trace-gates" aria-label="Gate readiness" hidden></section>
 <section id="trace-systems" aria-label="System hierarchy" hidden>
   <div>
     <h2>System hierarchy</h2>
@@ -1372,6 +1431,17 @@ TRACE_CSS = """
 #trace-status:empty {display:none}
 #trace-systems {display:grid;grid-template-columns:minmax(14rem,1fr) minmax(16rem,1fr);gap:16px;padding:14px 18px;overflow:auto}
 #trace-systems h2 {font-size:1.08em;margin:0 0 8px}
+#trace-gates {display:grid;gap:14px;align-content:start;padding:14px 18px;overflow:auto}
+.gate {border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
+.gate header {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px}
+.gate h2 {font-size:1.08em;margin:0}
+.gate-checks,.gate-table-findings {list-style:none;padding:0;margin:8px 0 0}
+.gate-checks>li {padding:6px 0;border-top:1px solid var(--line)}
+.gate-table-findings {margin-inline-start:1.5rem}
+.gate-badge,.gate-mark {display:inline-block;padding:0 8px;border:1px solid var(--line);border-radius:9px;font-size:.88em;font-weight:600;white-space:nowrap;color:var(--text)}
+.gate-pass {background:var(--add);border-color:var(--addStrong)}
+.gate-fail {background:var(--remove);border-color:var(--removeStrong)}
+.gate-error {background:var(--changed)}
 #trace-system-actions {align-self:start;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
 .trace-actions+.trace-actions {margin-top:8px}
 #trace-tree,#trace-record ul,#trace-candidates {list-style:none;padding:0;margin:4px 0 8px}
@@ -1444,7 +1514,7 @@ TRACE_CSS = """
 #trace-matrix-table .vcrm-nowrap {white-space:nowrap}
 .vcrm-legend {display:flex;flex-wrap:wrap;gap:2px 18px;font-weight:400;color:var(--muted);margin-top:3px}
 #trace-matrix-table tbody td:nth-child(2) {min-width:12rem;width:100%}
-#trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
+#trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-gates[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
 @page matrix {size:landscape}
