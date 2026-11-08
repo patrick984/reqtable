@@ -6,6 +6,7 @@ from typing import Any
 
 from .quality import QUALITY_JS
 from .glossary import GLOSSARY_CSS, GLOSSARY_HTML
+from .drafts import DRAFTS_CSS, DRAFTS_HTML, DRAFTS_JS
 from .values import VALUE_EDIT_JS
 from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
@@ -23,7 +24,6 @@ CSS = r"""
 .bool-cell[aria-checked="true"] .bool-box::after{content:"";position:absolute;left:4px;top:0;width:4px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 @media print{.bool-cell[aria-checked="true"] .bool-box{background:none;border-color:#000}.bool-cell[aria-checked="true"] .bool-box::after{border-color:#000}}
 .cell-editor-compact textarea{min-height:0;resize:none;overflow:hidden}.cell-editor-actions{display:flex;gap:6px}.cell-suggestions{display:grid;grid-template-columns:minmax(0,1fr);gap:0;max-height:12rem;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:3px 0;background:var(--panel)}.cell-suggestions[hidden]{display:none}.cell-suggestions button{text-align:left;overflow-wrap:anywhere;border:0;border-radius:0;background:transparent;padding:4px 10px 4px 12px;box-shadow:inset 3px 0 0 transparent}.cell-suggestions button:hover{background:var(--selected)}.cell-suggestions button:focus,.cell-suggestions button:focus-visible{outline:0;background:var(--selected);box-shadow:inset 3px 0 0 var(--accent)}.cell-suggestions .suggestion-detail{display:block;color:var(--muted);font-size:.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.edited-cell{position:relative}.edited-cell::before{content:"";position:absolute;left:-6px;inset-block:0;width:3px;background:#bf8700;pointer-events:none}.cell-editor-actions button{padding:0 6px;line-height:1.35;font-weight:bold}.apply-edit{color:#187439}.cancel-edit{color:#a62327}
-.recovery-notice{margin:0 0 6px;padding:5px 9px;background:#fff4c2;color:#453500;border:1px solid #d9bf63;border-radius:6px}.recovery-notice button{margin-inline-start:8px}
 .toolbar{border-inline-width:0;border-radius:0}
 .toolbar .popup-menu>summary,.toolbar>button{padding:2px 7px}
 .toolbar .popup-menu>summary{border-color:transparent}
@@ -123,7 +123,7 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 }
 @media screen {
   .page {padding-inline:0; padding-bottom:0}
-  .report-header,.recovery-notice {margin-inline:18px}
+  .report-header,.draft-banner {margin-inline:18px}
   .toolbar {border-radius:0}
 }
 .report-identity,.save-area {display:flex; align-items:center; gap:6px; min-width:0}
@@ -154,11 +154,11 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 #save-status:empty,.print-details {display:none}
 @media screen and (min-width:701px) {
   .page {height:100vh; display:flex; flex-direction:column}
-  .report-header,.toolbar,.recovery-notice {flex:none}
+  .report-header,.toolbar,.draft-banner {flex:none}
   .table-wrap {min-height:0}
 }
 @media screen and (max-width:700px) {
-  .report-header,.recovery-notice {margin-inline:7px}
+  .report-header,.draft-banner {margin-inline:7px}
   .report-header {margin-bottom:7px}
   .report-identity .report-info {margin-inline-start:1px}
 }
@@ -742,6 +742,7 @@ function updateDirty(){
   indicator.hidden=!state.dirty;
   if(!state.dirty)indicator.open=false;
   scheduleAutosave();
+  draftChanged();
 }
 window.addEventListener("beforeunload",event=>{if(!state.dirty)return;event.preventDefault();event.returnValue="";});
 function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);}updateDirty();}
@@ -1095,35 +1096,17 @@ function applyCellEdit(form,next,continueAtEntry=false){
   if(continueAtEntry&&form.dataset.rowId===""&&id!==""&&focusRequirement("",column))return;
   if(!focusRequirement(id,column))restoreSelectedCell();
 }
-function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function csvField(value,delimiter){const text=String(value??"");return(/["\r\n]/.test(text)||text.includes(delimiter))?'"'+text.replace(/"/g,'""')+'"':text;}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const delimiter=data.options.csvDelimiter||",",lines=[headers.map(x=>csvField(x,delimiter)).join(delimiter)];for(const source of snapshot.rows){const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}lines.push(headers.map(h=>csvField(row[h]??"",delimiter)).join(delimiter));}return"\ufeff"+lines.join("\r\n")+"\r\n";}
+function exportedComments(id,comments){return comments.filter(c=>c.requirementId===id).sort((a,b)=>a.created.localeCompare(b.created)).map(c=>({column:c.column,initials:c.initials,created:c.created,modified:c.modified||null,text:c.text}));}function commentsText(list){return list.map(c=>`[${c.modified||c.created}] [${c.initials}] [${c.column}]\n${c.text}`).join("\n\n---\n\n");}function makeCsv(snapshot){const headers=[...data.source.new.headers],commentColumn=data.options.commentsColumn||"Comments";if(data.options.commentsEnabled&&headers.includes(commentColumn)){alert(`Cannot export comments because the CSV already has a ${commentColumn} column.`);return null;}if(data.options.commentsEnabled)headers.push(commentColumn);const rows=snapshot.rows.map(source=>{const row={...source};if(data.options.commentsEnabled){const list=exportedComments(rowId(source),snapshot.comments);row[commentColumn]=data.options.commentsFormat==="text"?commentsText(list):JSON.stringify(list);}return row;});return csvText(headers,rows,data.options.csvDelimiter||",");}
 function currentSnapshot(){
   return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments),qualityReview:cloneValue(state.qualityReview)};
 }
-function snapshotKey(snapshot){
-  let hash=2166136261;
-  for(const ch of JSON.stringify(snapshot))hash=Math.imul(hash^ch.codePointAt(0),16777619);
-  return (hash>>>0).toString(16);
-}
-const openedSnapshot=currentSnapshot();
-const draftKey=`reqtable:draft:${location.pathname}:${snapshotKey([data.meta, data.source.old, {rows:openedSnapshot.rows,comments:openedSnapshot.comments}])}`;
-let csvHandle=null,writingCsv=false,autosaveTimer=null,recoveryPending=false;
+let csvHandle=null,writingCsv=false,autosaveTimer=null;
 function loadDraft(){
   try{return JSON.parse(localStorage.getItem(draftKey));}catch{return null;}
-}
-function persistDraft(){
-  if(!$("#autosave").checked||recoveryPending)return;
-  try{
-    const current=currentSnapshot();
-    if(JSON.stringify(current)===JSON.stringify(openedSnapshot)&&!state.dirty)localStorage.removeItem(draftKey);
-    else localStorage.setItem(draftKey,JSON.stringify({current,saved:{rows:state.savedRows,comments:state.savedComments,qualityReview:state.savedQualityReview}}));
-  }catch{
-    if(!csvHandle)$("#save-status").textContent="Local draft storage unavailable";
-  }
 }
 function scheduleAutosave(){
   clearTimeout(autosaveTimer);
   if(!developMode()||!$("#autosave").checked)return;
-  if(!recoveryPending)persistDraft();
   if(csvHandle&&(state.requirementsDirty||state.commentsDirty)&&!writingCsv){
     autosaveTimer=setTimeout(()=>{if(!state.editingCell)saveCsv(false,true);},1200);
   }
@@ -1178,38 +1161,7 @@ async function saveCsv(saveAs=false,automatic=false){
     if(state.dirty&&csvHandle&&$("#autosave").checked&&!state.editingCell&&succeeded)scheduleAutosave();
   }
 }
-const recovery=developMode()?loadDraft():null;
-if(recovery?.current&&recovery?.saved){
-  recoveryPending=true;
-  $("#recover-draft").hidden=false;
-  $("#discard-draft").hidden=false;
-  $("#recovery-notice").hidden=false;
-}
-$("#recover-draft").addEventListener("click",()=>{
-  if((state.dirty||state.editingCell)&&!confirm("Replace the current changes with the recovered draft?"))return;
-  recoveryPending=false;
-  $("#recover-draft").hidden=true;
-  $("#discard-draft").hidden=true;
-  $("#recovery-notice").hidden=true;
-  state.savedRows=recovery.saved.rows;
-  state.savedComments=recovery.saved.comments;
-  if(recovery.saved.qualityReview)state.savedQualityReview=cloneValue(recovery.saved.qualityReview);
-  restoreHistory(recovery.current);
-  $("#save-status").textContent="Autosaved draft recovered";
-  restoreSelectedCell();
-});
-$("#discard-draft").addEventListener("click",()=>{
-  if(!confirm("Discard the previous autosaved draft?"))return;
-  recoveryPending=false;
-  $("#recover-draft").hidden=true;
-  $("#discard-draft").hidden=true;
-  $("#recovery-notice").hidden=true;
-  try{localStorage.removeItem(draftKey);}catch{}
-  scheduleAutosave();
-  $("#save-status").textContent="Previous draft discarded";
-});
-$("#recover-draft-notice").addEventListener("click",()=>$("#recover-draft").click());
-$("#autosave").addEventListener("change",scheduleAutosave);
+$("#autosave").addEventListener("change",()=>{scheduleAutosave();draftChanged();});
 function prepareReviewCopy(clone,embedded,withChanges){
   const rows=byId(embedded.source.new.rows);
   const counts={added:0,removed:0,changed:0,unchanged:0};
@@ -1290,11 +1242,11 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
   for(const id of ["requirements-body","heading-row","filter-row","column-widths","column-list",
     "active-filter-list","table-context-menu","row-drag-preview","comment-list","quality-findings",
     "quality-count","quality-dismiss-description","quick-comment","comment-hover","value-filter-popover",
-    "dirty-details","dirty-announcement","save-status"]){
+    "dirty-details","dirty-announcement","save-status","draft-message"]){
     clone.querySelector("#"+id).replaceChildren();
   }
   for(const id of ["table-context-menu","row-drag-preview","quality-panel","quick-comment","comment-hover",
-    "value-filter-popover","review-panel","dirty-indicator","recovery-notice","recover-draft","discard-draft"]){
+    "value-filter-popover","review-panel","dirty-indicator","draft-banner"]){
     clone.querySelector("#"+id).hidden=true;
   }
   trace?.clearCopy(clone);
@@ -1866,6 +1818,7 @@ function valueFilterOptions(values){
 INITIAL_RENDER_JS = """
 render();
 updateDirty();
+draftsStart();
 """
 
 
@@ -1896,9 +1849,9 @@ TEMPLATE = r"""<!doctype html>
   <div id="dirty-announcement" class="sr-only" role="status"></div>
   <div class="print-details meta">__META__<div class="summary">__SUMMARY__</div></div>
 </header>
-<div id="recovery-notice" class="recovery-notice" hidden><span>Autosaved draft available for this report.</span><button id="recover-draft-notice" type="button">Recover draft</button></div>
+__DRAFTS_HTML__
 <section class="toolbar" aria-label="Table controls">
-<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label><button id="recover-draft" hidden>Recover autosaved draft</button><button id="discard-draft" hidden>Discard autosaved draft</button></div></details>
+<details class="popup-menu"><summary>File</summary><div class="popover"><button id="save-csv" class="develop-only">Save CSV</button><button id="save-as" class="develop-only">Save CSV As…</button><button id="save-copy">Save report copy</button><button id="export-review" class="develop-only">Export for review</button><button id="export-review-changes" class="develop-only">Export changes for review</button><label class="develop-only"><input id="autosave" type="checkbox" checked> Autosave</label></div></details>
 <details id="edit-menu" class="popup-menu develop-only"><summary>Edit</summary><div class="popover"><button id="undo-edit" disabled>Undo <kbd data-shortcut="Mod Z"></kbd></button><button id="redo-edit" disabled>Redo <kbd data-shortcut="Mod Shift Z"></kbd></button><div class="menu-section"><button id="copy-cells" disabled>Copy <kbd data-shortcut="Mod C"></kbd></button><button id="paste-cells" disabled>Paste <kbd data-shortcut="Mod V"></kbd></button><button id="clear-cells" disabled>Clear cells <kbd data-shortcut="Delete" data-vim-shortcut=""></kbd></button></div><div class="menu-section"><button id="add-end">Add requirement</button><button id="add-above">Add above <kbd data-shortcut="Mod Shift ↑" data-vim-shortcut="O"></kbd></button><button id="add-below">Add below <kbd data-shortcut="Mod Shift ↓" data-vim-shortcut="o"></kbd></button><button id="move-up">Move up <kbd data-shortcut="Alt Shift ↑" data-vim-shortcut=""></kbd></button><button id="move-down">Move down <kbd data-shortcut="Alt Shift ↓" data-vim-shortcut=""></kbd></button><button id="rename-requirement">Rename ID</button><button id="delete-requirement"><span id="delete-record-label">Delete requirement</span> <kbd data-shortcut="Mod Backspace" data-vim-shortcut=""></kbd></button></div><div class="menu-section diff-only"><button id="revert-selected-cell" disabled>Revert selected cell</button><button id="restore-deleted-requirement" disabled>Restore deleted requirement</button></div></div></details>
 <details class="popup-menu"><summary>View</summary><div class="popover"><button id="unsaved-diff" class="develop-only">Compare with last save</button><button id="review-comparison" hidden>Show current requirements</button><button id="view-toggle" class="diff-only">Diff view</button><button id="reset-view">Reset view</button><button id="browse-comments" class="comments-only" aria-expanded="false" aria-controls="review-panel">Browse comments</button>__TRACE_MENU__<button id="check-quality" class="develop-only">Check requirement quality</button><button id="open-settings" class="develop-only">Settings…</button></div></details>
 <details id="filter-menu" class="popup-menu"><summary>Filter</summary><div class="popover"><button id="comments-only-rows" class="comments-only" aria-pressed="false">Comments only</button><button id="clear-filters">Clear filters</button><div class="diff-only menu-section"><button id="changes-only">Changes only</button><label><input type="checkbox" data-status="added"> Added</label><label><input type="checkbox" data-status="removed"> Removed</label><label><input type="checkbox" data-status="changed"> Changed</label><label><input type="checkbox" data-status="unchanged"> Unchanged</label></div></div></details>
@@ -1995,13 +1948,14 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__TRACE_HTML__", TRACE_HTML + GLOSSARY_HTML if traceability else "")
         .replace("__TRACE_WORKSPACE__", TRACE_WORKSPACE if traceability else "")
         .replace("__TRACE_SYSTEMS__", TRACE_SYSTEMS if traceability else "")
+        .replace("__DRAFTS_HTML__", DRAFTS_HTML)
         .replace("__TITLE__", title)
         .replace("__DOCUMENT_MODE_LABEL__", "Develop mode" if document_mode == "develop" else "Review mode")
         .replace("__DOCUMENT_MODE__", document_mode)
         .replace("__META__", description)
         .replace("__SUMMARY__", summary)
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
-        .replace("__CSS__", CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
+        .replace("__CSS__", CSS + DRAFTS_CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", JS + FILTER_JS + VALUE_EDIT_JS + trace_js + INITIAL_RENDER_JS)
+        .replace("__JS__", JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
     )
