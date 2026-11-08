@@ -1101,9 +1101,6 @@ function currentSnapshot(){
   return {rows:cloneValue(state.currentRows),comments:cloneValue(state.comments),qualityReview:cloneValue(state.qualityReview)};
 }
 let csvHandle=null,writingCsv=false,autosaveTimer=null;
-function loadDraft(){
-  try{return JSON.parse(localStorage.getItem(draftKey));}catch{return null;}
-}
 function scheduleAutosave(){
   clearTimeout(autosaveTimer);
   if(!developMode()||!$("#autosave").checked)return;
