@@ -165,7 +165,7 @@ Pass it with `--config reqtable.json`. Explicit command-line options override co
 
 Every report displays its fixed document mode prominently. **Review mode** is the default and permits comments without requirement changes. **Develop mode** is selected with `--document-mode develop` (or `"document_mode": "develop"` in JSON) and permits inline field editing, requirement addition/deletion, and validated ID renaming. A Review report cannot turn editing on from inside the HTML file.
 
-In Develop mode, double-click a non-ID cell or press Enter/F2 to edit its Markdown source. The ID column is renamed only through **Rename ID**, which checks uniqueness and migrates attached comments. Use **Edit** to undo, redo, insert above or below, and move requirements. CSV row order records the manual position independently of the ID. The bottom entry row creates a requirement with the next ID when a non-empty field is committed. **View → Compare with last save** opens a diff with unchanged rows hidden by default. Diff cells retain safe Markdown formatting. In a Develop diff, use **Edit → Revert selected cell** to restore a changed value from the last save or the old CSV. Select a removed row and choose **Edit → Restore deleted requirement** to restore the row. In a comparison with the last save, this also restores its saved comments. Both actions support Undo.
+In Develop mode, double-click a non-ID cell or press Enter/F2 to edit its Markdown source. The ID column is renamed only through **Rename ID**, which checks uniqueness and migrates attached comments. Use **Edit** to undo, redo, insert above or below, and move requirements. CSV row order records the manual position independently of the ID. The bottom entry row creates a requirement with the next ID when a non-empty field is committed. **View → Compare with → Last save** opens a diff with unchanged rows hidden by default. Diff cells retain safe Markdown formatting. In a Develop diff, use **Edit → Revert selected cell** to restore a changed value from the last save or the old CSV. Select a removed row and choose **Edit → Restore deleted requirement** to restore the row. In a comparison with the last save, this also restores its saved comments. Both actions support Undo.
 
 **File → Save CSV As…** selects a writable destination in supported Chromium contexts. **Save CSV** reuses that destination for the session. Both include the configured `Comments` column by default and download a CSV if the picker is unavailable. **File → Autosave** writes to the selected CSV after a short pause once a writable handle is established. **Unsaved changes.** The browser asks before you close or reload a report that has unsaved edits or comments. It stays silent when everything is saved. While **File → Autosave** is on, the report also keeps a draft of the unsaved edits in the browser's local storage, keyed by the report's path. When you reopen the report, a banner offers **Restore** or **Discard**. The draft is deleted by **Save CSV** or **Discard**, and drafts older than 30 days are removed. If the report was regenerated with different content, the banner offers **Download CSV** for the draft rows instead of restoring them. The draft holds your requirement text in the browser profile until then, which matters on a shared computer. Where browser storage is unavailable, only the leave warning applies.
 
@@ -344,6 +344,34 @@ python -m reqtable --old git:v1.0:docs/old-requirements.csv --new requirements.c
 ```
 
 The report labels the old side like `requirements.csv @ v1.0 (abc1234)`. This form runs `git` as an external command, so `git` must be on `PATH`, and the CSV must be inside a git repository. Git's line-ending and attribute filters apply, so the result matches a checkout of that revision. It works with `--document-mode develop` too.
+
+## Gate baselines
+
+A gate baseline freezes the requirements approved at a review gate such as SRR, PDR or a subsystem DDR, so later reports can compare against it. The design, including readiness checks and sign-off planned for later phases, is in [requirements-baselines-proposal.md](requirements-baselines-proposal.md).
+
+Gates come from the `gates` list in the configuration. The default list is SRR, SFR, PDR, DDR, CDR, TRR, SVR, FCA and PCA, and a project's own list replaces it. Each gate sets:
+
+- `scope`: `table` for the whole table, or `system` for one system and its subsystems, chosen with `--system` when the baseline is created.
+- `includes`: the record types the baseline covers, by default `Requirement` and `System`. TRR also includes `Test` and `Test plan`.
+- `captures_status`: whether status columns (`baselines.status_columns`, by default Compliance and Result) are part of the baseline. Only SVR, FCA and PCA capture them.
+
+Create, list and compare baselines from the CLI:
+
+```sh
+python -m reqtable requirements.csv -c config.json --create-baseline SRR
+python -m reqtable requirements.csv -c config.json --create-baseline DDR --system SYS-REPORT
+python -m reqtable requirements.csv -c config.json --list-baselines
+python -m reqtable requirements.csv -c config.json --document-mode develop --baselines SRR,DDR/SYS-REPORT -o requirements.html
+```
+
+Each baseline has a SHA-256 content hash over the rows in its scope, ignoring formatting and, unless the gate captures status, status columns. The same requirements give the same hash whether they came from CSV or XLSX. Holding a gate again creates `SRR-2`, `SRR-3` and so on. `--baselines SRR` means the latest SRR baseline, and `SRR-1` names the first.
+
+Baselines are stored according to `baselines.store`:
+
+- `git` (default): an annotated tag such as `baseline/SRR` or `baseline/DDR/SYS-REPORT` on `HEAD`, with the manifest in the tag message. The input must be committed first. ReqTable never pushes the tag.
+- `files`: a folder under `baselines/` beside the input, holding `manifest.json`, the frozen `requirements.csv` and an unchanged copy of the source file. This suits workbooks in a synced SharePoint library. Existing folders are never overwritten.
+
+In the report, **View → Compare with** lists Nothing, Last save, the old file of a diff report, and each embedded baseline. Comparing with a baseline marks added, removed and changed records within its scope and record types, and leaves everything else unchanged. Against a baseline that does not capture status, a changed status shows a muted `was <old value>` note but does not mark the row changed. The line above the grid names the baseline, its date and hash, and warns if the embedded content no longer matches its recorded hash.
 
 ## Build and test
 

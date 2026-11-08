@@ -10,7 +10,7 @@ In a Develop report, an author edits cells, adds, deletes and reorders requireme
 - `move-row` reorders a requirement with **Edit → Move up/down** or `Alt+Shift+Up/Down`.
 - `rename-id` renames an ID through a prompt and keeps comments attached.
 - `undo` reverses the last change with `cmd+z` or **Edit → Undo**, and `redo` repeats it.
-- `compare-last-save` shows a live diff against the last save with **View → Compare with last save**.
+- `compare-last-save` shows a live diff against the last save with **View → Compare with → Last save**.
 - `save-csv` writes the current rows and comments to CSV and clears the badge.
 - `clear-cells` empties the editable cells in the selection with plain Delete/Backspace or **Edit → Clear cells**, skipping ID and removed rows, with one Undo.
 - `menu-copy` and `menu-paste` run **Edit → Copy** and **Edit → Paste** on the selection as tab-separated text.
@@ -34,7 +34,7 @@ Preconditions:
 - **Move a row.** Select R1, choose **Edit → Move down**. The DOM order changes and the selection follows R1.
 - **Rename.** Set `window.__promptAnswer="R9"`, select R4, choose **Edit → Rename ID**. `window.__dialogs` records `Rename requirement R4:` and the row's ID reads R9.
 - **Undo.** Select a grid cell and press `cmd+z`. The last change reverts. Read the DOM order to confirm.
-- **Compare.** Choose **View → Compare with last save**. Changed rows carry `row-changed`, `row-added` or `row-removed`, and unchanged rows are hidden.
+- **Compare.** Choose **View → Compare with → Last save**. Changed rows carry `row-changed`, `row-added` or `row-removed`, and unchanged rows are hidden.
 - **Clear cells.** Select R2's Requirement cell, press `shift+Down`, press `Delete`. R2 and R3 read `Empty` and `Unsaved changes` shows. `cmd+z` restores both.
 - **Menu Paste.** Stub `navigator.clipboard.readText=async()=>"Pasted one\tMust\r\nPasted two\tShould"`, select R3's Requirement cell, choose **Edit → Paste**. R3 and R4 read `Pasted one | Must` and `Pasted two | Should`. One `cmd+z` restores both.
 - **Menu Copy.** Wrap `navigator.clipboard.writeText` to record its argument, select R1 to R2 in Requirement, choose **Edit → Copy**. The recorded text is R1 and R2's values joined by `\r\n`.

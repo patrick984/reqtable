@@ -92,12 +92,12 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 6. Delete a requirement without comments and undo/redo the deletion.
 7. Delete a requirement with comments and confirm the warning explicitly includes comment deletion; undo and confirm both return.
 8. Apply several edits and confirm the unsaved indicator distinguishes requirements, comments, and both.
-9. Choose Compare with last save and verify added, removed, changed, and unchanged statuses. Switch the unsaved comparison between unified and side-by-side views.
+9. Choose Compare with → Last save and verify added, removed, changed, and unchanged statuses. Switch the unsaved comparison between unified and side-by-side views.
 10. Revert a cell to its saved value and confirm its diff disappears.
 11. Save report copy, confirm the developed filename convention, reopen it, and verify it is clean and remains in Develop mode with all current rows.
 12. Use Save CSV. Where a native picker is offered, save directly; otherwise confirm a download occurs. Parse the file and verify quoted, multiline, Unicode, and comma-containing values round-trip.
 13. Confirm the exported CSV contains the Comments column by default and its entries are valid JSON arrays.
-14. After CSV saving, choose Compare with last save and confirm there are no outstanding requirement changes. Make another edit and confirm only that edit appears.
+14. After CSV saving, choose Compare with → Last save and confirm there are no outstanding requirement changes. Make another edit and confirm only that edit appears.
 
 ## Accessibility and print
 
@@ -120,7 +120,7 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 3. Apply an edit, then test Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+Y outside the editor. Repeat in a textarea and verify native text editing handles the shortcuts.
 4. Add above and below a selected row using the Edit menu and the `O`/`o` shortcuts. Confirm the new row opens for editing. Move a row, then rename its ID. Export and verify CSV row order. Undo and redo the structural changes.
 5. Edit the final blank row, cancel, and confirm no row appears in the CSV. Commit a non-empty value, confirm the generated ID is unique, and verify there is still exactly one blank entry row.
-6. Open **Compare with last save** from View. Verify unchanged rows are hidden initially and the Filter menu can show them. Move a row and look for the order-change indicator. Edit Markdown and verify bold, lists, code, and safe links still render in unified and side-by-side views with changed words highlighted.
+6. Open **Compare with → Last save** from View. Verify unchanged rows are hidden initially and the Filter menu can show them. Move a row and look for the order-change indicator. Edit Markdown and verify bold, lists, code, and safe links still render in unified and side-by-side views with changed words highlighted.
 7. With the native file picker available, use Save CSV As, make a change, then use Save CSV and verify it reuses the same destination. Cancel a later Save As and confirm the saved baseline is unchanged. Verify ordinary downloads in a browser without the picker.
 8. With local storage available, edit a cell, close the report and reopen it from the same path. Confirm the browser warns before closing, then choose Restore on the banner and confirm the edit is present. With a writable handle, commit another change and verify autosave updates the CSV. Pause autosave and verify subsequent changes require a manual save.
 
@@ -129,7 +129,7 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 11. Use Alt/Option+/ to search menus and run a command. Apply two filters, then remove one from the active filter summary and verify the other remains.
 12. Double-click and press F2 in Category and Acceptance Criteria. Confirm the former selects the existing text and the latter places the caret at the end. In a narrow column near the right edge, verify the editor expands within the visible grid. Choose a suggestion and confirm it commits.
 13. In source order, drag one row and then a selected block. Check the drag preview and drop line. Move a selected block by holding the Spreadsheet move shortcut, then check its order and selection.
-14. In **Compare with last save**, revert an edited cell and restore a deleted row that had a comment. Verify that the restored row includes the comment and that Undo reverses each operation.
+14. In **Compare with → Last save**, revert an edited cell and restore a deleted row that had a comment. Verify that the restored row includes the comment and that Undo reverses each operation.
 
 ## Requirement quality
 
