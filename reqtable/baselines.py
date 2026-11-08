@@ -50,19 +50,19 @@ class Gate:
         )
 
 
-def _links(cell: str) -> list[str]:
+def links(cell: str) -> list[str]:
     return [part.strip() for part in cell.split(";") if part.strip()]
 
 
-def _record_type(row: dict[str, str]) -> str:
+def record_type(row: dict[str, str]) -> str:
     return row.get("Type", "").strip() or "Requirement"
 
 
 def _subtree(rows: Sequence[dict[str, str]], id_column: str, system: str) -> set[str]:
     children: dict[str, list[str]] = {}
     for row in rows:
-        if _record_type(row) == "System":
-            for parent in _links(row.get("Part of", "")):
+        if record_type(row) == "System":
+            for parent in links(row.get("Part of", "")):
                 children.setdefault(parent, []).append(row[id_column].strip())
     found, pending = {system}, [system]
     while pending:
@@ -77,21 +77,21 @@ def select_scope(
     rows: Sequence[dict[str, str]], id_column: str, system: str | None, includes: Iterable[str]
 ) -> list[dict[str, str]]:
     wanted = set(includes)
-    included = [row for row in rows if _record_type(row) in wanted]
+    included = [row for row in rows if record_type(row) in wanted]
     if system is None:
         return included
     subtree = _subtree(rows, id_column, system)
     requirements = [
         row for row in included
-        if _record_type(row) == "Requirement" and subtree.intersection(_links(row.get("Allocated to", "")))
+        if record_type(row) == "Requirement" and subtree.intersection(links(row.get("Allocated to", "")))
     ]
-    tests = {test for row in requirements for test in _links(row.get("Verified by", ""))}
-    chosen_tests = [row for row in included if _record_type(row) == "Test" and row[id_column].strip() in tests]
-    plans = {plan for row in chosen_tests for plan in _links(row.get("Test plan", ""))}
+    tests = {test for row in requirements for test in links(row.get("Verified by", ""))}
+    chosen_tests = [row for row in included if record_type(row) == "Test" and row[id_column].strip() in tests]
+    plans = {plan for row in chosen_tests for plan in links(row.get("Test plan", ""))}
     kept = {id(row) for row in requirements + chosen_tests}
 
     def keep(row: dict[str, str]) -> bool:
-        kind = _record_type(row)
+        kind = record_type(row)
         if kind == "System":
             return row[id_column].strip() in subtree
         if kind == "Test plan":
@@ -452,7 +452,7 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
     id_column = config["id_column"]
     if system is not None:
         record = table.by_id.get(system)
-        if record is None or _record_type(record) != "System":
+        if record is None or record_type(record) != "System":
             raise InputError(f"{system!r} is not a System record in {table.label}")
     status_columns = config["baselines"]["status_columns"]
     digest = content_hash(

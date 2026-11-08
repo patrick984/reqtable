@@ -36,26 +36,66 @@ class OutputError(ReqtableError):
 RECORD_TYPES = ("System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan")
 
 
-def _preset_gate(id: str, name: str, produces: str, **extra: Any) -> dict[str, Any]:
+def _preset_gate(id: str, name: str, produces: str, checks: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
     return {
         "id": id, "name": name, "produces": produces, "scope": "table",
-        "includes": ["Requirement", "System"], "captures_status": False, **extra,
+        "includes": ["Requirement", "System"], "captures_status": False, "checks": checks, **extra,
     }
 
 
+def _check(id: str, description: str, **condition: Any) -> dict[str, Any]:
+    return {"id": id, "description": description, **condition}
+
+
+def _no_findings(prefix: str) -> dict[str, Any]:
+    return _check(f"{prefix}-no-findings", "There are no trace findings", no_findings=True)
+
+
+_COMPLIANT = {"Compliance": ["Compliant", "Waived"]}
+_TESTS = {"type": "Test"}
+
 PRESET_GATES = [
-    _preset_gate("SRR", "System Requirements Review", "Functional baseline"),
-    _preset_gate("SFR", "System Functional Review", "Functional baseline"),
-    _preset_gate("PDR", "Preliminary Design Review", "Allocated baseline"),
-    _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", scope="system"),
-    _preset_gate("CDR", "Critical Design Review", "Product baseline"),
-    _preset_gate(
-        "TRR", "Test Readiness Review", "Test baseline",
-        includes=["Requirement", "System", "Test", "Test plan"],
-    ),
-    _preset_gate("SVR", "System Verification Review", "Verified baseline", captures_status=True),
-    _preset_gate("FCA", "Functional Configuration Audit", "Functional audit baseline", captures_status=True),
-    _preset_gate("PCA", "Physical Configuration Audit", "As-built product baseline", captures_status=True),
+    _preset_gate("SRR", "System Requirements Review", "Functional baseline", [
+        _check("srr-text", "Every requirement has its requirement text", filled="Requirement"),
+        _check("srr-method", "Every requirement has a verification method", filled="Verification Method"),
+        _check("srr-priority", "Every requirement has a priority", filled="Priority"),
+        _no_findings("srr"),
+    ]),
+    _preset_gate("SFR", "System Functional Review", "Functional baseline", [
+        _check("sfr-allocated", "Every requirement is allocated to a system", linked="Allocated to"),
+        _no_findings("sfr"),
+    ]),
+    _preset_gate("PDR", "Preliminary Design Review", "Allocated baseline", [
+        _check("pdr-allocated-leaf", "Every requirement is allocated to a leaf system", linked="Allocated to", leaf=True),
+        _check("pdr-level", "Every requirement has a verification level", filled="Verification Level"),
+        _no_findings("pdr"),
+    ]),
+    _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", [
+        _check("ddr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
+        _no_findings("ddr"),
+    ], scope="system"),
+    _preset_gate("CDR", "Critical Design Review", "Product baseline", [
+        _check("cdr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
+        _no_findings("cdr"),
+    ]),
+    _preset_gate("TRR", "Test Readiness Review", "Test baseline", [
+        _check("trr-test-plan", "Every test belongs to a test plan", applies_to=_TESTS, linked="Test plan"),
+        _check("trr-test-method", "Every test has a verification method", applies_to=_TESTS, filled="Verification Method"),
+        _no_findings("trr"),
+    ], includes=["Requirement", "System", "Test", "Test plan"]),
+    _preset_gate("SVR", "System Verification Review", "Verified baseline", [
+        _check("svr-results", "Every test has passed", applies_to=_TESTS, **{"in": {"Result": ["Passed"]}}),
+        _check("svr-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
+        _no_findings("svr"),
+    ], captures_status=True),
+    _preset_gate("FCA", "Functional Configuration Audit", "Functional audit baseline", [
+        _check("fca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
+        _no_findings("fca"),
+    ], captures_status=True),
+    _preset_gate("PCA", "Physical Configuration Audit", "As-built product baseline", [
+        _check("pca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
+        _no_findings("pca"),
+    ], captures_status=True),
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -237,6 +277,8 @@ _GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", 
 
 
 def validate_gates(gates: Any) -> None:
+    from .gates import validate_checks
+
     if not isinstance(gates, list) or not all(isinstance(g, dict) for g in gates):
         raise ConfigError("gates must be an array of objects")
     seen: set[str] = set()
@@ -266,9 +308,9 @@ def validate_gates(gates: Any) -> None:
             raise ConfigError(f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}")
         if not isinstance(gate.get("captures_status", False), bool):
             raise ConfigError(f"{where}.captures_status must be true or false")
-        for key in ("checks", "signoff"):
-            if key in gate and not isinstance(gate[key], list):
-                raise ConfigError(f"{where}.{key} must be an array")
+        if "signoff" in gate and not isinstance(gate["signoff"], list):
+            raise ConfigError(f"{where}.signoff must be an array")
+        validate_checks(gate.get("checks", []), where)
 
 
 _XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists"}
