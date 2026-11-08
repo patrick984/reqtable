@@ -2,12 +2,29 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
+import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
-from reqtable.baselines import Gate, content_hash, select_scope
-from reqtable.core import DEFAULT_CONFIG, ConfigError, load_config, validate_config
+from reqtable.baselines import (
+    BaselineName,
+    FileStore,
+    Gate,
+    GitStore,
+    Manifest,
+    content_hash,
+    create_baseline,
+    next_name,
+    open_store,
+    resolve,
+    select_scope,
+    sort_manifests,
+)
+from reqtable.core import DEFAULT_CONFIG, ConfigError, InputError, load_config, read_csv_table, validate_config
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "baseline_scope.json").read_text(encoding="utf-8"))
 
@@ -135,6 +152,239 @@ class HashTests(unittest.TestCase):
         self.assertNotEqual(self.hash(), self.hash(includes=["Requirement", "System", "Test"]))
         self.assertNotEqual(self.hash(), self.hash(rows=self.rows[:1]))
         self.assertEqual(self.hash(includes=["System", "Requirement"]), self.hash())
+
+
+def manifest(name: str, system: str | None = None, **extra: object) -> Manifest:
+    parsed = BaselineName.parse(name)
+    fields = dict(
+        name=name, gate=parsed.gate, supersedes=None, system=system, includes=["Requirement", "System"],
+        captures_status=False, status_columns=["Compliance"], content_hash="sha256:" + "0" * 64,
+        source="requirements.csv", created="2026-01-01T00:00:00+00:00", created_by="t",
+    )
+    return Manifest(**{**fields, **extra})
+
+
+class NamingTests(unittest.TestCase):
+    def test_parse_and_format(self) -> None:
+        self.assertEqual(BaselineName.parse("SRR"), BaselineName("SRR", None, None))
+        self.assertEqual(BaselineName.parse("SRR-2"), BaselineName("SRR", 2, None))
+        self.assertEqual(BaselineName.parse("DDR-2/SYS-REPORT"), BaselineName("DDR", 2, "SYS-REPORT"))
+        self.assertEqual(str(BaselineName("SRR", 1)), "SRR")
+        self.assertEqual(str(BaselineName("SRR", 3)), "SRR-3")
+        self.assertEqual(str(BaselineName("DDR", 2, "SYS-A")), "DDR-2/SYS-A")
+        self.assertEqual(str(BaselineName("DDR", 1, "SYS-A")), "DDR/SYS-A")
+        self.assertEqual(str(BaselineName.parse("MY-GATE-3")), "MY-GATE-3")
+
+    def test_next_name_numbers_each_base_separately(self) -> None:
+        self.assertEqual(next_name([], "SRR", None), (BaselineName("SRR", 1), None))
+        existing = [manifest("SRR"), manifest("SRR-2"), manifest("DDR/SYS-A", "SYS-A")]
+        self.assertEqual(next_name(existing, "SRR", None), (BaselineName("SRR", 3), "SRR-2"))
+        self.assertEqual(next_name(existing, "DDR", "SYS-A"), (BaselineName("DDR", 2, "SYS-A"), "DDR/SYS-A"))
+        self.assertEqual(next_name(existing, "DDR", "SYS-B"), (BaselineName("DDR", 1, "SYS-B"), None))
+
+    def test_resolve(self) -> None:
+        all_ = [manifest("SRR"), manifest("SRR-2"), manifest("DDR/SYS-A", "SYS-A"), manifest("DDR-2/SYS-A", "SYS-A")]
+        self.assertEqual(resolve("SRR", all_).name, "SRR-2")
+        self.assertEqual(resolve("SRR-1", all_).name, "SRR")
+        self.assertEqual(resolve("SRR-2", all_).name, "SRR-2")
+        self.assertEqual(resolve("DDR/SYS-A", all_).name, "DDR-2/SYS-A")
+        self.assertEqual(resolve("DDR-1/SYS-A", all_).name, "DDR/SYS-A")
+        self.assertEqual(resolve("DDR-2/SYS-A", all_).name, "DDR-2/SYS-A")
+        for missing in ("PDR", "SRR-3", "DDR", "DDR/SYS-B"):
+            with self.subTest(missing), self.assertRaises(InputError) as caught:
+                resolve(missing, all_)
+            self.assertIn("SRR-2", str(caught.exception))
+
+    def test_sort_follows_gate_order_then_number(self) -> None:
+        config = {"gates": [{"id": "SRR"}, {"id": "PDR"}]}
+        shuffled = [manifest("PDR"), manifest("SRR-2"), manifest("OTHER"), manifest("SRR")]
+        self.assertEqual([m.name for m in sort_manifests(shuffled, config)], ["SRR", "SRR-2", "PDR", "OTHER"])
+
+    def test_manifest_round_trip_and_validation(self) -> None:
+        original = manifest("SRR-2", supersedes="SRR")
+        self.assertEqual(Manifest.from_dict(json.loads(json.dumps(original.to_dict()))), original)
+        self.assertEqual(list(original.to_dict())[:3], ["format", "name", "gate"])
+        for broken in ({**original.to_dict(), "gate": "PDR"}, {**original.to_dict(), "includes": "x"}, {"name": "x"}):
+            with self.subTest(broken), self.assertRaises(ValueError):
+                Manifest.from_dict(broken)
+
+
+CSV_TEXT = "ID,Type,Name,Part of,Allocated to,Verified by,Compliance\nSYS-A,System,Product,,,,\nR1,,,,SYS-A,,Not verified\n"
+GIT_IDENT = ("-c", "user.name=Tester", "-c", "user.email=t@example.com")
+
+
+def make_config(store: str, **changes: object) -> dict:
+    config = copy.deepcopy(DEFAULT_CONFIG)
+    config.update(id_column="ID", traceability=True, **changes)
+    config["baselines"]["store"] = store
+    return config
+
+
+def quiet(messages: list[str]):
+    return messages.append
+
+
+class FileStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.input = self.root / "requirements.csv"
+        self.input.write_text(CSV_TEXT, encoding="utf-8")
+        self.config = make_config("files")
+        self.warnings: list[str] = []
+        self.store = open_store(self.input, self.config, lambda p: read_csv_table(str(p), self.config), self.warnings.append)
+
+    def test_create_list_read(self) -> None:
+        made = create_baseline(self.store, self.config, "SRR", None)
+        folder = self.root / "baselines" / "SRR"
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ["manifest.json", "requirements.csv", "source.csv"])
+        self.assertEqual((folder / "source.csv").read_bytes(), self.input.read_bytes())
+        raw = (folder / "requirements.csv").read_bytes()
+        self.assertTrue(raw.startswith(b"\xef\xbb\xbfID,Type") and b"\r\n" in raw)
+        self.assertEqual(made.source, "requirements.csv")
+        self.assertIsNone(made.supersedes)
+        self.assertEqual(self.store.list(), [made])
+        table = self.store.read(made)
+        self.assertEqual(table.headers, read_csv_table(str(self.input), self.config).headers)
+        self.assertEqual(table.rows[1]["Compliance"], "Not verified")
+
+    def test_never_overwrites_and_renumbers(self) -> None:
+        first = create_baseline(self.store, self.config, "SRR", None)
+        second = create_baseline(self.store, self.config, "SRR", None)
+        self.assertEqual((second.name, second.supersedes), ("SRR-2", "SRR"))
+        folder = self.root / "baselines" / "SRR"
+        with self.assertRaises(InputError):
+            self.store.write(first, self.store.current())
+        self.assertTrue((folder / "manifest.json").exists())
+        self.assertEqual([m.name for m in self.store.list()], ["SRR", "SRR-2"])
+
+    def test_system_scope_uses_nested_folders(self) -> None:
+        made = create_baseline(self.store, self.config, "DDR", "SYS-A")
+        self.assertEqual(made.name, "DDR/SYS-A")
+        self.assertTrue((self.root / "baselines" / "DDR" / "SYS-A" / "manifest.json").exists())
+        again = create_baseline(self.store, self.config, "DDR", "SYS-A")
+        self.assertEqual(again.name, "DDR-2/SYS-A")
+        self.assertEqual({m.name for m in self.store.list()}, {"DDR-2/SYS-A", "DDR/SYS-A"})
+
+    def test_gate_and_system_arguments_are_checked(self) -> None:
+        for gate, system, error in (
+            ("NOPE", None, ConfigError), ("SRR", "SYS-A", ConfigError), ("DDR", None, ConfigError),
+            ("DDR", "R1", InputError), ("DDR", "SYS-Z", InputError),
+        ):
+            with self.subTest(gate=gate, system=system), self.assertRaises(error):
+                create_baseline(self.store, self.config, gate, system)
+        self.assertFalse((self.root / "baselines").exists())
+        with self.assertRaises(ConfigError):
+            create_baseline(self.store, {**self.config, "traceability": False}, "DDR", "SYS-A")
+
+    def test_unreadable_manifests_are_skipped_with_a_warning(self) -> None:
+        create_baseline(self.store, self.config, "SRR", None)
+        bad = self.root / "baselines" / "BAD"
+        bad.mkdir()
+        (bad / "manifest.json").write_text("{not json", encoding="utf-8")
+        self.assertEqual([m.name for m in self.store.list()], ["SRR"])
+        self.assertEqual(len(self.warnings), 1)
+
+    def test_directory_resolves_beside_the_input(self) -> None:
+        self.config["baselines"]["files"]["directory"] = "frozen/gates"
+        store = open_store(self.input, self.config, lambda p: read_csv_table(str(p), self.config))
+        create_baseline(store, self.config, "SRR", None)
+        self.assertTrue((self.root / "frozen" / "gates" / "SRR" / "manifest.json").exists())
+
+
+@unittest.skipUnless(shutil.which("git"), "git is not on PATH")
+class GitStoreTests(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name)
+        self.folder = self.repo / "docs"
+        self.folder.mkdir()
+        self.input = self.folder / "requirements.csv"
+        self.input.write_text(CSV_TEXT, encoding="utf-8")
+        self.git("init", "-q")
+        self.git("config", "user.name", "Tester")
+        self.git("config", "user.email", "t@example.com")
+        self.git("add", ".")
+        self.git("commit", "-q", "-m", "first")
+        self.config = make_config("git")
+        self.warnings: list[str] = []
+        self.store = open_store(self.input, self.config, lambda p: read_csv_table(str(p), self.config), self.warnings.append)
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(["git", "-C", str(self.repo), *args], check=True, capture_output=True, text=True).stdout
+
+    def test_create_makes_an_annotated_tag_with_the_manifest(self) -> None:
+        made = create_baseline(self.store, self.config, "SRR", None)
+        self.assertEqual(made.source, "docs/requirements.csv")
+        self.assertEqual(made.created_by, "Tester")
+        self.assertEqual(self.git("cat-file", "-t", "baseline/SRR").strip(), "tag")
+        message = self.git("tag", "-l", "--format=%(contents)", "baseline/SRR")
+        self.assertTrue(message.startswith("ReqTable baseline SRR\n\n{"))
+        self.assertEqual(json.loads(message.split("\n\n", 1)[1]), made.to_dict())
+        self.assertEqual(self.git("rev-parse", "baseline/SRR^{commit}"), self.git("rev-parse", "HEAD"))
+
+    def test_hash_comes_from_head_and_read_returns_the_tagged_content(self) -> None:
+        made = create_baseline(self.store, self.config, "SRR", None)
+        table = read_csv_table(str(self.input), self.config)
+        expected = content_hash(
+            table.headers, select_scope(table.rows, "ID", None, made.includes), None, made.includes, False,
+            made.status_columns,
+        )
+        self.assertEqual(made.content_hash, expected)
+        self.input.write_text(CSV_TEXT.replace("Not verified", "Compliant"), encoding="utf-8")
+        self.git("commit", "-q", "-am", "progress")
+        self.assertEqual(self.store.read(made).rows[1]["Compliance"], "Not verified")
+        self.assertEqual([m.name for m in self.store.list()], ["SRR"])
+
+    def test_refuses_dirty_staged_and_untracked_sources(self) -> None:
+        self.input.write_text(CSV_TEXT + "R2,,,,,,\n", encoding="utf-8")
+        with self.assertRaises(InputError) as caught:
+            create_baseline(self.store, self.config, "SRR", None)
+        self.assertIn("commit", str(caught.exception))
+        self.git("add", "docs/requirements.csv")
+        with self.assertRaises(InputError):
+            create_baseline(self.store, self.config, "SRR", None)
+        self.git("commit", "-q", "-m", "second")
+        create_baseline(self.store, self.config, "SRR", None)
+        other = self.folder / "other.csv"
+        other.write_text(CSV_TEXT, encoding="utf-8")
+        untracked = open_store(other, self.config, lambda p: read_csv_table(str(p), self.config))
+        with self.assertRaises(InputError):
+            create_baseline(untracked, self.config, "PDR", None)
+        self.assertEqual(self.git("tag", "-l").split(), ["baseline/SRR"])
+
+    def test_refuses_input_outside_a_work_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as outside:
+            path = Path(outside) / "requirements.csv"
+            path.write_text(CSV_TEXT, encoding="utf-8")
+            env = {"GIT_CEILING_DIRECTORIES": str(Path(outside).parent)}
+            with unittest.mock.patch.dict(os.environ, env):
+                store = open_store(path, self.config, lambda p: read_csv_table(str(p), self.config))
+                with self.assertRaises(InputError):
+                    create_baseline(store, self.config, "SRR", None)
+
+    def test_renumbers_and_scopes(self) -> None:
+        create_baseline(self.store, self.config, "SRR", None)
+        second = create_baseline(self.store, self.config, "SRR", None)
+        scoped = create_baseline(self.store, self.config, "DDR", "SYS-A")
+        self.assertEqual((second.name, second.supersedes, scoped.name), ("SRR-2", "SRR", "DDR/SYS-A"))
+        self.assertEqual(self.git("tag", "-l").split(), ["baseline/DDR/SYS-A", "baseline/SRR", "baseline/SRR-2"])
+        self.assertEqual({m.name for m in self.store.list()}, {"SRR", "SRR-2", "DDR/SYS-A"})
+
+    def test_foreign_tags_are_ignored_with_a_warning(self) -> None:
+        create_baseline(self.store, self.config, "SRR", None)
+        self.git("tag", "baseline/light")
+        self.git(*GIT_IDENT, "tag", "-a", "baseline/notes", "-m", "just words")
+        self.assertEqual([m.name for m in self.store.list()], ["SRR"])
+        self.assertEqual(len(self.warnings), 2)
+
+    def test_custom_tag_prefix(self) -> None:
+        self.config["baselines"]["git"]["tag_prefix"] = "gate/"
+        store = open_store(self.input, self.config, lambda p: read_csv_table(str(p), self.config))
+        create_baseline(store, self.config, "SRR", None)
+        self.assertEqual(self.git("tag", "-l").split(), ["gate/SRR"])
 
 
 if __name__ == "__main__":

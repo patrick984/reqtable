@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+import getpass
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
+from functools import cached_property
+from pathlib import Path
+from typing import Any, Callable, Iterable, Sequence
+
+from .core import (
+    ConfigError,
+    CsvSource,
+    CsvTable,
+    InputError,
+    OutputError,
+    generation_time,
+    read_csv_source,
+)
+from .xlsx import block_to_csv, is_xlsx
 
 HASH_FORMAT = "reqtable-baseline/1"
 
@@ -100,3 +121,349 @@ def content_hash(
     ]
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def find_gate(config: dict[str, Any], gate_id: str) -> Gate:
+    for gate in config["gates"]:
+        if gate["id"] == gate_id:
+            return Gate.from_config(gate)
+    known = ", ".join(gate["id"] for gate in config["gates"]) or "none"
+    raise ConfigError(f"unknown gate {gate_id!r}; configured gates: {known}")
+
+
+@dataclass(frozen=True)
+class BaselineName:
+    """number None means 'the latest' and only occurs in a requested name."""
+
+    gate: str
+    number: int | None = 1
+    system: str | None = None
+
+    @classmethod
+    def parse(cls, text: str) -> BaselineName:
+        head, _, system = text.partition("/")
+        match = re.fullmatch(r"(.+?)(?:-(\d+))?", head)
+        if not match:
+            raise InputError(f"invalid baseline name {text!r}")
+        number = int(match.group(2)) if match.group(2) else None
+        return cls(match.group(1), number, system or None)
+
+    def __str__(self) -> str:
+        assert self.number is not None
+        gate = self.gate if self.number == 1 else f"{self.gate}-{self.number}"
+        return f"{gate}/{self.system}" if self.system else gate
+
+
+_MANIFEST_TYPES: dict[str, Any] = {
+    "format": str, "name": str, "gate": str, "supersedes": (str, type(None)), "system": (str, type(None)),
+    "includes": list, "captures_status": bool, "status_columns": list, "content_hash": str,
+    "source": str, "created": str, "created_by": str,
+}
+
+
+@dataclass(frozen=True)
+class Manifest:
+    name: str
+    gate: str
+    supersedes: str | None
+    system: str | None
+    includes: list[str]
+    captures_status: bool
+    status_columns: list[str]
+    content_hash: str
+    source: str
+    created: str
+    created_by: str
+    format: str = HASH_FORMAT
+
+    @property
+    def number(self) -> int:
+        parsed = BaselineName.parse(self.name).number
+        return 1 if parsed is None else parsed
+
+    def to_dict(self) -> dict[str, Any]:
+        fields = asdict(self)
+        return {key: fields[key] for key in _MANIFEST_TYPES}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Manifest:
+        if not isinstance(data, dict) or set(data) != set(_MANIFEST_TYPES):
+            raise ValueError("manifest has the wrong keys")
+        for key, kind in _MANIFEST_TYPES.items():
+            if not isinstance(data[key], kind):
+                raise ValueError(f"manifest {key} has the wrong type")
+        if data["format"] != HASH_FORMAT:
+            raise ValueError(f"unsupported manifest format {data['format']!r}")
+        for key in ("includes", "status_columns"):
+            if not all(isinstance(item, str) for item in data[key]):
+                raise ValueError(f"manifest {key} must hold strings")
+        parsed = BaselineName.parse(data["name"])
+        if parsed.gate != data["gate"] or parsed.system != data["system"] or parsed.number == 0:
+            raise ValueError("manifest name does not match its gate and system")
+        return cls(**data)
+
+
+def next_name(existing: Iterable[Manifest], gate: str, system: str | None) -> tuple[BaselineName, str | None]:
+    siblings = [m for m in existing if m.gate == gate and m.system == system]
+    if not siblings:
+        return BaselineName(gate, 1, system), None
+    latest = max(siblings, key=lambda m: m.number)
+    return BaselineName(gate, latest.number + 1, system), latest.name
+
+
+def resolve(requested: str, manifests: Sequence[Manifest]) -> Manifest:
+    wanted = BaselineName.parse(requested)
+    candidates = [m for m in manifests if m.gate == wanted.gate and m.system == wanted.system]
+    if wanted.number is not None:
+        candidates = [m for m in candidates if m.number == wanted.number]
+    if not candidates:
+        known = ", ".join(m.name for m in manifests) or "none"
+        raise InputError(f"unknown baseline {requested!r}; existing baselines: {known}")
+    return max(candidates, key=lambda m: m.number)
+
+
+def sort_manifests(manifests: Iterable[Manifest], config: dict[str, Any]) -> list[Manifest]:
+    order = {gate["id"]: index for index, gate in enumerate(config["gates"])}
+    return sorted(
+        manifests,
+        key=lambda m: (order.get(m.gate, len(order)), m.gate, m.system or "", m.number),
+    )
+
+
+def run_git(directory: Path, *args: str) -> bytes:
+    try:
+        completed = subprocess.run(["git", "-C", str(directory), *args], capture_output=True)
+    except OSError as exc:
+        raise InputError(f"cannot run git: {exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise InputError(f"git {args[0]} failed: {detail}")
+    return completed.stdout
+
+
+def current_user(directory: Path) -> str:
+    try:
+        name = run_git(directory, "config", "user.name").decode("utf-8", "replace").strip()
+    except InputError:
+        name = ""
+    return name or getpass.getuser()
+
+
+def _print_warning(message: str) -> None:
+    print(f"warning: {message}", file=sys.stderr)
+
+
+TableReader = Callable[[Path], CsvTable]
+
+
+class BaselineStore(ABC):
+    """Where gate baselines live. Both stores keep the same manifest and the same frozen table."""
+
+    source: str
+
+    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+        self.input_path = input_path
+        self.config = config
+        self.read_file = read_file
+        self.warn = warn
+
+    @abstractmethod
+    def current(self) -> CsvTable:
+        """The table a new baseline would freeze."""
+
+    @abstractmethod
+    def list(self) -> list[Manifest]: ...
+
+    @abstractmethod
+    def write(self, manifest: Manifest, table: CsvTable) -> None: ...
+
+    @abstractmethod
+    def read(self, manifest: Manifest) -> CsvTable: ...
+
+    @abstractmethod
+    def where(self, manifest: Manifest) -> str:
+        """Phrase for the creation message, such as 'as tag baseline/SRR'."""
+
+
+class GitStore(BaselineStore):
+    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+        super().__init__(input_path, config, read_file, warn)
+        self.prefix = config["baselines"]["git"]["tag_prefix"]
+
+    @cached_property
+    def root(self) -> Path:
+        directory = self.input_path.resolve().parent
+        try:
+            return Path(run_git(directory, "rev-parse", "--show-toplevel").decode("utf-8").strip())
+        except InputError as exc:
+            raise InputError(f"{self.input_path} is not inside a git work tree: {exc}") from exc
+
+    @cached_property
+    def source(self) -> str:  # type: ignore[override]
+        tracked = run_git(self.root, "ls-files", "--full-name", "--", str(self.input_path.resolve())).decode("utf-8")
+        paths = [line for line in tracked.splitlines() if line]
+        if not paths:
+            raise InputError(f"{self.input_path} is not tracked by git; commit it before creating a baseline")
+        return paths[0]
+
+    def current(self) -> CsvTable:
+        if run_git(self.root, "status", "--porcelain", "--", self.source).strip():
+            raise InputError(f"{self.input_path} has uncommitted changes; commit them before creating a baseline")
+        return self._read_at("HEAD", self.source)
+
+    def _read_at(self, rev: str, source: str) -> CsvTable:
+        name = Path(source).name
+        spec = f"{rev}:{source}"
+        if is_xlsx(name):
+            blob = run_git(self.root, "cat-file", "blob", spec)
+            with tempfile.TemporaryDirectory() as folder:
+                copy = Path(folder) / name
+                copy.write_bytes(blob)
+                return self.read_file(copy)
+        encoding = self.config["csv"]["encoding"]
+        label = f"{name} @ {rev}"
+        try:
+            text = run_git(self.root, "cat-file", "--filters", spec).decode(encoding)
+        except (UnicodeError, LookupError) as exc:
+            raise InputError(f"{label}: cannot decode as {encoding}: {exc}") from exc
+        return read_csv_source(CsvSource(label, text, Path(source)), self.config)
+
+    def _ref(self, manifest: Manifest) -> str:
+        return f"{self.prefix}{manifest.name}"
+
+    def list(self) -> list[Manifest]:
+        listing = run_git(
+            self.root, "for-each-ref", "--format=%(refname)%00%(objecttype)%00%(contents)%01", f"refs/tags/{self.prefix}"
+        ).decode("utf-8", "replace")
+        found = []
+        for record in listing.split("\x01"):
+            if not record.strip():
+                continue
+            ref, kind, contents = record.lstrip("\n").split("\x00", 2)
+            try:
+                if kind != "tag":
+                    raise ValueError("not an annotated tag")
+                _, _, body = contents.partition("\n\n")
+                manifest = Manifest.from_dict(json.JSONDecoder().raw_decode(body.lstrip())[0])
+                if ref != f"refs/tags/{self._ref(manifest)}":
+                    raise ValueError("tag name does not match its manifest")
+            except (ValueError, InputError) as exc:
+                self.warn(f"ignoring tag {ref.removeprefix('refs/tags/')}: {exc}")
+                continue
+            found.append(manifest)
+        return found
+
+    def write(self, manifest: Manifest, table: CsvTable) -> None:
+        message = f"ReqTable baseline {manifest.name}\n\n{json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False)}\n"
+        with tempfile.TemporaryDirectory() as folder:
+            message_file = Path(folder) / "message"
+            message_file.write_text(message, encoding="utf-8")
+            run_git(self.root, "tag", "-a", self._ref(manifest), "-F", str(message_file), "HEAD")
+
+    def read(self, manifest: Manifest) -> CsvTable:
+        return self._read_at(f"refs/tags/{self._ref(manifest)}^{{commit}}", manifest.source)
+
+    def where(self, manifest: Manifest) -> str:
+        return f"as tag {self._ref(manifest)}"
+
+
+class FileStore(BaselineStore):
+    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+        super().__init__(input_path, config, read_file, warn)
+        self.directory = input_path.parent / config["baselines"]["files"]["directory"]
+        self.source = input_path.name
+
+    def current(self) -> CsvTable:
+        return self.read_file(self.input_path)
+
+    def _folder(self, manifest: Manifest) -> Path:
+        return self.directory / manifest.name
+
+    def list(self) -> list[Manifest]:
+        found = []
+        if not self.directory.is_dir():
+            return found
+        for path in sorted(self.directory.rglob("manifest.json")):
+            relative = path.parent.relative_to(self.directory)
+            if any(part.startswith(".") for part in relative.parts):
+                continue
+            try:
+                manifest = Manifest.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                if manifest.name != relative.as_posix():
+                    raise ValueError("folder name does not match its manifest")
+            except (OSError, ValueError, InputError) as exc:
+                self.warn(f"ignoring {path}: {exc}")
+                continue
+            found.append(manifest)
+        return found
+
+    def write(self, manifest: Manifest, table: CsvTable) -> None:
+        target = self._folder(manifest)
+        if not target.resolve().is_relative_to(self.directory.resolve()):
+            raise InputError(f"baseline name {manifest.name!r} would leave {self.directory}")
+        if target.exists():
+            raise InputError(f"baseline folder {target} already exists; baselines are never overwritten")
+        staging = target.parent / f".{target.name}.staging"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir()
+            records = [table.headers, *([row[header] for header in table.headers] for row in table.rows)]
+            csv_text = block_to_csv(records, self.config["csv"]["delimiter"])
+            (staging / "requirements.csv").write_bytes(("\ufeff" + csv_text).encode("utf-8"))
+            shutil.copy2(self.input_path, staging / f"source{self.input_path.suffix}")
+            (staging / "manifest.json").write_text(
+                json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            os.rename(staging, target)
+        except OSError as exc:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise OutputError(f"cannot write baseline folder {target}: {exc}") from exc
+
+    def read(self, manifest: Manifest) -> CsvTable:
+        path = self._folder(manifest) / "requirements.csv"
+        config = {**self.config, "csv": {**self.config["csv"], "encoding": "utf-8-sig"}}
+        return read_csv_source(CsvSource(f"{manifest.name} requirements.csv", None, path), config)
+
+    def where(self, manifest: Manifest) -> str:
+        return f"in {self._folder(manifest)}"
+
+
+def open_store(
+    input_path: str | Path,
+    config: dict[str, Any],
+    read_file: TableReader,
+    warn: Callable[[str], None] = _print_warning,
+) -> BaselineStore:
+    store = GitStore if config["baselines"]["store"] == "git" else FileStore
+    return store(Path(input_path), config, read_file, warn)
+
+
+def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None) -> Manifest:
+    gate = find_gate(config, gate_id)
+    if gate.scope == "system":
+        if not system:
+            raise ConfigError(f"gate {gate.id} is system-scoped; give --system with a System ID")
+        if not config["traceability"]:
+            raise ConfigError("system-scoped baselines need --traceability")
+    elif system:
+        raise ConfigError(f"gate {gate.id} covers the whole table; --system applies only to system-scoped gates")
+    table = store.current()
+    id_column = config["id_column"]
+    if system is not None:
+        record = table.by_id.get(system)
+        if record is None or _record_type(record) != "System":
+            raise InputError(f"{system!r} is not a System record in {table.label}")
+    status_columns = config["baselines"]["status_columns"]
+    digest = content_hash(
+        table.headers, select_scope(table.rows, id_column, system, gate.includes),
+        system, gate.includes, gate.captures_status, status_columns,
+    )
+    name, supersedes = next_name(store.list(), gate.id, system)
+    manifest = Manifest(
+        name=str(name), gate=gate.id, supersedes=supersedes, system=system, includes=list(gate.includes),
+        captures_status=gate.captures_status, status_columns=list(status_columns), content_hash=digest,
+        source=store.source, created=generation_time(), created_by=current_user(store.input_path.resolve().parent),
+    )
+    store.write(manifest, table)
+    return manifest

@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
 from . import __version__
+from .baselines import run_git
 from .core import (
     DEFAULT_CONFIG,
     ConfigError,
@@ -79,17 +79,6 @@ def _overrides(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _git(directory: Path, *args: str) -> bytes:
-    try:
-        completed = subprocess.run(["git", "-C", str(directory), *args], capture_output=True)
-    except OSError as exc:
-        raise InputError(f"cannot run git: {exc}") from exc
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", "replace").strip()
-        raise InputError(f"git {args[0]} failed: {detail}")
-    return completed.stdout
-
-
 def git_source(spec: str, default_path: str, config: dict[str, object]) -> CsvSource:
     """Resolve git:REV[:PATH]; PATH defaults to the --new file's path."""
     rev, _, given = spec[len("git:"):].partition(":")
@@ -98,8 +87,8 @@ def git_source(spec: str, default_path: str, config: dict[str, object]) -> CsvSo
     path = Path(given or default_path)
     try:
         # --filters applies the repo's eol/attribute rules, as for a checked-out file.
-        blob = _git(path.parent, "cat-file", "--filters", f"{rev}:./{path.name}")
-        short = _git(path.parent, "rev-parse", "--short", f"{rev}^{{commit}}").decode().strip()
+        blob = run_git(path.parent, "cat-file", "--filters", f"{rev}:./{path.name}")
+        short = run_git(path.parent, "rev-parse", "--short", f"{rev}^{{commit}}").decode().strip()
     except InputError as exc:
         raise InputError(f"cannot read {path} at {rev}: {exc}") from exc
     encoding = config["csv"]["encoding"]  # type: ignore[index]
