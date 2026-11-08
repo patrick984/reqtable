@@ -320,7 +320,7 @@ const trace=(()=>{
     "Test plan":["Test plan","Set test plan…"],
   };
   let index,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
-  let selected=null,selectedSystem=null,revealed=null,pending=null,previous=null;
+  let selected=null,selectedSystem=null,revealed=null,pending=null;
   let scope=new Set(),recordEdit=null,linkEdit=null,deleteEdit=null;
 
   const label=record=>record.row.Name?.trim()||record.id;
@@ -457,9 +457,8 @@ const trace=(()=>{
   }
   function selectView(next){
     if(view===next||!canNavigate())return;
-    previous=null;
     close();
-    switchView(next);
+    step(()=>switchView(next));
   }
   function matches(row){
     if(view==="all")return true;
@@ -626,7 +625,7 @@ const trace=(()=>{
     const record=index.records.get(selected);
     const reveal=pending?`<div class="trace-reveal">${escapeHtml(pending)} is outside the current filters.
       <button type="button" id="trace-reveal">Reveal in grid</button></div>`:"";
-    $("#trace-back").hidden=!previous;
+    paintBack();
     if(!record){
       detail.innerHTML=reveal+"<p>Select a current record to inspect its links.</p>";
       return;
@@ -666,6 +665,7 @@ const trace=(()=>{
     if(view==="systems")id=selectedSystem;
     if(id===selected&&!force)return;
     selected=id;
+    if(ready&&!guard&&!force&&id&&id!==recordId){recordId=id;writeHistory(false);}
     selectedLinks.disabled=!index.records.has(id);
     selectedLinks.title=selectedLinks.disabled?"Select a current record to view its links":`Show links for ${id}`;
     selectedLinks.setAttribute("aria-label",selectedLinks.disabled?"Links":`Links for ${id}`);
@@ -721,24 +721,79 @@ const trace=(()=>{
       $("#trace-reveal").focus();
       return;
     }
-    if(selected!==id||destination!==view){
-      previous={id:selected,view,kind:glossaryKind,system,unallocated,descendants,revealed};
-    }
-    switchView(destination,null,kindOf(id));
-    if(view!=="systems"&&!visible(id)){revealed=id;render();}
-    focusRecord(id);
+    step(()=>{
+      switchView(destination,null,kindOf(id));
+      if(view!=="systems"&&!visible(id)){revealed=id;render();}
+      focusRecord(id);
+    },id);
+  }
+  const historyOn=window.top===window&&!!history.pushState;
+  let guard=false,ready=false,histIndex=0,histHash="",recordId="";
+  const paintBack=()=>{$("#trace-back").hidden=!(histIndex>0);};
+  function place(){
+    const modes=listViews[view]?.modes,mode=viewMode();
+    return {view,kind:glossaryKind,mode:modes&&mode!==Object.keys(modes)[0]?mode:"",system,unallocated,descendants,record:recordId};
+  }
+  function writeHistory(push){
+    if(!ready)return;
+    const hash=traceLocationHash(place());
+    if(hash===histHash)return;
+    const next=histIndex+(push?1:0);
+    try{history[push?"pushState":"replaceState"]({reqtable:true,index:next,place:place()},"",hash||location.href.split("#")[0]);}
+    catch{return;}
+    histIndex=next;
+    histHash=hash;
+    paintBack();
+  }
+  function step(change,id=""){
+    guard=true;
+    try{change();}finally{guard=false;}
+    recordId=id;
+    writeHistory(true);
+  }
+  function applyPlace(target){
+    guard=true;
+    try{
+      const views=[...viewBar.querySelectorAll("[data-trace-view]")].map(button=>button.dataset.traceView);
+      const next=views.includes(target.view)?target.view:"requirements";
+      system=index.records.get(target.system)?.type==="System"?target.system:"";
+      unallocated=!system&&target.unallocated;
+      descendants=target.descendants;
+      const modes=listViews[next]?.modes;
+      if(modes)viewModes.set(next,target.mode in modes?target.mode:Object.keys(modes)[0]);
+      if(!switchView(next,null,target.kind))render();
+      recordId=index.records.has(target.record)?target.record:"";
+      if(recordId){
+        if(view!=="systems"&&!visible(recordId)){revealed=recordId;render();}
+        focusRecord(recordId);
+      }
+    }finally{guard=false;}
   }
   function goBack(){
-    if(!previous||!canNavigate())return;
-    const origin=previous;
-    previous=null;
-    ({system,unallocated,descendants}=origin);
-    if(!switchView(origin.view,origin.revealed,origin.kind)){
-      revealed=origin.revealed;
-      render();
+    if(canNavigate())history.back();
+  }
+  function restoreHistory(){
+    if(!historyOn)return;
+    const target=parseTraceLocation(location.hash);
+    if(traceLocationHash(target))applyPlace(target);
+    histIndex=history.state?.reqtable===true?history.state.index:0;
+    ready=true;
+    histHash="\0";
+    writeHistory(false);
+  }
+  function popHistory(event){
+    if(!ready)return;
+    const ours=event.state?.reqtable===true,known=ours?event.state.index:histIndex;
+    if(!canNavigate()){
+      history.pushState({reqtable:true,index:known+1,place:place()},"",traceLocationHash(place())||location.href.split("#")[0]);
+      histIndex=known+1;
+      paintBack();
+      return;
     }
-    if(origin.id)focusRecord(origin.id);
-    else openPanel(selectedRequirementId());
+    applyPlace(ours?event.state.place:parseTraceLocation(location.hash));
+    histIndex=ours?known:known+1;
+    histHash="\0";
+    writeHistory(false);
   }
   function restoreGridSelection(id,column){
     const row=id&&[...tableBody.rows].find(row=>row.dataset.rowId===id);
@@ -748,10 +803,12 @@ const trace=(()=>{
   }
   function changeScope(id,onlyUnallocated=false){
     const current=selectedRequirementId(),column=visibleColumns()[state.focus.column]?.name;
-    system=id;
-    unallocated=onlyUnallocated;
-    revealed=null;
-    if(!switchView(usesScope()?view:"requirements"))render();
+    step(()=>{
+      system=id;
+      unallocated=onlyUnallocated;
+      revealed=null;
+      if(!switchView(usesScope()?view:"requirements"))render();
+    });
     restoreGridSelection(current,column);
   }
   function updateLink(record,field,value){
@@ -871,6 +928,7 @@ const trace=(()=>{
       clone.querySelector("#"+id).replaceChildren();
     }
     clone.querySelector("#trace-panel").hidden=true;
+    clone.querySelector("#trace-back").hidden=true;
     clone.querySelector(".table-wrap").hidden=false;
     clone.querySelector("#trace-systems").hidden=true;
     clone.querySelector("#trace-matrix").hidden=true;
@@ -915,16 +973,17 @@ const trace=(()=>{
   $("#trace-glossary-kind").addEventListener("click",event=>{
     const kind=event.target.closest("[data-glossary-kind]")?.dataset.glossaryKind;
     if(!kind||kind===glossaryKind||!canNavigate())return;
-    previous=null;
     close();
-    switchView("glossary",null,kind);
+    step(()=>switchView("glossary",null,kind));
   });
   modeBar.addEventListener("click",event=>{
     const mode=event.target.closest("[data-view-mode]")?.dataset.viewMode;
     if(!mode||mode===viewMode()||!canNavigate())return;
-    viewModes.set(view,mode);
-    renderWorkspace();
-    paintStrip();
+    step(()=>{
+      viewModes.set(view,mode);
+      renderWorkspace();
+      paintStrip();
+    });
   });
   $("#trace-matrix-print").addEventListener("click",()=>window.print());
   $("#trace-matrix-csv").addEventListener("click",downloadMatrix);
@@ -965,7 +1024,6 @@ const trace=(()=>{
   });
   selectedLinks.addEventListener("click",()=>{
     if(!canNavigate())return;
-    previous=null;
     openPanel(selectedRequirementId());
   });
   for(const dialog of [editor,picker,deletion])dialog.addEventListener("keydown",event=>event.stopPropagation());
@@ -987,10 +1045,11 @@ const trace=(()=>{
     else if(button.id==="trace-add-child")editRecord("Requirement",{parent:selected});
     else if(button.id==="trace-reveal"&&pending&&canNavigate()){
       const id=pending;
-      previous={id:selected,view,kind:glossaryKind,system,unallocated,descendants,revealed};
-      revealed=id;
-      render();
-      focusRecord(id);
+      step(()=>{
+        revealed=id;
+        render();
+        focusRecord(id);
+      },id);
     }
   });
   $("#trace-query").addEventListener("input",showCandidates);
@@ -1097,6 +1156,11 @@ const trace=(()=>{
     for(const change of changes)change.row[field]=change.value;
   }
 
+  if(historyOn){
+    window.addEventListener("popstate",popHistory);
+    queueMicrotask(restoreHistory);
+  }
+
   return {recordType:id=>index.records.get(id)?.type,refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
@@ -1129,6 +1193,7 @@ const trace=(()=>{
       if(selectedSystem===oldId)selectedSystem=newId;
       if(collapsed.delete(oldId))collapsed.add(newId);
       if(revealed===oldId)revealed=newId;
+      if(recordId===oldId)recordId=newId;
     },
     incomingChanges:(oldId,newId)=>traceIncomingChanges(state.currentRows,oldId,newId),
     isRequirement:row=>traceType(row)==="Requirement",
