@@ -16,7 +16,8 @@ const traceFields={
   "Derived from": {from:["Requirement"],to:["Requirement"]},
   "Source refs": {from:["Requirement","Need","Term"],to:["Need","Source"]},
   "Verified by": {from:["Requirement"],to:["Test"]},
-  "Test plan": {from:["Test"],to:["Test plan"],single:true}
+  "Test plan": {from:["Test"],to:["Test plan"],single:true},
+  "Affects": {from:["Change request"],to:["Requirement","System","Need","Source","Term","Value","Field","Test","Test plan"]}
 };
 function traceType(row){
   const value=String(row.Type??"").trim();
@@ -35,8 +36,10 @@ function definedValues(rule,cell){
 }
 const verificationStates={
   Compliance: {appliesTo:"Requirement",plural:"requirements",states:["Not verified","Compliant","Partially compliant","Non-compliant","Waived"]},
-  Result: {appliesTo:"Test",plural:"tests",states:["Not run","Passed","Failed","Blocked"]}
+  Result: {appliesTo:"Test",plural:"tests",states:["Not run","Passed","Failed","Blocked"]},
+  "Change status": {appliesTo:"Change request",plural:"change requests",states:["Proposed","Approved","Rejected","Implemented"]}
 };
+const approvedChangeStates=["Approved","Implemented"];
 function verificationState(values,column,cell){
   const rule=values.get(column),text=String(cell??"").trim();
   return rule?definedValues(rule,text)[0]??"":text;
@@ -118,6 +121,38 @@ function checkTestCoverage(records,values,issue){
     }
   }
 }
+function checkChanges(rows,identify,records,values,headers,schema,issue){
+  const {baselines,records:controlled}=schema.controls,idColumn=schema.idColumn??"ID";
+  const authorised=new Set();
+  for(const record of records.values()){
+    if(record.type==="Change request"&&approvedChangeStates.includes(verificationState(values,"Change status",record.row["Change status"]))){
+      for(const target of traceIds(record.row.Affects))authorised.add(target);
+    }
+  }
+  const scopes=baselines.map(baseline=>baselineScopeIds(rows,idColumn,baseline.system,baseline.includes));
+  const text=value=>String(value??"");
+  for(const row of rows){
+    const id=identify(row);
+    if(authorised.has(id))continue;
+    if(Object.hasOwn(controlled,id)){
+      const {baseline:name,row:old}=controlled[id],baseline=baselines.find(item=>item.name===name);
+      const ignored=baseline.capturesStatus?[]:baseline.statusColumns;
+      const changed=[...new Set([...headers,...Object.keys(old),...Object.keys(row)])]
+        .filter(column=>!ignored.includes(column)&&text(old[column])!==text(row[column]));
+      if(changed.length)issue(id,changed[0],`Changed since ${name} (${changed.join(", ")}) without an approved change request.`);
+      continue;
+    }
+    let latest=null;
+    baselines.forEach((baseline,position)=>{
+      if(scopes[position].has(id)&&(!latest||baseline.created>latest.created))latest=baseline;
+    });
+    if(latest)issue(id,idColumn,`Added since ${latest.name} without an approved change request.`);
+  }
+  const present=new Set(rows.map(identify));
+  for(const [id,{baseline}] of Object.entries(controlled)){
+    if(!present.has(id)&&!authorised.has(id))issue(id,idColumn,`Removed since ${baseline} without an approved change request.`);
+  }
+}
 function buildTraceIndex(rows,identify,schema={}){
   const headers=schema.headers??[...new Set(rows.flatMap(row=>Object.keys(row)))];
   const records=new Map(rows.map(row=>{
@@ -131,7 +166,7 @@ function buildTraceIndex(rows,identify,schema={}){
     const {id,row,type}=record;
     if(id.includes(";"))issue(id,"ID","A traceable ID cannot contain a semicolon.");
     if(type==="System")systems.push(record);
-    if(!["System","Requirement","Need","Source","Term","Value","Field","Test","Test plan"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
+    if(!["System","Requirement","Need","Source","Term","Value","Field","Test","Test plan","Change request"].includes(type))issue(id,"Type",`Unknown record type “${type}”.`);
     if(type==="Requirement"&&row.Origin?.trim()==="Self-derived"&&!row.Rationale?.trim()){
       issue(id,"Rationale","Explain why this self-derived requirement is needed.");
     }
@@ -152,7 +187,9 @@ function buildTraceIndex(rows,identify,schema={}){
         seen.add(targetId);
         const target=records.get(targetId);
         if(targetId===id)issue(id,field,"A record cannot link to itself.");
-        else if(!target)issue(id,field,`Target ${targetId} is missing.`);
+        else if(!target){
+          if(!(field==="Affects"&&schema.controls&&Object.hasOwn(schema.controls.records,targetId)))issue(id,field,`Target ${targetId} is missing.`);
+        }
         else if(!traceTargetTypes(field,type).includes(target.type)){
           issue(id,field,`Target ${targetId} has type ${target.type}. Expected ${traceTargetTypes(field,type).join(" or ")}.`);
         }else{
@@ -192,6 +229,7 @@ function buildTraceIndex(rows,identify,schema={}){
   const values=buildValueRules(records.values(),headers,schema.idColumn,issue);
   checkTestCoverage(records,values,issue);
   checkVerification(records,values,issue);
+  if(schema.controls)checkChanges(rows,identify,records,values,headers,schema,issue);
   return {records,systems,roots,issues,glossary,values};
 }
 function groupFindingsByCell(issues){
