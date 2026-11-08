@@ -11,13 +11,15 @@ const gateConditions={
   linked:{columns:spec=>[spec],passes:(row,spec,context,check)=>context.parts(context.cell(row,spec)).some(target=>
     check.leaf?context.leaves.has(target):context.records.has(target))},
   no_findings:{columns:()=>[],passes:(row,spec,context)=>!context.findingIds.has(context.id(row))},
+  unchanged_since:{columns:()=>[]},
 };
+const changeFindingMessage=/^(?:Changed|Added|Removed) since .+ without an approved change request\.$/;
 function gateCondition(check){
   const name=Object.keys(gateConditions).find(key=>key in check);
   return name?{name,spec:check[name]}:null;
 }
 function gateAppliesTo(check,context){
-  const spec=check.applies_to??(check.no_findings?{}:{type:"Requirement"});
+  const spec=check.applies_to??(check.no_findings||check.unchanged_since?{}:{type:"Requirement"});
   const accepted=value=>[].concat(value);
   return {
     columns:Object.keys(spec).filter(key=>key!=="type"),
@@ -25,7 +27,7 @@ function gateAppliesTo(check,context){
       accepted(value).includes(key==="type"?context.cell(row,"Type")||"Requirement":context.cell(row,key))),
   };
 }
-function evaluateGateCheck(check,rows,idColumn,headers,system,findings){
+function evaluateGateCheck(check,rows,idColumn,headers,system,findings,controls=null){
   const cell=(row,column)=>String(row[column]??"").trim(),parts=text=>text.split(";").map(part=>part.trim()).filter(Boolean);
   const id=row=>cell(row,idColumn);
   const base={id:check.id,description:check.description};
@@ -47,6 +49,12 @@ function evaluateGateCheck(check,rows,idColumn,headers,system,findings){
     scoped=rows.filter(row=>scope.has(id(row)));
   }
   const applicable=scoped.filter(applies.matches),{passes}=gateConditions[condition.name];
+  if(condition.name==="unchanged_since"){
+    const removed=Object.keys(controls?.records??{}).filter(removedId=>!context.records.has(removedId));
+    const counted=new Set([...applicable.map(id),...removed]);
+    const changed=[...new Set(findings.filter(finding=>changeFindingMessage.test(finding.message)).map(finding=>finding.id))];
+    return {...base,total:applicable.length+removed.length,failing:changed.filter(changedId=>counted.has(changedId)),global:[],error:null};
+  }
   const failing=applicable.filter(row=>!passes(row,condition.spec,context,check)).map(id),messages=[];
   if(condition.name==="no_findings")messages.push(...findings.filter(finding=>finding.id==null).map(finding=>finding.message));
   return {...base,total:applicable.length+(messages.length?1:0),failing:messages.length?[...failing,""]:failing,global:messages,error:null};

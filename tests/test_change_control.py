@@ -59,3 +59,22 @@ const rows=fixture.rows.map(row=>row.ID==="CR1"?{...row,"Change status":"Rejecte
 const messages=buildTraceIndex(rows,identify,{...schema,controls:fixture.controls}).issues.filter(isChange).map(issue=>issue.id);
 assert.deepEqual(messages,["R1","R2","R5","R6","R7"]);
 """)
+
+    def test_unchanged_since_gate_check(self):
+        self.run_js("""
+const run=(system,extra={},controls=fixture.controls)=>{
+  const {issues}=buildTraceIndex(fixture.rows,identify,{...schema,controls});
+  return evaluateGateCheck({id:"c",description:"d",unchanged_since:true,...extra},fixture.rows,"ID",fixture.headers,system,issues,controls);
+};
+const all=run(null);
+assert.deepEqual([all.error,all.total,all.failing],[null,fixture.rows.length+2,["R2","R5","R6","R7"]]);
+assert.equal(gateCheckFailed(all),true);
+const sysB=run("SYS-B");
+assert.deepEqual([sysB.failing.includes("R2"),sysB.failing.includes("R5"),sysB.failing.includes("R7")],[false,true,true]);
+assert.deepEqual(run(null,{applies_to:{type:"System"}}).failing,["R7"]);
+const clean=evaluateGateCheck({id:"c",description:"d",unchanged_since:true},fixture.rows,"ID",fixture.headers,null,[],null);
+assert.deepEqual([clean.total,clean.failing,gateCheckFailed(clean)],[fixture.rows.length,[],false]);
+const dup=evaluateGateCheck({id:"c",description:"d",unchanged_since:true},fixture.rows,"ID",fixture.headers,null,
+  [{id:"R2",field:"a",message:"Changed since X (a) without an approved change request."},{id:"R2",field:"b",message:"Added since X without an approved change request."},{id:"R2",field:"b",message:"other"}],null);
+assert.deepEqual(dup.failing,["R2"]);
+""")
