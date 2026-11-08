@@ -21,7 +21,7 @@ Gate checks are advisory at first. A project can make them stricter through conf
 | Concept | Meaning |
 |---|---|
 | **Gate** | A named review in the project's lifecycle, such as SRR, with an order, the baseline it produces, readiness checks and sign-off roles. Defined in configuration. |
-| **Gate baseline** | The requirements table as approved at a gate: frozen rows, a content hash, metadata and sign-offs. |
+| **Gate baseline** | The requirements as approved at a gate, for the whole table or one system's subtree: frozen rows, a scope, a content hash, metadata and sign-offs. |
 | **Content hash** | SHA-256 of a canonical serialisation of the table's headers and rows. It identifies a baseline independently of its file format. |
 | **Readiness check** | A named, declarative condition over the table, such as "every requirement has a verification method". |
 | **Gate package** | The read-only report that reviewers receive: baseline content, changes since the previous gate, readiness results and the VCRM. |
@@ -39,6 +39,16 @@ The hash covers what the requirements say, not how a file stores them:
 - no formatting, column widths, comments, quality settings or report state
 
 It is computed by the Python generator, embedded in every report, and recomputed by the report's JavaScript when it checks a comparison source.
+
+### Scope
+
+A baseline covers either the whole table or one system and its subsystems. Early gates such as SRR usually cover the whole table. A detailed design review (DDR) usually covers one subsystem in depth.
+
+- A gate declares `"scope": "table"` (the default) or `"scope": "system"`. A system-scoped gate is baselined once per system, for example `--create-baseline DDR --system SYS-REPORT`.
+- A system-scoped baseline contains the System records in that subtree and the requirements allocated to any of them, using the same rule as the report's **Include subsystems** scope. Test and Value records are not part of it.
+- The scope is part of the canonical content, so the hash covers the scope as well as the rows.
+- Comparison, readiness checks and sign-off all work within the scope. Comparing the whole table with a DDR baseline shows changes only for that subtree.
+- A requirement can sit in several scoped baselines. That is expected, because a shared requirement is allocated to several systems.
 
 ## Configuration
 
@@ -64,6 +74,17 @@ Gates and baseline storage live in the existing JSON configuration. The preset b
          "no_findings": true}
       ],
       "signoff": [{"role": "Reviewer", "min": 2}, {"role": "Approver", "min": 1}]
+    },
+    {
+      "id": "DDR",
+      "name": "Detailed Design Review",
+      "produces": "Subsystem design baseline",
+      "scope": "system",
+      "checks": [
+        {"id": "ddr-tests", "description": "Every requirement is linked to a test",
+         "applies_to": {"type": "Requirement"}, "linked": "Verified by"}
+      ],
+      "signoff": [{"role": "Reviewer", "min": 1}, {"role": "Approver", "min": 1}]
     },
     {
       "id": "PDR",
@@ -105,14 +126,14 @@ A gate baseline always resolves to the same result: frozen CSV content, the cont
 
 ### Git store
 
-- A baseline is an annotated tag, for example `baseline/SRR`, on the commit that holds the approved CSV.
+- A baseline is an annotated tag on the commit that holds the approved CSV. The name is `baseline/<gate>` for a table baseline, such as `baseline/SRR`, and `baseline/<gate>/<system>` for a scoped one, such as `baseline/DDR/SYS-REPORT`.
 - The tag message holds the manifest as JSON: gate, date, the content hash, the source path and who created it.
 - `--old git:baseline/SRR` already works, because tags are revisions. The new work is resolving baselines by gate name and checking the hash.
 - Tags can be signed, which is the basis for Git sign-off.
 
 ### File store (SharePoint and other shared folders)
 
-- A baseline is a folder such as `baselines/SRR/` containing:
+- A baseline is a folder such as `baselines/SRR/` or `baselines/DDR/SYS-REPORT/` containing:
   - `requirements.csv`, the frozen rows
   - the original source file, for example `requirements.xlsx`, copied unchanged when the project wants it
   - `manifest.json`, with the same fields as the Git tag message plus sign-off entries
@@ -124,7 +145,8 @@ A gate baseline always resolves to the same result: frozen CSV content, the cont
 
 - `--create-baseline SRR` validates the gate exists, computes the hash, and then writes the tag (Git store) or the folder (file store).
 - Creating a tag is a local, reversible Git operation. Pushing it stays the user's step.
-- An existing baseline is never overwritten. Re-baselining a gate needs an explicit new name, such as `SRR-2`, or a later change-control flow.
+- An existing baseline is never overwritten.
+- Re-holding a gate creates a numbered baseline: `SRR-2`, then `SRR-3`. Its manifest records `"gate": "SRR"` and `"supersedes": "SRR"`. The first baseline keeps its plain name. Where a command expects one baseline for a gate, it uses the highest number, so `--baselines SRR` means the latest SRR baseline and `--baselines SRR-1` names the first explicitly. This decision is provisional and can be revisited before phase 1 ships.
 
 ## Comparing with baselines
 
@@ -155,9 +177,9 @@ Sign-offs live outside the baselined table, in the tag or the manifest. If they 
 | | Git | SharePoint and files |
 |---|---|---|
 | **Review evidence** | Pull request approvals on the baseline branch, plus review comments in the package. | Review comments in the package, saved as a report copy next to the baseline. |
-| **Approval evidence** | A signed tag per approver, such as `signoff/SRR/approver/pnorman`, pointing at the baseline commit, with the role, decision and content hash in its message. GPG, SSH and Sigstore (`gitsign`) signing all work. | A PAdES digital signature on `package.pdf`, applied in Acrobat, DocuSign or SharePoint eSignature. The manifest lists each signer, role, decision and date. |
+| **Approval evidence** | One signed tag per approver and decision, named `signoff/<baseline>/<role>/<user>`, such as `signoff/SRR/approver/pnorman` or `signoff/DDR/SYS-REPORT/reviewer/jsmith`. It points at the baseline commit and carries the role, decision and content hash in its message. GPG, SSH and Sigstore (`gitsign`) signing all work. | A PAdES digital signature on `package.pdf`, applied in Acrobat, DocuSign or SharePoint eSignature. The manifest lists each signer, role, decision and date. |
 | **Binding to content** | The tag signs the commit, which contains the CSV. Its message repeats the content hash. | The PDF shows the content hash on its cover page and footer, so the signature covers the hash. |
-| **Verification** | `--verify-baseline SRR` runs `git verify-tag` for each sign-off tag and compares hashes. | `--verify-baseline SRR` checks the manifest and the CSV hash. Validating the PDF signature itself stays with the PDF tool in the first version. |
+| **Verification** | `--verify-baseline SRR` runs `git verify-tag` for each sign-off tag and compares hashes. | `--verify-baseline SRR` checks the manifest and the CSV hash. ReqTable does not validate PDF signatures. Acrobat and other viewers validate them when the file is opened, so that check stays with them. |
 
 ### Producing the PDF
 
@@ -180,16 +202,22 @@ The gate's `signoff` list sets the required roles and counts. The `signoffs_comp
 
 | Phase | Delivers | Proves |
 |---|---|---|
-| 1. Baseline identity | Canonical content hash, Git and file stores, manifest, `--create-baseline`, `--baselines` and **Compare with** in the report. | A baseline from Git or from an XLSX folder compares identically. |
+| 1. Baseline identity | Canonical content hash, table and system scopes, Git and file stores, manifest, numbered re-baselines, `--create-baseline`, `--baselines` and **Compare with** in the report. | A baseline from Git or from an XLSX folder compares identically, and a scoped baseline covers exactly its subtree. |
 | 2. Gate readiness | Gate configuration, check vocabulary, shipped preset, Gates view, `--check-gate`. | A project can change the gate list and checks without code changes. |
 | 3. Package and sign-off | Gate package with cover page and hash, review decisions, sign-off roles, Git signed-tag verification, manifest sign-offs, `--verify-baseline`. | A signed tag or signed PDF can be traced to exactly one baseline. |
 | 4. Change control | Change request records, `Changed by` links, the unapproved-change finding, `unchanged_since`. | A post-baseline edit without a change request is flagged. |
 | 5. Strict mode | `enforcement: "strict"` per gate or check. | Strict gates block baseline creation in the CLI and CI. |
 
+## Decisions
+
+Recorded on 2026-11-08 from the first review of this proposal.
+
+1. **Git approvals** use one signed tag per approver and decision, not a single tag with Git notes. Each tag can be listed and verified on its own.
+2. **PDF signatures** are not validated by ReqTable. The content hash printed in the signed PDF is enough to tie it to a baseline, and viewers such as Acrobat validate the signature on open.
+3. **Re-baselining** creates `SRR-2`, `SRR-3` and so on, because explicit names are clearer than replacing `SRR`. This is provisional.
+4. **Scope** can be the whole table or one system's subtree, so that subsystem gates such as DDR can be baselined per system.
+
 ## Open questions
 
-1. **Signing key.** Should Git approvals use one signed tag per approver, or one signed tag plus Git notes? Per-approver tags are simplest to verify and list.
-2. **PDF signature validation.** Is "the hash on the signed PDF matches" enough, or must ReqTable also validate PDF signatures itself? Validating needs a third-party library such as pyHanko, so it would be an optional extra.
-3. **Re-baselining.** When a gate is re-held, is the new baseline `SRR-2`, or does it supersede `SRR` with the old one kept as history?
-4. **Scope of a baseline.** Is a baseline always the whole table, or can a project baseline one system's requirements, such as the allocated baseline for one subsystem?
-5. **SharePoint locking.** Is a retention label or record declaration available in the target tenants, or should the content hash and signed PDF be the only integrity controls?
+1. **SharePoint locking.** It is not yet known whether target tenants offer retention labels or record declaration. Until then, the content hash and the signed PDF are the integrity controls, and locking is an optional extra the project applies in SharePoint.
+2. **Scope boundary.** Should a system-scoped baseline also include the tests that verify its requirements, so a DDR package carries its test evidence? The current proposal leaves tests out of the hash and shows them only in the package.
