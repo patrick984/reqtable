@@ -428,7 +428,7 @@ const trace=(()=>{
     if(view===next&&(next!=="glossary"||kind===glossaryKind))return false;
     viewStates.set(stateKey(view,glossaryKind),{hidden:state.hidden,filters:state.filters,valueFilters:state.valueFilters,
       sort:state.sort,focus:state.focus,scroll:[wrap.scrollLeft,wrap.scrollTop],
-      commentsOnly:state.commentsOnly,qualityOnly:quality.only});
+      commentsOnly:state.commentsOnly,idFilter:state.idFilter,qualityOnly:quality.only});
     view=next;
     if(next==="glossary")glossaryKind=kind;
     const saved=viewStates.get(stateKey(next,glossaryKind));
@@ -438,6 +438,7 @@ const trace=(()=>{
     state.sort=saved?.sort??null;
     state.focus=saved?.focus??{row:0,column:0};
     state.commentsOnly=saved?.commentsOnly??false;
+    state.idFilter=saved?.idFilter??null;
     quality.only=saved?.qualityOnly??false;
     revealed=reveal;
     pending=null;
