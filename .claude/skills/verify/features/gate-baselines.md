@@ -42,6 +42,8 @@ Preconditions:
 - **Live update.** Give REQ-178 a Verification Level and return to Gates: `pdr-level` passes.
 - **CLI parity.** `python3 -m reqtable requirements-uat.csv --id-column ID --traceability --check-gate PDR` prints the same counts and exits 1. `--check-gate DDR --system SYS-EXTRACT` lists 13 failing records.
 
+- **Change control.** In a scratch repo, create PDR, then DDR for SYS-EXTRACT. Commit a reworded REQ-099, a removed REQ-014 and a new REQ-900 allocated to SYS-INPUT. `--check-gate CDR` fails `cdr-change-control` with REQ-099, REQ-900, REQ-014; `--check-gate DDR --system SYS-EXTRACT` fails only REQ-099. In a Develop report, Trace findings shows `Changed since DDR/SYS-EXTRACT (Requirement) …`, `Added since PDR …` and `Removed since PDR …`. In the Changes view, **Add change request…** (`#trace-change-add`) creates CR-001 with Change status Proposed; **Link affected record…** (`[data-trace-pick="Affects"]`) offers `REQ-014 (removed since PDR)`. Linking all three keeps the findings; setting Change status to Approved clears them, and the CLI checks pass once the CR is in the CSV.
+
 ## Gotchas
 
 - Comparing starts with unchanged rows hidden, like Last save. A change to a System record shows only in Systems or All fields.

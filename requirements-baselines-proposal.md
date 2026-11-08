@@ -135,7 +135,7 @@ Each check names the records it applies to and one condition. The vocabulary reu
 | `in` | Every value in the column is in a list, such as Compliance in `["Compliant", "Waived"]`. |
 | `linked` | The named link column has at least one target. `leaf: true` requires the target to have no subsystems. |
 | `no_findings` | No trace findings, or none of a listed kind. |
-| `unchanged_since` | No record in the named baseline changed since it without an approved change request. Status columns count only when that baseline captured status (phase 4). |
+| `unchanged_since: true` | No record changed, added or removed since its controlling baseline without an approved change request. Status columns count only when that baseline captured status. |
 
 A check that uses an unknown key is a configuration error at generation time, not a silent pass.
 
@@ -216,12 +216,13 @@ The gate's `signoff` list sets the required roles and counts, for example two Re
 
 The package cover and `--verify-baseline` show the status. `--verify-baseline` exits 0 only when the hash matches and the baseline is approved.
 
-## Change control (later phase)
+## Change control
 
-- A `Change request` record type with status values, such as Proposed, Approved, Rejected and Implemented, defined through Value records like other constrained columns.
-- A requirement changed since a baseline links to the change request that authorised it, through a new `Changed by` link column.
-- A trace finding flags a baselined requirement that differs from the baseline without an approved change request. The `unchanged_since` check turns that into gate readiness.
-- Approving a change request can reuse the same sign-off mechanism, bound to the content hash of the change.
+- **Change requests.** A `Change request` record has a `Change status` (Proposed, Approved, Rejected, Implemented; constrained with Value records like other columns) and an `Affects` link column listing the IDs it authorises. Approved and Implemented authorise a change. `Affects` may name a record that has since been removed.
+- **Controlling baseline.** Each record is controlled by the most recently created baseline whose scope contained it, so a subsystem requirement is controlled by its DDR once one exists, and otherwise by the latest table-wide baseline. A new record is attributed to the most recent baseline whose scope and record types would contain it. The generator builds this map from the store and embeds it in reports as `controls`.
+- **Findings.** A controlled record that differs from its controlling row (ignoring status columns unless that baseline captured them), a new record inside a baselined scope, and a removed controlled record each give a trace finding, such as `Changed since PDR (Priority) without an approved change request.`, unless an approved change request lists the ID in `Affects`.
+- **Readiness.** `unchanged_since: true` fails while such findings exist on the check's records. For a system-scoped gate, a removed record counts only if its last baselined row was in that system's scope.
+- **Later.** Approving a change request through the signed sign-off mechanism, bound to a hash of the change, remains possible future work. For now `Change status` is advisory, like the rest.
 
 ## Phases
 
@@ -245,6 +246,7 @@ Recorded on 2026-11-08 from the first review of this proposal.
 6. **Status columns** such as Compliance and Result are left out of baselines until gates that approve results. SVR, FCA and PCA capture them.
 7. **Recording decisions.** Reviewers record decisions in the gate package report, and `--import-decisions` turns a saved copy's decisions into sign-offs. In the Git store, reqtable creates the signed sign-off tags itself with the user's configured key. In the file store, the configuration manager records sign-offs with `--sign-off`.
 8. **Approval status replaces `signoffs_complete`.** Sign-offs follow a baseline, so they cannot gate its creation. Each baseline has an approval status instead (see Sign-off roles and approval status).
+9. **Change control.** Each record is controlled by the latest baseline that contained it. A change request authorises IDs through its own `Affects` column rather than a `Changed by` column on each requirement, which also covers removals and leaves requirement rows untouched. `Change status` Approved or Implemented authorises the change; signed approval of change requests is deferred.
 
 ## Open questions
 

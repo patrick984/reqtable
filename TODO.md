@@ -20,5 +20,5 @@
   - [x] Phase 1: content hash, table and system scopes, record types, status columns, Git and file stores, `--create-baseline`, `--list-baselines`, `--baselines`, View → Compare with.
   - [x] Phase 2: gate readiness checks, Gates view, `--check-gate`, and a Python port of trace findings with parity tests.
   - [x] Phase 3: gate package, review decisions, sign-off roles, signed-tag verification, `--verify-baseline`.
-  - [ ] Phase 4: change requests and the unapproved-change finding.
+  - [x] Phase 4: change requests (`Affects`, `Change status`), controlling baselines, the unapproved-change findings and `unchanged_since`. Signed approval of change requests is deferred.
   - [ ] Phase 5: strict enforcement.

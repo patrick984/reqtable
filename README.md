@@ -383,6 +383,7 @@ Each gate in the configuration can list `checks`, declarative conditions that sa
 | `in: {"Column": ["A", "B"]}` | The cell is not blank and every `;`-separated value is in the list. |
 | `linked: "Column"` | At least one listed ID is a record in the table. Add `"leaf": true` to require a System with no subsystems. |
 | `no_findings: true` | No record in scope has a trace finding, and the table has no table-level findings. |
+| `unchanged_since: true` | No record in scope changed, was added or was removed since its baseline without an approved change request (see Change control). |
 
 `applies_to` selects the records a check covers. It defaults to `{"type": "Requirement"}` (or every record for `no_findings`). `type` takes a record type or a list, and any other key is a column whose value must equal the given text or be one of a list. A check that names a column the table lacks reports an error rather than passing. For a system-scoped gate such as DDR, checks cover only that system's scope.
 
@@ -429,6 +430,18 @@ python -m reqtable requirements.csv -c config.json --sign-off PDR --role Approve
 In the Git store each decision becomes a signed annotated tag such as `signoff/PDR/approver/casey-manager`, created with `git tag -s` and the user's configured GPG or SSH key, pointing at the baseline commit and carrying the role, decision and content hash. Signing must be configured; reqtable never creates unsigned sign-offs and never pushes. In the file store each decision is appended to the baseline's `manifest.json`, and `--evidence` usually names the signed PDF in the baseline folder.
 
 `--verify-baseline PDR` recomputes the content hash, checks every sign-off (Git signatures with `git verify-tag`), and prints each role's progress. A baseline is approved when every role has at least its minimum number of people whose latest decision is Reviewed or Approved. The command exits 0 only when the hash matches and the baseline is approved. Reports that embed baselines with `--baselines` also carry their sign-offs and approval status.
+
+### Change control
+
+Once a requirement is baselined, changes to it need an approved change request. A `Change request` record lists the IDs it covers in **Affects** and records its decision in **Change status** (Proposed, Approved, Rejected or Implemented). Every traceability report has both columns.
+
+Each record is controlled by the most recently created baseline that contained it: a subsystem requirement by its DDR once one exists, otherwise by the latest table-wide baseline. Reports find the baselines in the store automatically (set `baselines.change_control` to `false` to turn this off). Then **Trace findings** flags, unless an Approved or Implemented change request lists the ID in Affects:
+
+- a record that differs from its controlling baseline, naming the changed columns (status columns do not count unless that baseline captured them)
+- a new record inside a baselined scope
+- a record removed since its baseline
+
+In Develop mode, the **Changes** view lists change requests, with **Add change request…** to create one. Use **Link affected record…** in its Links panel, which also offers removed records. A requirement's Links panel lists the change requests that affect it. Every gate after SRR includes an `unchanged_since` check, so `--check-gate` and the Gates view report unauthorised changes.
 
 ## Build and test
 
