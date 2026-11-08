@@ -559,8 +559,10 @@ function comparisonSource(key=state.compareWith){
   const ignoredColumns=new Set(data.meta.ignoredColumns);
   if(key==="saved")return{kind:"saved",label:"Last save",rows:state.savedRows,inScope:()=>true,ignoredColumns,moves:true};
   if(key==="old")return{kind:"old",label:data.meta.oldFilename??"Old version",rows:data.source.old.rows,inScope:()=>true,ignoredColumns,moves:Boolean(data.options.reviewComparison)};
-  return null;
+  const baseline=baselineByKey(key);
+  return baseline?baselineSource(baseline,state.currentRows,data.meta.idColumn,ignoredColumns):null;
 }
+function baselineByKey(key){return(data.baselines??[]).find(baseline=>"baseline:"+baseline.name===key);}
 function setCompareWith(next){
   const live=key=>key!==null&&key!=="old",was=live(state.compareWith),now=live(next);
   if(now&&!was){state.previousStatuses=state.statuses;state.statuses=new Set(["added","removed","changed"]);}
