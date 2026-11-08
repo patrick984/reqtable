@@ -7,6 +7,7 @@ from typing import Any
 from .quality import QUALITY_JS
 from .glossary import GLOSSARY_CSS, GLOSSARY_HTML
 from .drafts import DRAFTS_CSS, DRAFTS_HTML, DRAFTS_JS
+from .comparison import COMPARISON_JS
 from .values import VALUE_EDIT_JS
 from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
@@ -176,8 +177,7 @@ JS = r"""
 const data=JSON.parse(document.getElementById("reqtable-data").textContent);
 function configuredPixels(column,fallback=column.estimatedWidth||160){const raw=column.width;if(!raw)return fallback;const n=parseFloat(raw);if(raw.endsWith("rem")||raw.endsWith("em"))return n*16;if(raw.endsWith("ch"))return n*8;if(raw.endsWith("%"))return Math.max(70,document.documentElement.clientWidth*n/100);return n;}
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
-const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,unsavedDiff:false,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
-state.reviewCurrent=false;
+const state={hidden:new Set(data.columns.filter(c=>c.hidden).map(c=>c.name)),filters:new Map(),valueFilters:new Map(),statuses:new Set(["added","removed","changed","unchanged"]),commentsOnly:false,view:data.options.initialView,sort:null,comments:cloneValue(data.comments),savedComments:cloneValue(data.comments),currentRows:cloneValue(data.source.new.rows),savedRows:cloneValue(data.source.new.rows),dirty:false,requirementsDirty:false,commentsDirty:false,compareWith:data.meta.mode==="diff"?"old":null,undo:[],redo:[],editingCell:null,commentContext:null,editingId:null,widths:new Map(data.columns.map(c=>[c.name,configuredPixels(c)])),focus:{row:0,column:0}};
 state.qualityReview=cloneValue(data.qualityReview??{settings:data.options.quality??{},dismissals:[]});
 state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
@@ -286,7 +286,7 @@ function renderActiveFilters(){
   if(state.commentsOnly)filters.push(["Rows with comments only",()=>{state.commentsOnly=false;}]);
   if(diffActive()){
     const statuses=["added","removed","changed","unchanged"];
-    const available=statuses.filter(status=>status!=="unchanged"||state.unsavedDiff||data.options.includeUnchanged);
+    const available=statuses.filter(status=>status!=="unchanged"||state.compareWith!=="old"||data.options.includeUnchanged);
     const shown=available.filter(status=>state.statuses.has(status));
     if(shown.length<available.length){
       filters.push([shown.length?`Status: ${shown.join(", ")}`:"Status: no statuses selected",
@@ -352,7 +352,7 @@ function showAllComments(focusSearch=false){trace?.close();closeQuality();state.
 function renderReviewPanel(focusEditor=false){populateReviewFilters();const reviewBody=$(".review-body"),previousScroll=reviewBody.scrollTop,context=state.commentContext,q=($("#comment-search").value||"").toLocaleLowerCase(),reviewer=$("#reviewer-filter").value,column=$("#comment-column-filter").value,status=$("#comment-status-filter").value,statusMap=new Map(data.rows.map(r=>[r.id,r.status]));let list=state.comments.filter(c=>!context||(c.requirementId===context.rid&&c.column===context.column));list=list.filter(c=>(!reviewer||c.initials===reviewer)&&(!column||c.column===column)&&(!status||statusMap.get(c.requirementId)===status)&&`${c.text}\n${c.initials}\n${c.requirementId}\n${c.column}\n${c.created}\n${c.modified||''}`.toLocaleLowerCase().includes(q)).sort((a,b)=>a.created.localeCompare(b.created));const cellCount=new Set(state.comments.map(c=>`${c.requirementId}\u0000${c.column}`)).size;$("#review-title").textContent=context?`Comments: ${context.rid} / ${context.column}`:"All comments";$("#back-comments").hidden=!context;$("#comment-counts").textContent=`${state.comments.length} comments across ${cellCount} cells · ${list.length} shown`;let body=list.map(c=>c.id===state.editingId?`<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(displayTimestamp(c.modified||c.created))}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><form class="inline-comment-editor" data-inline-comment-id="${escapeHtml(c.id)}"><label class="sr-only" for="inline-comment-text-${escapeHtml(c.id)}">Edit comment</label><textarea id="inline-comment-text-${escapeHtml(c.id)}" required>${escapeHtml(c.text)}</textarea><div class="comment-editor-actions"><button class="primary" type="submit">Save changes</button><button type="button" data-cancel-inline-edit>Cancel</button></div></form></article>`:commentCard(c,`<div class="comment-actions"><button data-go-comment="${escapeHtml(c.id)}">Go to cell</button><button data-edit-comment="${escapeHtml(c.id)}">Edit</button><button data-delete-comment="${escapeHtml(c.id)}">Delete</button></div>`)).join("");if(!list.length)body='<div class="empty-state">No comments match.</div>';const editor=context&&!state.editingId?`<form id="comment-form" class="comment-editor"><label for="comment-text">New comment</label><textarea id="comment-text" required></textarea><div class="comment-editor-actions"><button class="primary" type="submit">Add comment</button></div></form>`:"";$("#comment-list").innerHTML=body+editor;reviewBody.scrollTop=previousScroll;const form=$("#comment-form");if(form)form.addEventListener("submit",saveComment);document.querySelectorAll(".inline-comment-editor").forEach(el=>el.addEventListener("submit",saveInlineComment));document.querySelectorAll("[data-cancel-inline-edit]").forEach(el=>el.addEventListener("click",cancelInlineEdit));if(focusEditor)requestAnimationFrame(()=>$(".inline-comment-editor textarea,#comment-text")?.focus());}
 function reviewerInitials(){return $("#reviewer-initials").value.trim();}function validInitials(s){return s.length>=1&&s.length<=16&&![...s].some(c=>c.charCodeAt(0)<32||c.charCodeAt(0)===127);}function loadReviewerInitials(){try{return localStorage.getItem("reqtable-reviewer-initials")||"";}catch{return "";}}function persistReviewerInitials(){const initials=reviewerInitials();if(!validInitials(initials))return;try{localStorage.setItem("reqtable-reviewer-initials",initials);}catch{}}
 function restoreSidebarFocus(id){requestAnimationFrame(()=>{const button=[...document.querySelectorAll("[data-edit-comment]")].find(x=>x.dataset.editComment===id);(button||$("#comment-search"))?.focus();});}function cancelInlineEdit(){const id=state.editingId;state.editingId=null;renderReviewPanel();restoreSidebarFocus(id);}function saveInlineComment(e){e.preventDefault();const id=e.currentTarget.dataset.inlineCommentId,c=state.comments.find(x=>x.id===id),text=e.currentTarget.querySelector("textarea").value.trim(),initials=reviewerInitials();if(!c||!text)return;if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");return;}if(developMode())remember();c.text=text;c.initials=initials;c.modified=localTimestamp();state.editingId=null;persistReviewerInitials();setDirty(true);render();renderReviewPanel();restoreSidebarFocus(id);}function saveComment(e){e.preventDefault();const text=$("#comment-text").value.trim();if(!text||!state.commentContext)return;if(!addComment(text,state.commentContext.rid,state.commentContext.column))return;render();renderReviewPanel();restoreSelectedCell();}function deleteComment(id){if(!confirm("Delete this comment?"))return;if(developMode())remember();state.comments=state.comments.filter(c=>c.id!==id);setDirty(true);render();renderReviewPanel();restoreSelectedCell();}
-function goToComment(c){if(state.reviewCurrent&&!findCurrentRow(c.requirementId))state.reviewCurrent=false;trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
+function goToComment(c){if(state.compareWith===null&&data.source.old&&!findCurrentRow(c.requirementId))setCompareWith("old");trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=[...document.querySelectorAll("tr[data-row-id]")].find(r=>r.dataset.rowId===c.requirementId),cell=row&&[...row.querySelectorAll("[data-column]")].find(x=>x.dataset.column===c.column);if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}});}
 function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");}function filenameInitials(s){return s.replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^[-_]+|[-_]+$/g,"");}
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...document.querySelectorAll("[data-grid-cell]")];}
@@ -494,7 +494,7 @@ document.addEventListener("keydown",e=>{
 document.querySelectorAll("#reviewer-filter,#comment-column-filter,#comment-status-filter").forEach(el=>el.addEventListener("change",renderReviewPanel));if(data.meta.mode!=="diff")document.querySelectorAll(".diff-only").forEach(el=>el.hidden=true);if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);const storedInitials=loadReviewerInitials();if(storedInitials)$("#reviewer-initials").value=storedInitials;syncReviewerLabel();populateReviewFilters();
 
 /* Develop-mode editing and browser-side persistence. */
-function developMode(){return data.meta.documentMode==="develop";}function diffActive(){return state.unsavedDiff||(data.meta.mode==="diff"&&!state.reviewCurrent);}function rowId(row){return String(row[data.meta.idColumn]??"").trim();}function byId(rows){return new Map(rows.map(row=>[rowId(row),row]));}
+function developMode(){return data.meta.documentMode==="develop";}function diffActive(){return state.compareWith!==null;}function rowId(row){return String(row[data.meta.idColumn]??"").trim();}function byId(rows){return new Map(rows.map(row=>[rowId(row),row]));}
 function wordChanges(a,b){
   const removed=new Set(),added=new Set();
   if(!a.length||!b.length||a.length*b.length>20000)return [removed,added];
@@ -551,13 +551,21 @@ function markdownDiff(oldText,newText){
 }
 function browserDiff(oldText,newText){oldText=String(oldText);newText=String(newText);if(!oldText&&newText){const h=newText.split("\n").map(x=>`<div class="diff-line added-line">${escapeHtml(x)||"&nbsp;"}</div>`).join("");return{oldHtml:"",newHtml:h,unifiedHtml:h};}if(oldText&&!newText){const h=oldText.split("\n").map(x=>`<div class="diff-line removed-line">${escapeHtml(x)||"&nbsp;"}</div>`).join("");return{oldHtml:h,newHtml:"",unifiedHtml:h};}const a=oldText.split("\n"),b=newText.split("\n"),count=Math.max(a.length,b.length),oldParts=[],newParts=[],unified=[];for(let i=0;i<count;i++){if(i>=a.length){const h=`<div class="diff-line added-line">${escapeHtml(b[i])||"&nbsp;"}</div>`;newParts.push(h);unified.push(h);}else if(i>=b.length){const h=`<div class="diff-line removed-line">${escapeHtml(a[i])||"&nbsp;"}</div>`;oldParts.push(h);unified.push(h);}else if(a[i]===b[i]){const h=`<div class="diff-line context-line">${escapeHtml(a[i])||"&nbsp;"}</div>`;oldParts.push(h);newParts.push(h);unified.push(h);}else{const pair=diffWords(a[i],b[i]),oh=`<div class="diff-line removed-line">${pair[0]||"&nbsp;"}</div>`,nh=`<div class="diff-line added-line">${pair[1]||"&nbsp;"}</div>`;oldParts.push(oh);newParts.push(nh);unified.push(oh,nh);}}return{oldHtml:oldParts.join(""),newHtml:newParts.join(""),unifiedHtml:unified.join("")};}
 function renderRequirementValue(value,column){value=String(value??"");if(!value)return'<span class="empty-value">Empty</span>';return column.markdown?renderCommentMarkdown(value):escapeHtml(value).replace(/\n/g,"<br>");}function comparisonValue(value){return data.options.ignoreTrailingWhitespace?value.split("\n").map(line=>line.trimEnd()).join("\n"):value;}
-function runtimeCell(column,oldValue,newValue,comparison){const oldText=oldValue??"",newText=newValue??"",changed=Boolean(comparison)&&!data.meta.ignoredColumns.includes(column.name)&&comparisonValue(oldText)!==comparisonValue(newText),result={column:column.name,old:oldValue,new:newValue,changed,search:`${oldText}\n${newText}`.toLocaleLowerCase()};if(changed)Object.assign(result,column.markdown?markdownDiff(oldText,newText):browserDiff(oldText,newText));else{const display=newValue===null?oldText:newText,rendered=renderRequirementValue(display,column);Object.assign(result,{oldHtml:renderRequirementValue(oldText,column),newHtml:renderRequirementValue(newText,column),unifiedHtml:rendered});}return result;}
-function requirementStatus(oldRow,newRow){
-  if(!oldRow)return "added";
-  if(!newRow)return "removed";
-  const changed=data.columns.some(({name})=>!data.meta.ignoredColumns.includes(name)
-    &&comparisonValue(String(oldRow[name]??""))!==comparisonValue(String(newRow[name]??"")));
-  return changed?"changed":"unchanged";
+function runtimeCell(column,oldValue,newValue,source){const oldText=oldValue??"",newText=newValue??"",changed=Boolean(source)&&!source.ignoredColumns.has(column.name)&&comparisonValue(oldText)!==comparisonValue(newText),result={column:column.name,old:oldValue,new:newValue,changed,search:`${oldText}\n${newText}`.toLocaleLowerCase()};if(changed)Object.assign(result,column.markdown?markdownDiff(oldText,newText):browserDiff(oldText,newText));else{const display=newValue===null?oldText:newText,rendered=renderRequirementValue(display,column);Object.assign(result,{oldHtml:renderRequirementValue(oldText,column),newHtml:renderRequirementValue(newText,column),unifiedHtml:rendered});}return result;}
+function requirementStatus(oldRow,newRow,ignored){
+  return rowStatus(oldRow,newRow,data.columns.map(({name})=>name),ignored,comparisonValue);
+}
+function comparisonSource(key=state.compareWith){
+  const ignoredColumns=new Set(data.meta.ignoredColumns);
+  if(key==="saved")return{kind:"saved",label:"Last save",rows:state.savedRows,inScope:()=>true,ignoredColumns,moves:true};
+  if(key==="old")return{kind:"old",label:data.meta.oldFilename??"Old version",rows:data.source.old.rows,inScope:()=>true,ignoredColumns,moves:Boolean(data.options.reviewComparison)};
+  return null;
+}
+function setCompareWith(next){
+  const live=key=>key!==null&&key!=="old",was=live(state.compareWith),now=live(next);
+  if(now&&!was){state.previousStatuses=state.statuses;state.statuses=new Set(["added","removed","changed"]);}
+  else if(was&&!now)state.statuses=state.previousStatuses;
+  state.compareWith=next;
 }
 function movedRowIds(oldRows,newRows){
   const position=new Map([...oldRows.keys()].filter(id=>newRows.has(id)).map((id,i)=>[id,i]));
@@ -571,29 +579,30 @@ function movedRowIds(oldRows,newRows){
   for(let i=tails.length?tails[tails.length-1]:-1;i>=0;i=prev[i])stay.add(current[i]);
   return new Set(current.filter(id=>!stay.has(id)));
 }
-function diffStatuses(baseline,{includeMoves=false,includeUnchanged=true}={}){
-  const oldRows=byId(baseline),newRows=byId(state.currentRows);
-  const moved=includeMoves?movedRowIds(oldRows,newRows):new Set();
-  const ids=new Set([...oldRows.keys(),...newRows.keys()]);
+function diffStatuses(source,{includeMoves=false,includeUnchanged=true}={}){
+  const moved=includeMoves?movedRowIds(byId(source.rows),byId(state.currentRows)):new Set();
   const statuses=Object.create(null);
-  for(const id of ids){
-    const status=moved.has(id)?"changed":requirementStatus(oldRows.get(id),newRows.get(id));
+  for(const{id,oldRow,newRow}of comparisonPairs(state.currentRows,source,data.meta.idColumn)){
+    const status=moved.has(id)?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
     if(status!=="unchanged"||includeUnchanged)statuses[id]=status;
   }
   return statuses;
 }
 let savedRowIndex;
-function rebuildRows(){savedRowIndex=byId(state.savedRows);const comparison=state.unsavedDiff?state.savedRows:(diffActive()?data.source.old.rows:null),oldMap=comparison?byId(comparison):new Map(),newMap=byId(state.currentRows),ids=state.currentRows.map(rowId),moved=comparison&&(state.unsavedDiff||data.options.reviewComparison)?movedRowIds(oldMap,newMap):new Set();if(comparison){
-  let following=null;
-  for(let index=comparison.length-1;index>=0;index--){
-    const id=rowId(comparison[index]);
-    if(!newMap.has(id)){
-      if(following===null)ids.push(id);
-      else ids.splice(ids.indexOf(following),0,id);
+function rebuildRows(){
+  savedRowIndex=byId(state.savedRows);
+  const source=comparisonSource(),moved=source?.moves?movedRowIds(byId(source.rows),byId(state.currentRows)):new Set();
+  data.rows=comparisonPairs(state.currentRows,source,data.meta.idColumn).map(({id,oldRow,newRow},index)=>{
+    const status=!source?"unchanged":moved.has(id)?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
+    const cells=Object.create(null);
+    for(const column of data.columns){
+      const oldValue=oldRow?(Object.hasOwn(oldRow,column.name)?String(oldRow[column.name]??""):null):null,
+        newValue=newRow?(Object.hasOwn(newRow,column.name)?String(newRow[column.name]??""):null):null;
+      cells[column.name]=runtimeCell(column,oldValue,newValue,source);
     }
-    following=id;
-  }
-}data.rows=ids.map((id,index)=>{const oldRow=oldMap.get(id),newRow=newMap.get(id);const status=!comparison?"unchanged":moved.has(id)?"changed":requirementStatus(oldRow,newRow);const cells=Object.create(null);for(const column of data.columns){const oldValue=oldRow?(Object.hasOwn(oldRow,column.name)?String(oldRow[column.name]??""):null):null,newValue=newRow?(Object.hasOwn(newRow,column.name)?String(newRow[column.name]??""):null):null;cells[column.name]=runtimeCell(column,oldValue,newValue,comparison);}return{id,status,moved:moved.has(id),sourceOrder:index,cells};});}
+    return{id,status,moved:moved.has(id),sourceOrder:index,cells};
+  });
+}
 function canRevertCell(column,cell){
   return developMode()&&diffActive()&&column!==data.meta.idColumn
     &&cell?.changed&&cell.old!==null&&cell.new!==null;
@@ -619,14 +628,14 @@ function insertAtBaselinePosition(items,baseline,index,item,identify){
 function restoreDeletedRequirement(){
   if(!developMode()||!diffActive()||state.editingCell)return;
   const id=selectedRequirementId();
-  const baseline=state.unsavedDiff?state.savedRows:data.source.old.rows;
+  const source=comparisonSource(),baseline=source.rows;
   const index=baseline.findIndex(row=>rowId(row)===id);
   if(index<0||findCurrentRow(id))return;
   const column=visibleColumns()[state.focus.column]?.name;
   const restored=Object.fromEntries(data.source.new.headers.map(name=>[name,baseline[index][name]??""]));
   remember();
   insertAtBaselinePosition(state.currentRows,baseline,index,restored,rowId);
-  if(state.unsavedDiff){
+  if(source.kind==="saved"){
     const existingIds=new Set(state.comments.map(comment=>comment.id));
     state.savedComments.forEach((comment,i)=>{
       if(comment.requirementId===id&&!existingIds.has(comment.id)){
@@ -719,13 +728,13 @@ function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();range
 function syncModeUi(){
   const comparison=$("#review-comparison");
   comparison.hidden=!data.options.reviewComparison;
-  comparison.textContent=state.reviewCurrent?"Show changes since last save":"Show current requirements";
+  comparison.textContent=state.compareWith===null?"Show changes since last save":"Show current requirements";
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
     $("#rename-requirement").disabled=trace.systemsView();
   }
-  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.unsavedDiff?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+  document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);$("#unsaved-diff").textContent=state.compareWith==="saved"?"Return to normal view":"Compare with last save";$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
@@ -799,7 +808,7 @@ function addRequirement(position){
     state.filters.clear();
     state.valueFilters.clear();
     state.commentsOnly=false;
-    state.statuses.add(state.unsavedDiff||data.meta.mode==="diff"?"added":"unchanged");
+    state.statuses.add(state.compareWith!==null?"added":"unchanged");
     render();
     cell=focusRequirement(id,trace?"Requirement":undefined);
   }
@@ -1112,7 +1121,7 @@ function markSaved(snapshot,message){
   state.savedRows=snapshot.rows;
   state.savedComments=snapshot.comments;
   updateDirty();
-  if(state.unsavedDiff&&!state.editingCell)render();
+  if(state.compareWith==="saved"&&!state.editingCell)render();
   $("#save-status").textContent=message;
 }
 async function saveCsv(saveAs=false,automatic=false){
@@ -1177,7 +1186,7 @@ function prepareReviewCopy(clone,embedded,withChanges){
     Object.assign(embedded.options,{reviewComparison:true,initialChangesOnly:true,
       includeUnchanged:true,initialView:state.view});
     embedded.source.old={headers:embedded.source.new.headers,rows:state.savedRows};
-    embedded.diffStatus=diffStatuses(state.savedRows,{includeMoves:true});
+    embedded.diffStatus=diffStatuses(comparisonSource("saved"),{includeMoves:true});
     for(const status of Object.values(embedded.diffStatus))counts[status]++;
     const retained=new Set(embedded.comments.map(comment=>comment.id));
     for(const comment of state.savedComments){
@@ -1232,7 +1241,7 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
     source:{...data.source,new:{...data.source.new,rows:snapshot.rows}}};
   delete embedded.rows;
   if(forReview)prepareReviewCopy(clone,embedded,withChanges);
-  else if(data.meta.mode==="diff")embedded.diffStatus=diffStatuses(data.source.old.rows,{
+  else if(data.meta.mode==="diff")embedded.diffStatus=diffStatuses(comparisonSource("old"),{
     includeMoves:data.options.reviewComparison,includeUnchanged:data.options.includeUnchanged});
   clone.querySelector("#reqtable-data").textContent=safeJson(embedded);
 
@@ -1268,7 +1277,7 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
 $("#revert-selected-cell").addEventListener("click",()=>revertCell(tableBody.querySelector(".selected-cell")));
 $("#restore-deleted-requirement").addEventListener("click",restoreDeletedRequirement);
 $("#review-comparison").addEventListener("click",()=>{
-  state.reviewCurrent=!state.reviewCurrent;
+  setCompareWith(state.compareWith===null?"old":null);
   render();
 });
 const tableContextMenu=$("#table-context-menu");
@@ -1582,7 +1591,7 @@ tableBody.addEventListener("click",event=>{
     applyCellEdit(editor,cell);
   }
 });
-for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{if(!state.unsavedDiff)state.previousStatuses=state.statuses;state.unsavedDiff=!state.unsavedDiff;state.statuses=state.unsavedDiff?new Set(["added","removed","changed"]):state.previousStatuses;render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy({forReview:true}));$("#export-review-changes").addEventListener("click",()=>saveReportCopy({forReview:true,withChanges:true}));
+for(const position of ["above","below","end"])$("#add-"+position).addEventListener("click",()=>addRequirement(position));$("#move-up").addEventListener("click",()=>moveRequirement(-1));$("#move-down").addEventListener("click",()=>moveRequirement(1));$("#rename-requirement").addEventListener("click",renameRequirement);$("#delete-requirement").addEventListener("click",deleteSelectedRecord);$("#undo-edit").addEventListener("click",undoEdit);$("#redo-edit").addEventListener("click",redoEdit);$("#unsaved-diff").addEventListener("click",()=>{setCompareWith(state.compareWith==="saved"?(data.meta.mode==="diff"?"old":null):"saved");render();});$("#save-csv").addEventListener("click",()=>saveCsv());$("#save-as").addEventListener("click",()=>saveCsv(true));$("#save-copy").addEventListener("click",()=>saveReportCopy());$("#export-review").addEventListener("click",()=>saveReportCopy({forReview:true}));$("#export-review-changes").addEventListener("click",()=>saveReportCopy({forReview:true,withChanges:true}));
 document.addEventListener("click",event=>{const cell=event.target.closest("[data-bool-toggle]")?.closest("[data-grid-cell]");if(cell)toggleBooleanCell(cell);});
 document.addEventListener("submit",event=>{const form=event.target.closest("[data-cell-editor]");if(form){event.preventDefault();event.stopImmediatePropagation();applyCellEdit(form);}},true);document.addEventListener("dblclick",event=>{
   const cell=event.target.closest("[data-grid-cell]");
@@ -1632,7 +1641,7 @@ document.addEventListener("submit",event=>{const form=event.target.closest("[dat
     if(!event.repeat)addButton.click();
   }else startCellEdit(cell,{selection:event.key==="F2"?"auto":"all"});
 }},true);
-function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(!state.unsavedDiff&&diffActive()&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(!state.reviewCurrent&&!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!valueFilterMatches(values,valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
+function matches(row){if(trace?.revealed(row.id))return true;if(trace&&!trace.matches(row))return false;if(quality.only&&!quality.findings.has(row.id))return false;if(state.compareWith==="old"&&!data.options.includeUnchanged&&row.status==="unchanged"&&row.id!==quality.revealId)return false;if(state.compareWith!==null&&!state.statuses.has(row.status))return false;if(state.commentsOnly&&!state.comments.some(c=>c.requirementId===row.id))return false;for(const[column,query]of state.filters){if(query&&!row.cells[column].search.includes(query.toLocaleLowerCase()))return false;}for(const[column,values]of state.valueFilters){if(values.size&&!valueFilterMatches(values,valueFor(row,column)))return false;}return true;}function ensureCellVisible(cell){const wrap=$(".table-wrap"),wr=wrap.getBoundingClientRect(),cr=cell.getBoundingClientRect(),statusWidth=diffActive()?118:0,safeLeft=wr.left+statusWidth+2,safeTop=wr.top+68,safeBottom=wr.top+wrap.clientHeight-2,panelLeft=Math.min(review.hidden?Infinity:review.getBoundingClientRect().left,trace&&!trace.panel.hidden?trace.panel.getBoundingClientRect().left:Infinity),safeRight=Math.min(wr.left+wrap.clientWidth-2,panelLeft-2);if(cr.left<safeLeft)wrap.scrollLeft+=cr.left-safeLeft;else if(cr.right>safeRight)wrap.scrollLeft+=cr.right-safeRight;if(cr.top<safeTop)wrap.scrollTop+=cr.top-safeTop;else if(cr.bottom>safeBottom)wrap.scrollTop+=cr.bottom-safeBottom;}
 function syncReviewerLabel(){
   const initials=reviewerInitials();
   $("#reviewer-label").textContent=initials||"Set initials";
@@ -1954,5 +1963,5 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
         .replace("__CSS__", CSS + DRAFTS_CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
+        .replace("__JS__", COMPARISON_JS + JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
     )
