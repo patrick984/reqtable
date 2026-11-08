@@ -1,0 +1,299 @@
+{
+ "description": "Shared change-control cases. Given the current rows and the embedded controls (controlling baseline row per ID, plus baseline metadata), the change findings from the report's JavaScript and from the Python port must equal 'expected' exactly, in order: current rows in table order (changed, then added), then controlled IDs missing from the current rows in controls.records order. A record changed when any column other than its baseline's status columns (unless capturesStatus) differs, comparing the union of both rows' columns with missing as ''. The finding field is the first changed column in current header order, and the message lists the changed columns in that order. A new record is added since the most recently created baseline whose scope (baseline scope rule on CURRENT rows) and includes contain it; it is uncontrolled if none does. A change is authorised when a Change request whose Change status resolves to Approved or Implemented lists the ID in Affects.",
+ "id_column": "ID",
+ "headers": [
+  "ID",
+  "Type",
+  "Name",
+  "Part of",
+  "Allocated to",
+  "Requirement",
+  "Priority",
+  "Compliance",
+  "Affects",
+  "Change status"
+ ],
+ "rows": [
+  {
+   "ID": "SYS-A",
+   "Type": "System",
+   "Name": "Product",
+   "Part of": "",
+   "Allocated to": "",
+   "Requirement": "",
+   "Priority": "",
+   "Compliance": "",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "SYS-B",
+   "Type": "System",
+   "Name": "Sub B",
+   "Part of": "SYS-A",
+   "Allocated to": "",
+   "Requirement": "",
+   "Priority": "",
+   "Compliance": "",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "R1",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-B",
+   "Requirement": "R one, reworded",
+   "Priority": "Must",
+   "Compliance": "Not verified",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "R2",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-A",
+   "Requirement": "R two",
+   "Priority": "Should",
+   "Compliance": "Not verified",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "R4",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-A",
+   "Requirement": "R four",
+   "Priority": "Must",
+   "Compliance": "Compliant",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "R5",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-B",
+   "Requirement": "R five",
+   "Priority": "Must",
+   "Compliance": "",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "R6",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-A",
+   "Requirement": "R six",
+   "Priority": "Must",
+   "Compliance": "",
+   "Affects": "",
+   "Change status": ""
+  },
+  {
+   "ID": "CR1",
+   "Type": "Change request",
+   "Name": "Reword R1",
+   "Part of": "",
+   "Allocated to": "",
+   "Requirement": "",
+   "Priority": "",
+   "Compliance": "",
+   "Affects": "R1",
+   "Change status": "Approved"
+  },
+  {
+   "ID": "CR2",
+   "Type": "Change request",
+   "Name": "Add R6",
+   "Part of": "",
+   "Allocated to": "",
+   "Requirement": "",
+   "Priority": "",
+   "Compliance": "",
+   "Affects": "R6",
+   "Change status": "Proposed"
+  },
+  {
+   "ID": "CR3",
+   "Type": "Change request",
+   "Name": "Remove R3",
+   "Part of": "",
+   "Allocated to": "",
+   "Requirement": "",
+   "Priority": "",
+   "Compliance": "",
+   "Affects": "R3",
+   "Change status": "Implemented"
+  }
+ ],
+ "controls": {
+  "baselines": [
+   {
+    "name": "PDR",
+    "created": "2026-01-01T00:00:00+00:00",
+    "system": null,
+    "includes": [
+     "Requirement",
+     "System"
+    ],
+    "capturesStatus": false,
+    "statusColumns": [
+     "Compliance",
+     "Result"
+    ]
+   },
+   {
+    "name": "DDR/SYS-B",
+    "created": "2026-02-01T00:00:00+00:00",
+    "system": "SYS-B",
+    "includes": [
+     "Requirement",
+     "System"
+    ],
+    "capturesStatus": false,
+    "statusColumns": [
+     "Compliance",
+     "Result"
+    ]
+   }
+  ],
+  "records": {
+   "SYS-A": {
+    "baseline": "PDR",
+    "row": {
+     "ID": "SYS-A",
+     "Type": "System",
+     "Name": "Product",
+     "Part of": "",
+     "Allocated to": "",
+     "Requirement": "",
+     "Priority": "",
+     "Compliance": "",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "SYS-B": {
+    "baseline": "DDR/SYS-B",
+    "row": {
+     "ID": "SYS-B",
+     "Type": "System",
+     "Name": "Sub B",
+     "Part of": "SYS-A",
+     "Allocated to": "",
+     "Requirement": "",
+     "Priority": "",
+     "Compliance": "",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "R1": {
+    "baseline": "DDR/SYS-B",
+    "row": {
+     "ID": "R1",
+     "Type": "",
+     "Name": "",
+     "Part of": "",
+     "Allocated to": "SYS-B",
+     "Requirement": "R one",
+     "Priority": "Must",
+     "Compliance": "Not verified",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "R2": {
+    "baseline": "PDR",
+    "row": {
+     "ID": "R2",
+     "Type": "",
+     "Name": "",
+     "Part of": "",
+     "Allocated to": "SYS-A",
+     "Requirement": "R two",
+     "Priority": "Must",
+     "Compliance": "Not verified",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "R3": {
+    "baseline": "PDR",
+    "row": {
+     "ID": "R3",
+     "Type": "",
+     "Name": "",
+     "Part of": "",
+     "Allocated to": "SYS-A",
+     "Requirement": "R three",
+     "Priority": "Should",
+     "Compliance": "Not verified",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "R4": {
+    "baseline": "PDR",
+    "row": {
+     "ID": "R4",
+     "Type": "",
+     "Name": "",
+     "Part of": "",
+     "Allocated to": "SYS-A",
+     "Requirement": "R four",
+     "Priority": "Must",
+     "Compliance": "Not verified",
+     "Affects": "",
+     "Change status": ""
+    }
+   },
+   "R7": {
+    "baseline": "PDR",
+    "row": {
+     "ID": "R7",
+     "Type": "",
+     "Name": "",
+     "Part of": "",
+     "Allocated to": "SYS-A",
+     "Requirement": "R seven",
+     "Priority": "Could",
+     "Compliance": "Not verified",
+     "Affects": "",
+     "Change status": ""
+    }
+   }
+  }
+ },
+ "expected": [
+  [
+   "R2",
+   "Priority",
+   "Changed since PDR (Priority) without an approved change request."
+  ],
+  [
+   "R5",
+   "ID",
+   "Added since DDR/SYS-B without an approved change request."
+  ],
+  [
+   "R6",
+   "ID",
+   "Added since PDR without an approved change request."
+  ],
+  [
+   "R7",
+   "ID",
+   "Removed since PDR without an approved change request."
+  ]
+ ]
+}
