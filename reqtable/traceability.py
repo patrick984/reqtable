@@ -235,7 +235,7 @@ const trace=(()=>{
   const panel=$("#trace-panel"),detail=$("#trace-record"),tree=$("#trace-tree");
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
   const viewBar=$("#trace-views"),systemSelect=$("#trace-system"),status=$("#trace-status");
-  const wrap=$(".table-wrap"),systemsPage=$("#trace-systems");
+  const wrap=$(".table-wrap"),systemsPage=$("#trace-systems"),matrixPage=$("#trace-matrix"),modeBar=$("#trace-view-mode");
   const selectedLinks=$("#trace-selected-links");
   const requirementsDefaults=new Set([
     data.meta.idColumn,"Category","Requirement","Priority","Acceptance Criteria","Verification Method"
@@ -267,7 +267,7 @@ const trace=(()=>{
     sources:{types:["Need","Source"],columns:sourceColumns,layout:sourceLayout,summary:count=>`${count} needs and sources`},
     tests:{types:testTypes,get columns(){return new Set(testColumnOrder());},layout:testLayout,order:testColumnOrder,summary:count=>`${count} test records`},
     verification:{types:["Requirement"],systemScope:true,get columns(){return new Set(verificationColumns());},order:verificationColumns,
-      layout:verificationLayout,summary:count=>`${count} requirements`,
+      layout:verificationLayout,summary:count=>`${count} requirements`,modes:{grid:"Grid",matrix:"Matrix"},
       cells:{"Verification Method":methodCell,"Verified by":verifiedByCell},strip:verificationStrip},
   };
   const glossaryFields=["Definition","Aliases","Auto Link"];
@@ -304,6 +304,10 @@ const trace=(()=>{
   };
 
   const usesScope=()=>view==="requirements"||!!listViews[view]?.systemScope;
+  const viewModes=new Map();
+  const viewMode=()=>{const modes=listViews[view]?.modes;return modes?viewModes.get(view)??Object.keys(modes)[0]:"";};
+  const matrixShown=()=>viewMode()==="matrix";
+  let matrixRecords=[];
   function methodCell(record){
     const rule=index.values.get("Verification Method");
     if(!rule)return null;
@@ -335,9 +339,31 @@ const trace=(()=>{
       ["No method",count(record=>!record.row["Verification Method"]?.trim())],
       ["No linked tests",count(record=>!(record.outgoing.get("Verified by")??[]).length)]];
   }
+  function paintMatrix(){
+    const matrix=buildVerificationMatrix(matrixRecords,index.values,data.meta.idColumn);
+    const cols=(names,group)=>names.length?`<th scope="colgroup" colspan="${names.length}">${group}</th>`:"";
+    const marks=(row,kind,names)=>verificationMatrixMarks(row,kind,names)
+      .map(([mark,extra])=>`<td class="vcrm-mark">${mark}${extra?` <span class="vcrm-extra">${escapeHtml(extra)}</span>`:""}</td>`).join("");
+    const count=(totals,names)=>names.map(name=>`<td class="vcrm-mark">${totals[name]}</td>`).join("");
+    const head=names=>names.map(name=>`<th scope="col">${escapeHtml(name)}</th>`).join("");
+    const scopeText=filters().map(([text])=>text).join(" · ");
+    $("#trace-matrix-table").innerHTML=`<caption>${matrix.rows.length} ${matrix.rows.length===1?"requirement":"requirements"}${scopeText?" · "+escapeHtml(scopeText):""}</caption>
+<thead><tr><th scope="col" rowspan="2">ID</th><th scope="col" rowspan="2">Requirement</th>${cols(matrix.methods,"Method")}${cols(matrix.levels,"Level")}<th scope="col" rowspan="2">Tests</th><th scope="col" rowspan="2">Compliance</th></tr>
+<tr>${head(matrix.methods)}${head(matrix.levels)}</tr></thead>
+<tbody>${matrix.rows.map(row=>`<tr><th scope="row">${escapeHtml(row.id)}</th><td>${escapeHtml(row.requirement)}</td>${marks(row,"methods",matrix.methods)}${marks(row,"levels",matrix.levels)}<td>${row.tests.map(test=>`<span class="vcrm-test">${escapeHtml(verificationMatrixTest(test))}</span>`).join("")}</td><td>${escapeHtml(row.compliance)}</td></tr>`).join("")}</tbody>
+<tfoot><tr><th scope="row" colspan="2">Totals</th>${count(matrix.totals.methods,matrix.methods)}${count(matrix.totals.levels,matrix.levels)}<td></td><td>${escapeHtml(Object.entries(matrix.totals.compliance).map(([name,total])=>`${name} ${total}`).join(" · "))}</td></tr></tfoot>`;
+  }
+  function downloadMatrix(){
+    const delimiter=data.options.csvDelimiter||",";
+    const lines=verificationMatrixCsvRows(buildVerificationMatrix(matrixRecords,index.values,data.meta.idColumn))
+      .map(row=>row.map(field=>csvField(field,delimiter)).join(delimiter));
+    downloadBlob(new Blob(["\ufeff"+lines.join("\r\n")+"\r\n"],{type:"text/csv;charset=utf-8"}),`${data.meta.baseFilename}-vcrm.csv`);
+  }
   function paintStrip(){
-    const box=$("#trace-verification-summary"),items=listViews[view]?.strip?.([...tableBody.rows]
-      .map(row=>index.records.get(row.dataset.rowId)).filter(Boolean));
+    const records=[...tableBody.rows].map(row=>index.records.get(row.dataset.rowId)).filter(Boolean);
+    const box=$("#trace-verification-summary"),items=listViews[view]?.strip?.(records);
+    matrixRecords=records;
+    if(matrixShown())paintMatrix();
     box.hidden=!items;
     box.replaceChildren(...(items??[]).map(([name,count])=>{
       const item=document.createElement("span");
@@ -465,9 +491,15 @@ const trace=(()=>{
       button.setAttribute("aria-pressed",String(button.dataset.traceView===view));
     }
     const inSystems=view==="systems";
-    wrap.hidden=inSystems;
+    const inMatrix=matrixShown();
+    wrap.hidden=inSystems||inMatrix;
     systemsPage.hidden=!inSystems;
-    $("#columns-menu").hidden=inSystems;
+    matrixPage.hidden=!inMatrix;
+    modeBar.hidden=!listViews[view]?.modes;
+    for(const button of modeBar.querySelectorAll("[data-view-mode]")){
+      button.setAttribute("aria-pressed",String(button.dataset.viewMode===viewMode()));
+    }
+    $("#columns-menu").hidden=inSystems||inMatrix;
     $("#filter-menu").hidden=inSystems;
     $("#trace-scope").hidden=!usesScope();
     selectedLinks.hidden=inSystems;
@@ -804,6 +836,8 @@ const trace=(()=>{
     clone.querySelector("#trace-panel").hidden=true;
     clone.querySelector(".table-wrap").hidden=false;
     clone.querySelector("#trace-systems").hidden=true;
+    clone.querySelector("#trace-matrix").hidden=true;
+    clone.querySelector("#trace-matrix-table").replaceChildren();
     clone.querySelector("#open-trace").setAttribute("aria-expanded","false");
     clone.querySelector("#trace-selected-links").setAttribute("aria-expanded","false");
     for(const id of ["trace-tree","trace-record","trace-issues","trace-candidates","trace-status","trace-system",
@@ -848,6 +882,15 @@ const trace=(()=>{
     close();
     switchView("glossary",null,kind);
   });
+  modeBar.addEventListener("click",event=>{
+    const mode=event.target.closest("[data-view-mode]")?.dataset.viewMode;
+    if(!mode||mode===viewMode()||!canNavigate())return;
+    viewModes.set(view,mode);
+    renderWorkspace();
+    paintStrip();
+  });
+  $("#trace-matrix-print").addEventListener("click",()=>window.print());
+  $("#trace-matrix-csv").addEventListener("click",downloadMatrix);
   $("#trace-system-add").addEventListener("click",()=>editRecord("System"));
   $("#trace-subsystem-add").addEventListener("click",()=>editRecord("System",{parent:selectedSystem}));
   $("#trace-system-rename").addEventListener("click",()=>editRecord("System",{record:index.records.get(selectedSystem)}));
@@ -1086,6 +1129,10 @@ TRACE_WORKSPACE = """
     <button type="button" data-glossary-kind="terms" aria-pressed="true">Terms</button>
     <button type="button" data-glossary-kind="values" aria-pressed="false">Values</button>
   </span>
+  <span id="trace-view-mode" role="group" aria-label="Layout" hidden>
+    <button type="button" data-view-mode="grid" aria-pressed="true">Grid</button>
+    <button type="button" data-view-mode="matrix" aria-pressed="false">Matrix</button>
+  </span>
   <button id="trace-term-add" type="button" hidden>Add term…</button>
   <button id="trace-value-add" type="button" hidden>Add value…</button>
   <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
@@ -1103,6 +1150,13 @@ TRACE_WORKSPACE = """
 """
 
 TRACE_SYSTEMS = """
+<section id="trace-matrix" aria-label="Verification cross-reference matrix" hidden>
+  <div class="trace-matrix-actions">
+    <button type="button" id="trace-matrix-print">Print…</button>
+    <button type="button" id="trace-matrix-csv">Download CSV</button>
+  </div>
+  <div class="trace-matrix-scroll"><table id="trace-matrix-table"></table></div>
+</section>
 <section id="trace-systems" aria-label="System hierarchy" hidden>
   <div>
     <h2>System hierarchy</h2>
@@ -1178,8 +1232,8 @@ TRACE_HTML = """
 
 TRACE_CSS = """
 #trace-workspace {display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:5px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
-#trace-views,#trace-scope,#trace-glossary-kind,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
-#trace-views button[aria-pressed="true"],#trace-glossary-kind button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
+#trace-views,#trace-scope,#trace-glossary-kind,#trace-view-mode,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+#trace-views button[aria-pressed="true"],#trace-glossary-kind button[aria-pressed="true"],#trace-view-mode button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
 #trace-system {max-width:min(24ch,60vw)}
 #trace-status {flex-basis:100%;margin:0}
 #trace-status:empty {display:none}
@@ -1236,8 +1290,32 @@ TRACE_CSS = """
 #trace-query {display:block;width:100%}
 #trace-candidates button,#trace-candidates label {display:block;width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
 #trace-record-form label,#trace-delete-form label {display:grid;gap:3px;margin-bottom:10px}
-#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
+#trace-matrix {padding:14px 18px;background:var(--panel)}
+.trace-matrix-actions {display:flex;gap:6px;margin-bottom:10px}
+.trace-matrix-scroll {overflow:auto}
+#trace-matrix-table {table-layout:auto;border-collapse:collapse;min-width:0;width:100%;border:1px solid var(--line)}
+#trace-matrix-table caption {position:static;clip:auto;text-align:left;font-weight:700;padding:0 0 6px}
+#trace-matrix-table th,#trace-matrix-table td {border:1px solid var(--line);padding:4px 8px}
+#trace-matrix-table thead th {position:static;height:auto;text-align:center}
+#trace-matrix-table thead th[rowspan] {text-align:left}
+#trace-matrix-table tbody th,#trace-matrix-table tfoot th {text-align:left;background:var(--panel);color:var(--text);font-weight:600}
+#trace-matrix-table tfoot {font-weight:600;background:var(--bg)}
+#trace-matrix-table .vcrm-mark {text-align:center;font-weight:700}
+#trace-matrix-table .vcrm-extra {font-weight:400;color:var(--muted);font-size:.85em}
+#trace-matrix-table th,#trace-matrix-table td:nth-last-child(-n+2) {overflow-wrap:normal;white-space:nowrap}
+#trace-matrix-table td:nth-child(2) {min-width:16rem}
+#trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
+@page matrix {size:landscape}
+@media print {
+  body:has(#trace-matrix:not([hidden])) .print-details,body:has(#trace-matrix:not([hidden])) .mode-badge,.trace-matrix-actions {display:none}
+  #trace-matrix {page:matrix;padding:0;background:none}
+  #trace-matrix-table {color:#000}
+  #trace-matrix-table th,#trace-matrix-table td {border:1px solid #000;font-size:9pt}
+  #trace-matrix-table thead {display:table-header-group}
+  #trace-matrix-table tfoot {display:table-row-group}
+  #trace-matrix-table tr {break-inside:avoid}
+}
 @media print {#trace-workspace,#trace-panel,.trace-row-marker,.trace-marker,#trace-system-edit,#trace-system-add,.trace-actions {display:none}}
 """

@@ -15,4 +15,4 @@
   - [x] Phase 5: XLSX mapping support for Value, Field and Test sources (Value IDs include the field, e.g. `VAL-PRIORITY-MUST`).
 - [x] Flag a requirement whose Verification Level differs from the levels of the tests in its Verified by.
 - [x] VCRM: requirement Compliance and test Result columns with a cross-check, and a Verification tab showing method marks, tests with results and compliance counts.
-- [ ] Printable/exportable VCRM matrix page with I/A/D/T and per-level columns.
+- [x] Printable/exportable VCRM matrix page with I/A/D/T and per-level columns.
