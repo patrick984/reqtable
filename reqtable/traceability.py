@@ -289,7 +289,7 @@ const trace=(()=>{
       columns:new Set([data.meta.idColumn,"Type","Field","Name","Definition","Multiple","Aliases","Reference"]),
       summary:count=>`${count} value ${count===1?"record":"records"}`},
   };
-  const glossaryPopover=createGlossaryPopover();
+  const glossaryPopover=createGlossaryPopover(id=>navigate(id));
   const labels={
     "Part of":["Parent system","Move to…"],
     "Allocated to":["Applies to","Allocate to…"],
@@ -1143,6 +1143,7 @@ TRACE_WORKSPACE = """
       <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
     </div>
   </nav>
+  <div id="trace-controls">
   <div id="trace-scope">
     <label>System <select id="trace-system"><option>All requirements</option></select></label>
     <label><input type="checkbox" id="trace-descendants" checked> Include subsystems</label>
@@ -1167,6 +1168,7 @@ TRACE_WORKSPACE = """
     <button id="trace-test-plan-add" type="button">Add test plan…</button>
     <button id="trace-test-add" type="button">Add test…</button>
   </span>
+  </div>
   <p id="trace-status" class="meta" role="status"></p>
   <p id="trace-verification-summary" class="meta" hidden></p>
 </section>
@@ -1259,6 +1261,7 @@ TRACE_CSS = """
 #trace-views button[aria-pressed="true"],#trace-glossary-kind button[aria-pressed="true"],#trace-view-mode button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
 #trace-views [role="group"] {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
 #trace-views {gap:5px 12px}
+#trace-controls {display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px 12px;margin-inline-start:auto}
 #trace-views [role="group"]+[role="group"] {padding-inline-start:12px;border-inline-start:1px solid var(--line)}
 #trace-system {max-width:min(24ch,60vw)}
 #trace-status {flex-basis:100%;margin:0}

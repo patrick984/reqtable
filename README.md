@@ -202,7 +202,7 @@ Each term is a `Term` record in the same CSV. Enter its **Name** and **Definitio
 
 The browser underlines registered Title Case phrases and uppercase acronyms in rendered **Requirement**, **Acceptance Criteria**, and **Rationale** text. Matching is case-sensitive, uses whole spellings, and prefers the longest match. For example, a term named `Comma-Separated Values` with alias `CSV` matches either spelling. Code, existing links, URLs, and email addresses are skipped. Matches use continuous rendered text, so a formatting boundary inside a phrase can interrupt a match.
 
-Click an underlined term or focus it and press Enter to read its definition in place. Press Escape to close it and return focus to the term. Links are calculated from the glossary in the open report, so the feature works offline and the prose in the CSV stays plain.
+Click an underlined term or focus it and press Enter to read its definition in place. Press Escape to close it and return focus to the term. In a traceability report, each source the term cites is a link to that record, and **Show in glossary** opens the term's row in the Glossary view. Links are calculated from the glossary in the open report, so the feature works offline and the prose in the CSV stays plain.
 
 ### Allowed values
 

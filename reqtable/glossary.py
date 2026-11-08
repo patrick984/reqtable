@@ -74,7 +74,7 @@ function buildGlossary(records,issue){
 """
 
 GLOSSARY_UI_JS = r"""
-function createGlossaryPopover(){
+function createGlossaryPopover(jump){
   const popup=$("#glossary-definition"),title=$("#glossary-definition-title");
   const content=$("#glossary-definition-content"),sources=$("#glossary-definition-sources");
   let anchor=null;
@@ -95,9 +95,20 @@ function createGlossaryPopover(){
     title.textContent=record.row.Name.trim();
     content.innerHTML=renderCommentMarkdown(record.row.Definition.trim());
     const references=record.outgoing.get("Source refs")??[];
+    const jumpButton=(id,text)=>{
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="glossary-jump";
+      button.textContent=text;
+      button.addEventListener("click",()=>{close();jump(id);});
+      return button;
+    };
     if(references.length){
-      sources.textContent="Sources: "+references.map(({row,id})=>row.Name?.trim()||id).join(", ");
+      sources.append("Sources: ");
+      references.forEach(({row,id},i)=>sources.append(...(i?[", "]:[]),jumpButton(id,row.Name?.trim()||id)));
+      sources.append(document.createElement("br"));
     }
+    sources.append(jumpButton(record.id,"Show in glossary"));
     positionPopover(popup,button);
     title.focus({preventScroll:true});
   }
@@ -170,6 +181,7 @@ GLOSSARY_CSS = """
 .glossary-definition-head h3 {margin:0}
 #glossary-definition-close {padding:0 6px;line-height:1.2}
 #glossary-definition-sources {margin:8px 0 0}
+.glossary-jump {display:inline;width:auto;height:auto;padding:0;border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
 #glossary-definition-sources:empty {display:none}
 @media print {.glossary-link {text-decoration:none}}
 """
