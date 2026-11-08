@@ -826,9 +826,16 @@ const trace=(()=>{
     const {id,field,checked}=linkEdit,record=index.records.get(id);
     const query=$("#trace-query").value.trim().toLocaleLowerCase();
     const matches=text=>text.toLocaleLowerCase().includes(query);
-    const targets=[...index.records.values()].filter(target=>matches(caption(target))
+    const detailOf=target=>String(target.row.Requirement||target.row.Definition||"").replace(/\s+/g," ").trim();
+    const targets=[...index.records.values()].filter(target=>(matches(caption(target))||matches(detailOf(target)))
       &&(checked?.has(target.id)||traceCanLink(record,field,target)));
     const names=new Map(targets.map(target=>[target.id,caption(target)]));
+    const details=new Map(targets.map(target=>[target.id,detailOf(target)]));
+    const body=(id,name)=>{
+      const detail=details.get(id)??"";
+      return `<span class="trace-candidate-name">${escapeHtml(name)}</span>`
+        +(detail?`<span class="trace-candidate-detail" title="${escapeHtml(detail)}">${escapeHtml(detail)}</span>`:"");
+    };
     if(checked){
       for(const id of checked){
         const target=index.records.get(id);
@@ -836,8 +843,8 @@ const trace=(()=>{
       }
     }
     $("#trace-candidates").innerHTML=names.size?[...names].map(([id,name])=>checked
-      ?`<li><label><input type="checkbox" data-trace-target="${escapeHtml(id)}" ${checked.has(id)?"checked":""}> ${escapeHtml(name)}</label></li>`
-      :`<li><button type="button" data-trace-target="${escapeHtml(id)}">${escapeHtml(name)}</button></li>`
+      ?`<li><label><input type="checkbox" data-trace-target="${escapeHtml(id)}" ${checked.has(id)?"checked":""}> ${body(id,name)}</label></li>`
+      :`<li><button type="button" data-trace-target="${escapeHtml(id)}">${body(id,name)}</button></li>`
     ).join(""):"<li>No eligible targets match.</li>";
   }
   function editLink(field,id=selected){
@@ -850,6 +857,7 @@ const trace=(()=>{
     $("#trace-picker-apply").hidden=!checked;
     showCandidates();
     picker.showModal();
+    $("#trace-query").focus();
   }
   function editRecord(type,{record=null,parent=null}={}){
     if(!writable())return;
@@ -1301,7 +1309,7 @@ TRACE_HTML = """
 </aside>
 <dialog id="trace-picker" class="help-dialog" aria-labelledby="trace-picker-title">
   <div class="help-head"><h2 id="trace-picker-title">Choose target</h2><button type="button" id="trace-picker-cancel">Cancel</button></div>
-  <div class="help-body"><label for="trace-query">Search by ID or name</label>
+  <div class="help-body"><label for="trace-query">Search by ID, name or text</label>
     <input type="search" id="trace-query" autofocus><ul id="trace-candidates" aria-label="Eligible targets"></ul>
     <button type="button" id="trace-picker-apply" class="primary" hidden>Apply allocations</button>
   </div>
@@ -1402,7 +1410,9 @@ TRACE_CSS = """
 }
 .quality-marker~.trace-marker {right:22px}
 #trace-query {display:block;width:100%}
-#trace-candidates button,#trace-candidates label {display:block;width:100%;text-align:start;margin-top:4px;overflow-wrap:anywhere}
+#trace-candidates button,#trace-candidates label {display:flex;align-items:baseline;gap:12px;width:100%;text-align:start;margin-top:4px}
+.trace-candidate-name {flex:none;max-width:60%;overflow-wrap:anywhere}
+.trace-candidate-detail {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 #trace-record-form label,#trace-delete-form label {display:grid;gap:3px;margin-bottom:10px}
 #trace-matrix {padding:14px 18px;background:var(--panel)}
 .trace-matrix-actions {display:flex;gap:6px;margin-bottom:10px}
