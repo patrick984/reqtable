@@ -66,6 +66,11 @@ assert.equal(createDecision({role:"r",user:"u",decision:"d"},now).record.note,""
 assert.equal(isoWithOffset(new Date("2026-11-08T10:05:07Z")),"2026-11-08T15:35:07+05:30");
 """, tz="Asia/Kolkata")
 
+    def test_footer_text_repeats_name_and_full_hash(self):
+        self.run_js(r"""
+assert.equal(packageFooterText({baseline:{name:"SRR-2",hash:"sha256:"+"ab".repeat(32)}}),"SRR-2 · sha256:"+"ab".repeat(32));
+""")
+
     def test_remove_decision_matches_role_user_and_date(self):
         self.run_js(r"""
 const a={role:"reviewer",user:"pn",decision:"Reviewed",date:"1",note:""},
@@ -94,6 +99,12 @@ class PackageReportTests(unittest.TestCase):
             data = extract_report_json(str(path))
         self.assertEqual(data["decisions"], [DECISION])
         self.assertEqual(data["package"]["baseline"]["hash"], PACKAGE["baseline"]["hash"])
+
+    def test_package_report_prints_cover_first_with_hash_footer(self):
+        report = self.build(package=PACKAGE)
+        self.assertIn('id="package-footer"', report)
+        self.assertIn("break-after:page", report)
+        self.assertIn("position:fixed", report)
 
     def test_normal_report_has_no_cover(self):
         report = self.build()

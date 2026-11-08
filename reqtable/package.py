@@ -29,6 +29,19 @@ PACKAGE_CSS = r"""
 .decision-form label{display:flex;flex-direction:column;gap:2px;font-size:.88rem;color:var(--muted)}
 .decision-form input,.decision-form select{min-width:9rem}
 .decision-form .decision-note{min-width:16rem;flex:1}
+.package-footer{display:none}
+@page{margin:12mm 12mm 20mm}
+@media print{
+  .package-cover{border:0;padding:0;background:none;break-after:page;page-break-after:always}
+  .decision-form,.decision-remove{display:none!important}
+  .package-footer{display:block;position:fixed;left:0;right:0;bottom:-14mm;height:8mm;padding-top:2mm;border-top:1px solid #000;font:8pt ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#000;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .badge.approved,.badge.not-approved{border-color:#000;background:none;color:#000}
+  .package-warning{border:1px solid #000;background:none}
+  .signoff-table{border-color:#000}
+  .signoff-table th,.signoff-table td{border-color:#000}
+  .signoff-table tr{break-inside:avoid}
+  .package-cover,.package-cover .package-facts dt,.signoff-none,.signoff-excluded{color:#000}
+}
 """
 
 PACKAGE_MODEL_JS = r"""
@@ -53,6 +66,7 @@ function createDecision({role,user,decision,note},now){
 }
 const sameDecision=(a,b)=>a.role===b.role&&a.user===b.user&&a.date===b.date;
 function removeDecision(decisions,record){return decisions.filter(d=>!sameDecision(d,record));}
+function packageFooterText(pkg){return `${pkg.baseline.name} · ${pkg.baseline.hash}`;}
 """
 
 PACKAGE_JS = PACKAGE_MODEL_JS + r"""
@@ -95,6 +109,7 @@ function buildPackageCover(){
 <button type="submit" id="package-decision-submit" class="primary">Record decision</button>
 <span id="package-decision-status" class="meta" role="status"></span></form>`;
   packageCover.hidden=false;
+  $("#package-footer").textContent=packageFooterText(pkg);
   renderPackage();
   $("#package-decision-user").addEventListener("focus",e=>{if(!e.target.value)e.target.value=reviewerInitials();});
   $("#package-decision-form").addEventListener("submit",e=>{
@@ -121,6 +136,7 @@ function buildPackageCover(){
 function packageClearCopy(clone){
   clone.querySelector("#package-cover")?.replaceChildren();
   clone.querySelector("#package-cover")?.setAttribute("hidden","");
+  clone.querySelector("#package-footer")?.replaceChildren();
 }
 buildPackageCover();
 """
