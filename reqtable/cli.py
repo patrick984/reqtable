@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .baselines import run_git
+from .baselines import create_baseline, load_baselines, open_store, run_git, sort_manifests
 from .core import (
     DEFAULT_CONFIG,
     ConfigError,
@@ -56,6 +56,13 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--xlsx-mapping-template", metavar="WORKBOOK.xlsx",
         help="print a JSON configuration that maps every table and sheet of a workbook, and exit",
+    )
+    result.add_argument("--create-baseline", metavar="GATE", help="freeze the input as a baseline for this review gate, and exit")
+    result.add_argument("--system", metavar="ID", help="System ID for --create-baseline on a system-scoped gate")
+    result.add_argument("--list-baselines", action="store_true", help="list the baselines of the input (or --new), and exit")
+    result.add_argument(
+        "--baselines", metavar="NAME[,NAME...]",
+        help="embed these gate baselines in the report so it can compare against them",
     )
     result.add_argument("--print-default-config", action="store_true")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -118,6 +125,29 @@ def input_source(path: str, selection: XlsxSelection, config: dict[str, object])
     return xlsx_source(path, selection, config) if is_xlsx(path) else file_source(path)
 
 
+def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> None:
+    if args.create_baseline and args.list_baselines:
+        raise ConfigError("--create-baseline and --list-baselines cannot be combined")
+    if args.old or args.extract_comments or args.baselines or (args.create_baseline and args.new):
+        raise ConfigError("--create-baseline and --list-baselines cannot be combined with diff options, --baselines or --extract-comments")
+    if args.input and args.new:
+        raise ConfigError("give the input as a positional argument or as --new, not both")
+    path = args.input or (args.new if args.list_baselines else None)
+    if not path:
+        raise ConfigError("--create-baseline and --list-baselines need an input CSV or .xlsx")
+    store = open_store(path, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
+    if args.list_baselines:
+        manifests = sort_manifests(store.list(), config)
+        for manifest in manifests:
+            digest = manifest.content_hash.removeprefix("sha256:")[:12]
+            print("\t".join((manifest.name, manifest.gate, manifest.system or "-", manifest.created, manifest.created_by, digest)))
+        if not manifests:
+            print("No baselines.")
+        return
+    made = create_baseline(store, config, args.create_baseline, args.system)
+    print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
+
+
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     if args.print_default_config:
@@ -129,7 +159,10 @@ def run(argv: list[str] | None = None) -> int:
     if args.xlsx_mapping_template:
         print(json.dumps(mapping_template(args.xlsx_mapping_template), indent=2))
         return 0
-    if not args.output:
+    baseline_command = bool(args.create_baseline or args.list_baselines)
+    if args.system and not args.create_baseline:
+        raise ConfigError("--system applies only to --create-baseline")
+    if not args.output and not baseline_command:
         raise ConfigError("--output is required")
     selection = XlsxSelection(args.table, args.sheet, args.header_row)
     inputs = [path for path in (args.input, args.old, args.new) if path]
@@ -138,6 +171,9 @@ def run(argv: list[str] | None = None) -> int:
     config = load_config(args.config, _overrides(args))
     if selection.given and config["xlsx"]["sources"]:
         raise ConfigError("--table, --sheet and --header-row cannot be combined with xlsx.sources in the configuration")
+    if baseline_command:
+        run_baseline_command(args, selection, config)
+        return 0
     if args.extract_comments:
         if args.input or args.old or args.new:
             raise ConfigError("--extract-comments cannot be combined with CSV inputs")
@@ -174,7 +210,15 @@ def run(argv: list[str] | None = None) -> int:
             assert source.text is not None
             atomic_write_text(args.output, "\ufeff" + source.text)
             return 0
-    data = build_report_data(new, config, Path(args.output).name, old=old)
+    embedded = []
+    if args.baselines:
+        names = [name.strip() for name in args.baselines.split(",") if name.strip()]
+        store = open_store(
+            args.new if diff_mode else args.input, config,
+            lambda found: read_csv_source(input_source(str(found), selection, config), config),
+        )
+        embedded = load_baselines(store, config, names)
+    data = build_report_data(new, config, Path(args.output).name, old=old, baselines=embedded)
     for warning in data["meta"].get("warnings", []):
         print(f"warning: {warning}", file=sys.stderr)
     atomic_write_text(args.output, render_report(data))

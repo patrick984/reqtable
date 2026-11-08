@@ -467,3 +467,42 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
     )
     store.write(manifest, table)
     return manifest
+
+
+def load_baselines(
+    store: BaselineStore, config: dict[str, Any], requested: Iterable[str], warn: Callable[[str], None] = _print_warning
+) -> list[dict[str, Any]]:
+    manifests = store.list()
+    gates = {gate["id"]: Gate.from_config(gate) for gate in config["gates"]}
+    id_column = config["id_column"]
+    chosen: dict[str, Manifest] = {}
+    for name in requested:
+        found = resolve(name, manifests)
+        chosen.setdefault(found.name, found)
+    entries = []
+    for found in chosen.values():
+        table = store.read(found)
+        rows = select_scope(table.rows, id_column, found.system, found.includes)
+        digest = content_hash(table.headers, rows, found.system, found.includes, found.captures_status, found.status_columns)
+        hash_ok = digest == found.content_hash
+        if not hash_ok:
+            warn(f"baseline {found.name} does not match its recorded hash")
+        gate = gates.get(found.gate)
+        entries.append({
+            "name": found.name,
+            "gate": found.gate,
+            "gateName": gate.name if gate else found.gate,
+            "produces": gate.produces if gate else "",
+            "system": found.system,
+            "created": found.created,
+            "createdBy": found.created_by,
+            "hash": found.content_hash,
+            "hashOk": hash_ok,
+            "includes": found.includes,
+            "capturesStatus": found.captures_status,
+            "statusColumns": found.status_columns,
+            "source": found.source,
+            "headers": table.headers,
+            "rows": rows,
+        })
+    return entries

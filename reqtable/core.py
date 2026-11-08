@@ -11,7 +11,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from .markdown import render_markdown
 from .traceability import TRACE_COLUMNS
@@ -609,6 +609,7 @@ def build_report_data(
     config: dict[str, Any],
     output_name: str,
     old: CsvTable | None = None,
+    baselines: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     comments = []
     traceability = config["traceability"]
@@ -735,6 +736,7 @@ def build_report_data(
             "old": {"headers": old.headers, "rows": old.rows} if old else None,
         },
         "comments": comments,
+        "baselines": list(baselines),
     }
 
 
