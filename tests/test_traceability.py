@@ -51,9 +51,11 @@ class TraceCsvTests(TempFiles):
         self.assertIn('data-trace-view="glossary"', report)
         self.assertIn('id="glossary-definition"', report)
         self.assertIn('data-trace-view="tests"', report)
-        self.assertLess(report.index('data-trace-view="glossary"'), report.index('data-trace-view="tests"'))
-        self.assertLess(report.index('data-trace-view="tests"'), report.index('data-trace-view="verification"'))
-        self.assertLess(report.index('data-trace-view="verification"'), report.index('data-trace-view="all"'))
+        order = ["sources", "requirements", "systems", "tests", "verification", "glossary", "all"]
+        positions = [report.index(f'data-trace-view="{view}"') for view in order]
+        self.assertEqual(positions, sorted(positions))
+        for label in ("Define", "Verify", "Reference"):
+            self.assertIn(f'role="group" aria-label="{label}"', report)
         for name in ("Verified by", "Test plan"):
             self.assertIn(name, pilot["source"]["new"]["headers"])
 

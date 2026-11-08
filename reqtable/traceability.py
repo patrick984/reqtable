@@ -1129,13 +1129,19 @@ TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace
 TRACE_WORKSPACE = """
 <section id="trace-workspace" aria-label="Traceability workspace">
   <nav id="trace-views" aria-label="Record views">
-    <button type="button" data-trace-view="requirements" aria-pressed="true">Requirements</button>
-    <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
-    <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
-    <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
-    <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
-    <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
-    <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
+    <div role="group" aria-label="Define">
+      <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
+      <button type="button" data-trace-view="requirements" aria-pressed="true">Requirements</button>
+      <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
+    </div>
+    <div role="group" aria-label="Verify">
+      <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
+      <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
+    </div>
+    <div role="group" aria-label="Reference">
+      <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
+      <button type="button" data-trace-view="all" aria-pressed="false">All fields</button>
+    </div>
   </nav>
   <div id="trace-scope">
     <label>System <select id="trace-system"><option>All requirements</option></select></label>
@@ -1251,6 +1257,9 @@ TRACE_CSS = """
 #trace-workspace {display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;padding:5px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex:none}
 #trace-views,#trace-scope,#trace-glossary-kind,#trace-view-mode,.trace-actions {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
 #trace-views button[aria-pressed="true"],#trace-glossary-kind button[aria-pressed="true"],#trace-view-mode button[aria-pressed="true"],#trace-tree button[aria-pressed="true"] {background:var(--selected);border-color:var(--accent)}
+#trace-views [role="group"] {display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+#trace-views {gap:5px 12px}
+#trace-views [role="group"]+[role="group"] {padding-inline-start:12px;border-inline-start:1px solid var(--line)}
 #trace-system {max-width:min(24ch,60vw)}
 #trace-status {flex-basis:100%;margin:0}
 #trace-status:empty {display:none}

@@ -13,7 +13,7 @@ In a traceability report, the **Verification** tab lists requirements with ID, R
 
 ## How to get to it (user POV)
 
-- Click **Verification** in the view bar (after Tests).
+- Click **Verification** in the view bar (second in the Verify group, after Tests).
 - Pick a system in the **System** selector while on the tab.
 - Edit a Compliance or Verification Method cell with `Return`, `F2` or a double-click.
 - Click **Matrix** next to the System selector, then **Print…** or **Download CSV**.
