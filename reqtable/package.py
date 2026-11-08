@@ -19,6 +19,7 @@ PACKAGE_CSS = r"""
 .badge.not-approved{background:var(--remove)}
 .signoff-table{width:100%;min-width:0;table-layout:auto;border:1px solid var(--line);border-bottom:0}
 .signoff-table th,.signoff-table td{font-size:.92rem;border-left:0}
+.signoff-table th:nth-child(-n+2),.signoff-table td:nth-child(-n+2){white-space:nowrap;overflow-wrap:normal;width:1%}
 .signoff-table thead th{position:static;height:auto}
 .signoff-table ul{margin:0;padding:0;list-style:none}
 .signoff-table li+li{margin-top:4px}
@@ -30,11 +31,13 @@ PACKAGE_CSS = r"""
 .decision-form input,.decision-form select{min-width:9rem}
 .decision-form .decision-note{min-width:16rem;flex:1}
 .package-footer{display:none}
-@page{margin:12mm 12mm 20mm}
 @media print{
   .package-cover{border:0;padding:0;background:none;break-after:page;page-break-after:always}
   .decision-form,.decision-remove{display:none!important}
-  .package-footer{display:block;position:fixed;left:0;right:0;bottom:-14mm;height:8mm;padding-top:2mm;border-top:1px solid #000;font:8pt ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#000;background:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  body:has(#package-cover:not([hidden])),body:has(#package-cover:not([hidden])) .page{background:#fff}
+  body:has(#package-cover:not([hidden])) #filter-row,body:has(#package-cover:not([hidden])) .comment-button:not(.has-comments){display:none}
+  body:has(#package-cover:not([hidden])) .selected-cell{background:none!important;box-shadow:none}
+  body:has(#package-cover:not([hidden])) .status-cell .badge.unchanged{visibility:hidden}
   .badge.approved,.badge.not-approved{border-color:#000;background:none;color:#000}
   .package-warning{border:1px solid #000;background:none}
   .signoff-table{border-color:#000}
@@ -110,6 +113,8 @@ function buildPackageCover(){
 <span id="package-decision-status" class="meta" role="status"></span></form>`;
   packageCover.hidden=false;
   $("#package-footer").textContent=packageFooterText(pkg);
+  const pageFooter=document.getElementById("package-page-footer")??document.head.appendChild(Object.assign(document.createElement("style"),{id:"package-page-footer"}));
+  pageFooter.textContent=`@media print{@page{size:landscape;margin:12mm 12mm 20mm;@bottom-center{content:${JSON.stringify(packageFooterText(pkg))};font:8pt ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#000}}}`;
   renderPackage();
   $("#package-decision-user").addEventListener("focus",e=>{if(!e.target.value)e.target.value=reviewerInitials();});
   $("#package-decision-form").addEventListener("submit",e=>{
@@ -137,6 +142,7 @@ function packageClearCopy(clone){
   clone.querySelector("#package-cover")?.replaceChildren();
   clone.querySelector("#package-cover")?.setAttribute("hidden","");
   clone.querySelector("#package-footer")?.replaceChildren();
+  clone.querySelector("#package-page-footer")?.remove();
 }
 buildPackageCover();
 """
