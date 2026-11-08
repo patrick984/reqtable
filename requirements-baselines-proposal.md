@@ -135,7 +135,6 @@ Each check names the records it applies to and one condition. The vocabulary reu
 | `in` | Every value in the column is in a list, such as Compliance in `["Compliant", "Waived"]`. |
 | `linked` | The named link column has at least one target. `leaf: true` requires the target to have no subsystems. |
 | `no_findings` | No trace findings, or none of a listed kind. |
-| `signoffs_complete` | The gate's sign-off roles have their minimum decisions (phase 3). |
 | `unchanged_since` | No record in the named baseline changed since it without an approved change request. Status columns count only when that baseline captured status (phase 4). |
 
 A check that uses an unknown key is a configuration error at generation time, not a silent pass.
@@ -207,9 +206,15 @@ Sign-offs live outside the baselined table, in the tag or the manifest. If they 
 - **Optional.** If Chrome or Edge is installed, `--package-pdf` could drive its headless print-to-PDF. This adds no Python dependency, but it is an external program the project must have.
 - **Not proposed.** A built-in PDF writer. It is a large, fragile piece of work for little gain over browser printing.
 
-### Sign-off roles and readiness
+### Sign-off roles and approval status
 
-The gate's `signoff` list sets the required roles and counts. The `signoffs_complete` check reads decisions from the tag messages or the manifest, so the Gates view shows sign-off progress next to the content checks.
+The gate's `signoff` list sets the required roles and counts, for example two Reviewers and one Approver. Sign-offs are bound to a baseline's content hash, so they can only be recorded after the baseline exists. They are therefore not a readiness check. Instead, each baseline has an **approval status**:
+
+- For each role, each person's latest decision counts. `Reviewed` and `Approved` are positive; `Changes requested` and `Rejected` are not.
+- A role is complete when at least `min` people's latest decisions are positive. The baseline is approved when every role is complete.
+- In the Git store, only sign-offs whose signature verifies as good and whose content hash matches count. In the file store, recorded entries count.
+
+The package cover and `--verify-baseline` show the status. `--verify-baseline` exits 0 only when the hash matches and the baseline is approved.
 
 ## Change control (later phase)
 
@@ -238,6 +243,8 @@ Recorded on 2026-11-08 from the first review of this proposal.
 4. **Scope** can be the whole table or one system's subtree, so that subsystem gates such as DDR can be baselined per system.
 5. **Record types** are chosen per gate. Design baselines default to requirements and systems. Tests and test plans are baselined at TRR, where they are approved.
 6. **Status columns** such as Compliance and Result are left out of baselines until gates that approve results. SVR, FCA and PCA capture them.
+7. **Recording decisions.** Reviewers record decisions in the gate package report, and `--import-decisions` turns a saved copy's decisions into sign-offs. In the Git store, reqtable creates the signed sign-off tags itself with the user's configured key. In the file store, the configuration manager records sign-offs with `--sign-off`.
+8. **Approval status replaces `signoffs_complete`.** Sign-offs follow a baseline, so they cannot gate its creation. Each baseline has an approval status instead (see Sign-off roles and approval status).
 
 ## Open questions
 

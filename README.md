@@ -404,6 +404,32 @@ python -m reqtable requirements.csv -c config.json --check-gate DDR --system SYS
 
 The CLI evaluates trace findings with a Python port of the report's rules, so it needs only the standard library. Parity tests run both implementations on the same tables and require identical findings.
 
+### Gate packages and sign-off
+
+A gate package is the report reviewers receive for a baseline:
+
+```sh
+python -m reqtable requirements.csv -c config.json --gate-package PDR -o pdr-package.html
+```
+
+It opens in Review mode on the baseline's frozen rows, compared with the previous gate's baseline so changes since that gate are marked. A cover at the top names the gate, baseline, scope, creator and full content hash, and lists the sign-offs for each role in the gate's `signoff` list with an Approved or Not approved badge. Printing gives a landscape PDF that starts with the cover and repeats the baseline name and hash at the foot of every page, ready to sign in Acrobat or another PDF tool.
+
+Reviewers record a decision (Reviewed, Changes requested, Approved or Rejected) in the cover's **Record decision** form and keep it with **Save report copy**, like a comment. The configuration manager then imports the saved copies:
+
+```sh
+python -m reqtable requirements.csv -c config.json --import-decisions pdr-package-reviewed-AL.html
+```
+
+Decisions can also be recorded directly:
+
+```sh
+python -m reqtable requirements.csv -c config.json --sign-off PDR --role Approver --decision Approved --note "PDR board" --evidence package.pdf
+```
+
+In the Git store each decision becomes a signed annotated tag such as `signoff/PDR/approver/casey-manager`, created with `git tag -s` and the user's configured GPG or SSH key, pointing at the baseline commit and carrying the role, decision and content hash. Signing must be configured; reqtable never creates unsigned sign-offs and never pushes. In the file store each decision is appended to the baseline's `manifest.json`, and `--evidence` usually names the signed PDF in the baseline folder.
+
+`--verify-baseline PDR` recomputes the content hash, checks every sign-off (Git signatures with `git verify-tag`), and prints each role's progress. A baseline is approved when every role has at least its minimum number of people whose latest decision is Reviewed or Approved. The command exits 0 only when the hash matches and the baseline is approved. Reports that embed baselines with `--baselines` also carry their sign-offs and approval status.
+
 ## Build and test
 
 ```sh
