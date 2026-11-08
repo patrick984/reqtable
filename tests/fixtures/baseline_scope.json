@@ -1,0 +1,201 @@
+{
+ "description": "Shared baseline scope cases. Python (hash content) and the report's JavaScript (comparison) must both select exactly 'expected', in table order. Type blank means Requirement. Link cells are semicolon-separated IDs.",
+ "id_column": "ID",
+ "rows": [
+  {
+   "ID": "SYS-A",
+   "Type": "System",
+   "Name": "Product",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "SYS-B",
+   "Type": "System",
+   "Name": "Subsystem B",
+   "Part of": "SYS-A",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "SYS-C",
+   "Type": "System",
+   "Name": "Component C",
+   "Part of": "SYS-B",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "SYS-D",
+   "Type": "System",
+   "Name": "Subsystem D",
+   "Part of": "SYS-A",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "R1",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-C",
+   "Verified by": "T1",
+   "Test plan": ""
+  },
+  {
+   "ID": "R2",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-D",
+   "Verified by": "T2",
+   "Test plan": ""
+  },
+  {
+   "ID": "R3",
+   "Type": "Requirement",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "SYS-B; SYS-D",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "R4",
+   "Type": "",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "T1",
+   "Type": "Test",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "P1"
+  },
+  {
+   "ID": "T2",
+   "Type": "Test",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": "P2"
+  },
+  {
+   "ID": "P1",
+   "Type": "Test plan",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "P2",
+   "Type": "Test plan",
+   "Name": "",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  },
+  {
+   "ID": "TERM1",
+   "Type": "Term",
+   "Name": "Term one",
+   "Part of": "",
+   "Allocated to": "",
+   "Verified by": "",
+   "Test plan": ""
+  }
+ ],
+ "cases": [
+  {
+   "system": null,
+   "includes": [
+    "Requirement",
+    "System"
+   ],
+   "expected": [
+    "SYS-A",
+    "SYS-B",
+    "SYS-C",
+    "SYS-D",
+    "R1",
+    "R2",
+    "R3",
+    "R4"
+   ]
+  },
+  {
+   "system": null,
+   "includes": [
+    "Requirement",
+    "System",
+    "Term"
+   ],
+   "expected": [
+    "SYS-A",
+    "SYS-B",
+    "SYS-C",
+    "SYS-D",
+    "R1",
+    "R2",
+    "R3",
+    "R4",
+    "TERM1"
+   ]
+  },
+  {
+   "system": "SYS-B",
+   "includes": [
+    "Requirement",
+    "System"
+   ],
+   "expected": [
+    "SYS-B",
+    "SYS-C",
+    "R1",
+    "R3"
+   ]
+  },
+  {
+   "system": "SYS-B",
+   "includes": [
+    "Requirement",
+    "System",
+    "Test",
+    "Test plan"
+   ],
+   "expected": [
+    "SYS-B",
+    "SYS-C",
+    "R1",
+    "R3",
+    "T1",
+    "P1"
+   ]
+  },
+  {
+   "system": "SYS-D",
+   "includes": [
+    "Requirement"
+   ],
+   "expected": [
+    "R2",
+    "R3"
+   ]
+  }
+ ]
+}
