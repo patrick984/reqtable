@@ -134,4 +134,11 @@ def match_role(roles: Sequence[dict[str, Any]], requested: str, gate: str) -> st
         if entry["role"].casefold() == requested.strip().casefold():
             return entry["role"]
     known = ", ".join(entry["role"] for entry in roles) or "none"
-    raise InputError(f"gate {gate} has no sign-off role {requested!r}; its roles: {known}")
+    raise ConfigError(f"gate {gate} has no sign-off role {requested!r}; its roles: {known}")
+
+
+def match_decision(requested: str) -> str:
+    for decision in DECISIONS:
+        if decision.casefold() == requested.strip().casefold():
+            return decision
+    raise ConfigError(f"unknown decision {requested!r}; use one of: {', '.join(DECISIONS)}")

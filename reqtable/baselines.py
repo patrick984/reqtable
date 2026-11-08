@@ -615,6 +615,15 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
     return manifest
 
 
+def recompute_hash(store: BaselineStore, id_column: str, manifest: Manifest) -> tuple[CsvTable, list[dict[str, str]], str]:
+    table = store.read(manifest)
+    rows = select_scope(table.rows, id_column, manifest.system, manifest.includes)
+    digest = content_hash(
+        table.headers, rows, manifest.system, manifest.includes, manifest.captures_status, manifest.status_columns
+    )
+    return table, rows, digest
+
+
 def load_baselines(
     store: BaselineStore, config: dict[str, Any], requested: Iterable[str], warn: Callable[[str], None] = _print_warning
 ) -> list[dict[str, Any]]:
@@ -627,9 +636,7 @@ def load_baselines(
         chosen.setdefault(found.name, found)
     entries = []
     for found in chosen.values():
-        table = store.read(found)
-        rows = select_scope(table.rows, id_column, found.system, found.includes)
-        digest = content_hash(table.headers, rows, found.system, found.includes, found.captures_status, found.status_columns)
+        table, rows, digest = recompute_hash(store, id_column, found)
         hash_ok = digest == found.content_hash
         if not hash_ok:
             warn(f"baseline {found.name} does not match its recorded hash")

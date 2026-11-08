@@ -26,6 +26,7 @@ from .core import (
 )
 from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
+from .review import sign_off, verify_baseline
 from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
 
@@ -72,6 +73,19 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--check-gate", metavar="GATE",
         help="evaluate this review gate's readiness checks on the input; exit 0 when ready, 1 when not",
+    )
+    result.add_argument(
+        "--sign-off", metavar="BASELINE",
+        help="record a decision on this gate baseline (needs --role and --decision), and exit",
+    )
+    result.add_argument("--role", help="sign-off role for --sign-off, one of the gate's roles")
+    result.add_argument("--decision", help="sign-off decision for --sign-off: Reviewed, Changes requested, Approved or Rejected")
+    result.add_argument("--user", help="who made the decision for --sign-off; default is git user.name or the login name")
+    result.add_argument("--note", default="", help="free-text note for --sign-off")
+    result.add_argument("--evidence", metavar="PATH", help="file that backs the decision for --sign-off, such as a signed PDF")
+    result.add_argument(
+        "--verify-baseline", metavar="BASELINE",
+        help="recheck a baseline's content hash and sign-offs; exit 0 when intact and approved, 1 otherwise",
     )
     result.add_argument("--print-default-config", action="store_true")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -157,6 +171,25 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
     print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
 
 
+REVIEW_FLAGS = ("sign_off", "verify_baseline")
+
+
+def run_review_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
+    if args.input and args.new:
+        raise ConfigError("give the input as a positional argument or as --new, not both")
+    if not args.input:
+        raise ConfigError("--sign-off and --verify-baseline need an input CSV or .xlsx")
+    store = open_store(args.input, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
+    if args.sign_off:
+        if not args.role or not args.decision:
+            raise ConfigError("--sign-off needs --role and --decision")
+        print(sign_off(store, config, args.sign_off, args.role, args.decision, args.user, args.note, args.evidence))
+        return 0
+    lines, approved = verify_baseline(store, config, args.verify_baseline)
+    print("\n".join(lines))
+    return 0 if approved else 1
+
+
 def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
     if args.create_baseline or args.list_baselines or args.baselines or args.old or args.new or args.extract_comments:
         raise ConfigError(
@@ -189,9 +222,19 @@ def run(argv: list[str] | None = None) -> int:
         print(json.dumps(mapping_template(args.xlsx_mapping_template), indent=2))
         return 0
     baseline_command = bool(args.create_baseline or args.list_baselines)
+    review_command = [flag for flag in REVIEW_FLAGS if getattr(args, flag)]
+    if review_command:
+        names = ", ".join("--" + flag.replace("_", "-") for flag in REVIEW_FLAGS)
+        if len(review_command) > 1 or baseline_command or args.check_gate or args.old or args.new or args.extract_comments or args.baselines:
+            raise ConfigError(
+                f"{names} cannot be combined with each other, --create-baseline, --list-baselines, --check-gate, "
+                "--baselines, --old, --new or --extract-comments"
+            )
+    if (args.role or args.decision or args.user or args.note or args.evidence) and not args.sign_off:
+        raise ConfigError("--role, --decision, --user, --note and --evidence apply only to --sign-off")
     if args.system and not (args.create_baseline or args.check_gate):
         raise ConfigError("--system applies only to --create-baseline and --check-gate")
-    if not args.output and not baseline_command and not args.check_gate:
+    if not args.output and not baseline_command and not args.check_gate and not review_command:
         raise ConfigError("--output is required")
     selection = XlsxSelection(args.table, args.sheet, args.header_row)
     inputs = [path for path in (args.input, args.old, args.new) if path]
@@ -200,6 +243,8 @@ def run(argv: list[str] | None = None) -> int:
     config = load_config(args.config, _overrides(args))
     if selection.given and config["xlsx"]["sources"]:
         raise ConfigError("--table, --sheet and --header-row cannot be combined with xlsx.sources in the configuration")
+    if review_command:
+        return run_review_command(args, selection, config)
     if args.check_gate:
         return run_check_gate(args, selection, config)
     if baseline_command:
