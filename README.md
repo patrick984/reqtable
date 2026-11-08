@@ -198,7 +198,7 @@ Enable the pilot with `--traceability` or `"traceability": true` in the JSON con
 
 Open **Glossary** in either mode to browse the shared terms for the whole project. Use the **Name** or **Definition** column filter to search. In Develop mode, choose **Add term…**, then edit any of its fields in the grid. To attach a citation, select the term and choose **Links → Link source…**.
 
-Each term is a `Term` record in the same CSV. Enter its **Name** and **Definition** and ReqTable assigns a unique ID when you add it. The Glossary hides IDs by default. Use **Columns** to show them. Separate optional **Aliases** with semicolons, for example `CSV; Delimited Text`. Set **Auto Link** to `Yes` to also link single-word Title Case spellings for that term. The **Trace findings** panel reports incomplete records, duplicate names, and spellings shared by different terms.
+Each term is a `Term` record in the same CSV. Enter its **Name** and **Definition** and ReqTable assigns a unique ID when you add it. The Glossary hides IDs by default. Use **Columns** to show them. Separate optional **Aliases** with semicolons, for example `CSV; Delimited Text`. Set **Auto Link** to `Yes` to also link single-word Title Case spellings for that term. The cell shows a checkbox. In Develop mode, click it or press Space on the cell to toggle it. The **Trace findings** panel reports incomplete records, duplicate names, and spellings shared by different terms.
 
 The browser underlines registered Title Case phrases and uppercase acronyms in rendered **Requirement**, **Acceptance Criteria**, and **Rationale** text. Matching is case-sensitive, uses whole spellings, and prefers the longest match. For example, a term named `Comma-Separated Values` with alias `CSV` matches either spelling. Code, existing links, URLs, and email addresses are skipped. Matches use continuous rendered text, so a formatting boundary inside a phrase can interrupt a match.
 
@@ -208,7 +208,7 @@ Click an underlined term or focus it and press Enter to read its definition in p
 
 A column such as **Priority** or **Verification Method** can be limited to values defined in the same table, the way glossary terms are. Add a `Value` record for each allowed value and, optionally, a `Field` record that describes the column. This needs `--traceability` and is advisory. ReqTable still accepts any cell, and **Trace findings** reports each one that is not defined.
 
-A `Value` record uses **Field** for the column it belongs to, **Name** for the allowed value, and **Definition** to explain it. Optional **Aliases** (semicolon-separated) list replaced spellings, and **Reference** can link to an external explanation. A `Field` record uses **Name** for the column, **Definition** to describe it, and **Multiple** (`Yes` or blank) to allow several semicolon-separated values in one cell.
+A `Value` record uses **Field** for the column it belongs to, **Name** for the allowed value, and **Definition** to explain it. Optional **Aliases** (semicolon-separated) list replaced spellings, and **Reference** can link to an external explanation. A `Field` record uses **Name** for the column, **Definition** to describe it, and **Multiple** (`Yes` or blank) to allow several semicolon-separated values in one cell. **Multiple** is a checkbox cell like **Auto Link**. It is read-only in Review mode.
 
 ```csv
 ID,Type,Name,Field,Multiple,Aliases,Definition,Priority,Verification Method
@@ -272,7 +272,7 @@ Enter reviewer initials in the report, then select or hover a non-ID cell to rev
 
 The report distinguishes unsaved requirements, comments, or both. `Save report copy` downloads a new self-contained file. Browsers cannot reliably overwrite the currently open local file. Timestamps are stored as ISO 8601 values with an explicit UTC offset and displayed as `YYYY-MM-DD HH:MM:SS` in the browser's local timezone. Reviewer initials are also retained in browser storage when local-file storage is available, with the saved report's embedded value as the portable fallback.
 
-The toolbar reports visible and total columns, and its **Comments only** control restricts the table to rows with comments. Focusing a filter for a column with two to fifty distinct non-empty values opens a scrollable exact-value checkbox list; this includes typical Category columns. Typing still performs keyword filtering. Clearing an exact-value selection with `×` restores the normal `Filter…` placeholder.
+The toolbar reports visible and total columns, and its **Comments only** control restricts the table to rows with comments. Focusing a filter for a column with two to fifty distinct non-empty values opens a scrollable exact-value checkbox list; this includes typical Category columns. When some cells are blank, an italic **(Empty)** option leads the list and matches blank or whitespace-only cells. It combines with the checked values and reads **Empty** in the active-filters menu. Typing still performs keyword filtering. Clearing an exact-value selection with `×` restores the normal `Filter…` placeholder.
 
 ## Keyboard use
 

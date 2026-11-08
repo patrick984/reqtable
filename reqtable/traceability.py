@@ -1077,7 +1077,7 @@ const trace=(()=>{
     for(const change of changes)change.row[field]=change.value;
   }
 
-  return {refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+  return {recordType:id=>index.records.get(id)?.type,refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
       :listViews[view]?.order?.().indexOf(name)??0,

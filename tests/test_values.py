@@ -153,6 +153,35 @@ assert.equal(rules.get("Priority").multiple,true);
         self.assertEqual(sorted(result["columns"]), ["Compliance", "Execution", "Priority", "Result", "Verification Level", "Verification Method"])
 
 
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class BooleanColumnTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
+                       + VALUE_EDIT_JS + assertions, text=True, check=True)
+
+    def test_toggle_writes_yes_or_empty(self):
+        self.run_js("""
+assert.equal(booleanToggle("Yes"),"");
+assert.equal(booleanToggle("yes"),"");
+assert.equal(booleanToggle(" YES "),"");
+assert.equal(booleanToggle(""),"Yes");
+assert.equal(booleanToggle("No"),"Yes");
+assert.equal(booleanToggle(undefined),"Yes");
+assert.equal(booleanOn("yEs"),true);
+assert.equal(booleanOn("No"),false);
+""")
+
+    def test_columns_apply_only_to_their_record_type(self):
+        self.run_js("""
+assert.equal(booleanApplies("Auto Link","Term"),true);
+assert.equal(booleanApplies("Multiple","Field"),true);
+assert.equal(booleanApplies("Multiple","Term"),false);
+assert.equal(booleanApplies("Auto Link","Requirement"),false);
+assert.equal(booleanApplies("Name","Term"),false);
+assert.equal(booleanApplies("Auto Link",undefined),false);
+""")
+
+
 if __name__ == "__main__":
     unittest.main()
 

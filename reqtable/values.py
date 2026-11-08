@@ -115,6 +115,10 @@ function buildValueRules(records,headers,idColumn,issue){
 """
 
 VALUE_EDIT_JS = r"""
+const BOOLEAN_COLUMNS=new Map([["Auto Link","Term"],["Multiple","Field"]]);
+function booleanApplies(column,type){return BOOLEAN_COLUMNS.get(column)===type;}
+function booleanOn(value){return String(value??"").trim().toLowerCase()==="yes";}
+function booleanToggle(value){return booleanOn(value)?"":"Yes";}
 function observedSuggestions(rows,column){
   const values=new Set();
   for(const row of rows){
