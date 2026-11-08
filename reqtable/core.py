@@ -33,6 +33,31 @@ class OutputError(ReqtableError):
     pass
 
 
+RECORD_TYPES = ("System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan")
+
+
+def _preset_gate(id: str, name: str, produces: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "id": id, "name": name, "produces": produces, "scope": "table",
+        "includes": ["Requirement", "System"], "captures_status": False, **extra,
+    }
+
+
+PRESET_GATES = [
+    _preset_gate("SRR", "System Requirements Review", "Functional baseline"),
+    _preset_gate("SFR", "System Functional Review", "Functional baseline"),
+    _preset_gate("PDR", "Preliminary Design Review", "Allocated baseline"),
+    _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", scope="system"),
+    _preset_gate("CDR", "Critical Design Review", "Product baseline"),
+    _preset_gate(
+        "TRR", "Test Readiness Review", "Test baseline",
+        includes=["Requirement", "System", "Test", "Test plan"],
+    ),
+    _preset_gate("SVR", "System Verification Review", "Verified baseline", captures_status=True),
+    _preset_gate("FCA", "Functional Configuration Audit", "Functional audit baseline", captures_status=True),
+    _preset_gate("PCA", "Physical Configuration Audit", "As-built product baseline", captures_status=True),
+]
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "id_column": None,
     "title": "Requirements",
@@ -55,6 +80,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "quality": {"requirement_column": None, "required_columns": [], "obligation": "shall"},
     "xlsx": {"sources": []},
+    "baselines": {
+        "store": "git",
+        "git": {"tag_prefix": "baseline/"},
+        "files": {"directory": "baselines"},
+        "enforcement": "advisory",
+        "status_columns": ["Compliance", "Result"],
+    },
+    "gates": PRESET_GATES,
 }
 
 
@@ -180,6 +213,62 @@ def validate_config(config: dict[str, Any]) -> None:
     if initials is not None and not valid_initials(initials):
         raise ConfigError("comments.reviewer_initials must contain 1-16 non-control characters")
     validate_xlsx_sources(config["xlsx"]["sources"])
+    validate_baselines(config["baselines"])
+    validate_gates(config["gates"])
+
+
+def validate_baselines(baselines: dict[str, Any]) -> None:
+    if baselines["store"] not in {"git", "files"}:
+        raise ConfigError("baselines.store must be 'git' or 'files'")
+    prefix = baselines["git"]["tag_prefix"]
+    if not isinstance(prefix, str) or not prefix.endswith("/") or prefix == "/":
+        raise ConfigError("baselines.git.tag_prefix must be a non-empty string that ends with '/'")
+    directory = baselines["files"]["directory"]
+    if not isinstance(directory, str) or not directory.strip():
+        raise ConfigError("baselines.files.directory must be a non-empty string")
+    if baselines["enforcement"] != "advisory":
+        raise ConfigError("baselines.enforcement must be 'advisory'")
+    columns = baselines["status_columns"]
+    if not isinstance(columns, list) or not all(isinstance(x, str) for x in columns):
+        raise ConfigError("baselines.status_columns must be an array of strings")
+
+
+_GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff"}
+
+
+def validate_gates(gates: Any) -> None:
+    if not isinstance(gates, list) or not all(isinstance(g, dict) for g in gates):
+        raise ConfigError("gates must be an array of objects")
+    seen: set[str] = set()
+    for index, gate in enumerate(gates):
+        where = f"gates[{index}]"
+        unknown = sorted(set(gate) - _GATE_KEYS)
+        if unknown:
+            raise ConfigError(f"unknown configuration key: {where}.{unknown[0]}")
+        gate_id = gate.get("id")
+        if not isinstance(gate_id, str) or not gate_id.strip():
+            raise ConfigError(f"{where}.id must be a non-empty string")
+        where = f"gates[{index}] ({gate_id})"
+        if "/" in gate_id:
+            raise ConfigError(f"{where}: gate ID cannot contain '/'")
+        if re.search(r"-\d+$", gate_id):
+            raise ConfigError(f"{where}: gate ID cannot end in '-' and a number; numbers are reserved for re-baselines")
+        if gate_id in seen:
+            raise ConfigError(f"{where}: duplicate gate ID")
+        seen.add(gate_id)
+        for key in ("name", "produces"):
+            if key in gate and not isinstance(gate[key], str):
+                raise ConfigError(f"{where}.{key} must be a string")
+        if gate.get("scope", "table") not in {"table", "system"}:
+            raise ConfigError(f"{where}.scope must be 'table' or 'system'")
+        includes = gate.get("includes", ["Requirement", "System"])
+        if not isinstance(includes, list) or not includes or not all(x in RECORD_TYPES for x in includes):
+            raise ConfigError(f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}")
+        if not isinstance(gate.get("captures_status", False), bool):
+            raise ConfigError(f"{where}.captures_status must be true or false")
+        for key in ("checks", "signoff"):
+            if key in gate and not isinstance(gate[key], list):
+                raise ConfigError(f"{where}.{key} must be an array")
 
 
 _XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists"}
