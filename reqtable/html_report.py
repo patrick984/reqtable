@@ -8,6 +8,7 @@ from .quality import QUALITY_JS
 from .glossary import GLOSSARY_CSS, GLOSSARY_HTML
 from .drafts import DRAFTS_CSS, DRAFTS_HTML, DRAFTS_JS
 from .comparison import COMPARISON_JS
+from .gate_checks import GATE_CHECKS_JS
 from .values import VALUE_EDIT_JS
 from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
 
@@ -263,7 +264,7 @@ function setRovingFocus(){const cells=[...document.querySelectorAll("[data-grid-
   $("#revert-selected-cell").disabled=!!state.editingCell||!canRevertCell(column,row?.cells[column]);
   const current=row?.id&&row.status!=="removed";
   $("#delete-record-label").textContent=`Delete ${recordKind(current?row.cells.Type?.new:null)}`;
-  $("#delete-requirement").disabled=!current||!!state.editingCell||!!trace?.systemsView();
+  $("#delete-requirement").disabled=!current||!!state.editingCell||!!trace?.pageView();
   $("#restore-deleted-requirement").textContent=`Restore deleted ${recordKind(row?.cells.Type?.old)}`;
   paintSelection();
   trace?.syncSelection(row?.id??null);
@@ -297,7 +298,7 @@ function renderActiveFilters(){
     }
     if(available.length<statuses.length)filters.push([quality.revealId===null?"This report excludes unchanged rows":"Unchanged rows are excluded except for the revealed requirement"]);
   }
-  const active=filters.length>0&&!trace?.systemsView();
+  const active=filters.length>0&&!trace?.pageView();
   details.closest(".toolbar").classList.toggle("has-active-filters",active);
   details.hidden=!active;
   if(!active)details.open=false;
@@ -764,7 +765,7 @@ function syncModeUi(){
   if(trace){
     for(const id of ["add-end","add-above","add-below"])$("#"+id).disabled=!trace.entry();
     for(const id of ["move-up","move-down"])$("#"+id).disabled=trace.scoped();
-    $("#rename-requirement").disabled=trace.systemsView();
+    $("#rename-requirement").disabled=trace.pageView();
   }
   document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 function updateDirty(){
@@ -1995,5 +1996,5 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
         .replace("__CSS__", CSS + DRAFTS_CSS + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", COMPARISON_JS + JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
+        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + JS + FILTER_JS + VALUE_EDIT_JS + trace_js + DRAFTS_JS + INITIAL_RENDER_JS)
     )
