@@ -119,11 +119,19 @@ class ValidationTests(unittest.TestCase):
         self.reject("applies_to.Priority", check_with(filled="A", applies_to={"Priority": 3}))
 
     def test_reserved_conditions_name_their_phase(self) -> None:
-        self.reject("phase 3", check_with(signoffs_complete=True))
         self.reject("phase 4", check_with(unchanged_since="SRR"))
 
-    def test_signoff_is_still_accepted(self) -> None:
+    def test_signoffs_complete_is_an_unknown_key(self) -> None:
+        self.reject("unknown configuration key", check_with(signoffs_complete=True))
+
+    def test_signoff_roles_are_validated(self) -> None:
         validate_gates([{"id": "G", "signoff": [{"role": "Reviewer", "min": 1}]}])
+        for roles in (
+            {}, [{"role": "A"}], [{"role": "A", "min": 0}], [{"role": "A", "min": True}], [{"role": "", "min": 1}],
+            [{"role": "A", "min": 1, "x": 1}], [{"role": "A", "min": 1}, {"role": "a", "min": 2}], ["A"],
+        ):
+            with self.assertRaises(ConfigError, msg=roles):
+                validate_gates([{"id": "G", "signoff": roles}])
 
 
 if __name__ == "__main__":

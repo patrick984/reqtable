@@ -21,9 +21,11 @@ from .core import (
     CsvTable,
     InputError,
     OutputError,
+    atomic_write_text,
     generation_time,
     read_csv_source,
 )
+from .signoff import CheckedSignOff, SignOff, slug
 from .xlsx import block_to_csv, is_xlsx
 
 HASH_FORMAT = "reqtable-baseline/1"
@@ -255,6 +257,24 @@ def _print_warning(message: str) -> None:
 
 TableReader = Callable[[Path], CsvTable]
 
+SIGNOFF_PREFIX = "signoff/"
+
+
+def _tag_number(ref: str) -> int:
+    match = re.search(r"-(\d+)$", ref)
+    return int(match.group(1)) if match else 1
+
+
+def classify_verification(returncode: int, output: str) -> str:
+    if returncode == 0:
+        return "good"
+    text = output.lower()
+    if "no signature" in text:
+        return "unsigned"
+    if re.search(r"bad signature|incorrect signature|invalid signature", text):
+        return "bad"
+    return "unverifiable"
+
 
 class BaselineStore(ABC):
     """Where gate baselines live. Both stores keep the same manifest and the same frozen table."""
@@ -283,6 +303,14 @@ class BaselineStore(ABC):
     @abstractmethod
     def where(self, manifest: Manifest) -> str:
         """Phrase for the creation message, such as 'as tag baseline/SRR'."""
+
+    @abstractmethod
+    def add_signoff(self, manifest: Manifest, record: SignOff) -> str:
+        """Record a sign-off beside the baseline and return the phrase for where it went."""
+
+    @abstractmethod
+    def signoffs(self, manifest: Manifest) -> list[CheckedSignOff]:
+        """The baseline's sign-offs, oldest first, each checked the way this store can check it."""
 
 
 class GitStore(BaselineStore):
@@ -366,6 +394,76 @@ class GitStore(BaselineStore):
     def where(self, manifest: Manifest) -> str:
         return f"as tag {self._ref(manifest)}"
 
+    def add_signoff(self, manifest: Manifest, record: SignOff) -> str:
+        stem = f"{SIGNOFF_PREFIX}{manifest.name}/{slug(record.role)}/"
+        if not slug(record.role) or not slug(record.user):
+            raise InputError("a sign-off needs a role and a user that contain letters or digits")
+        taken = set(
+            run_git(self.root, "for-each-ref", "--format=%(refname:short)", f"refs/tags/{stem}").decode().split()
+        )
+        base = f"{stem}{slug(record.user)}"
+        name, number = base, 1
+        while name in taken:
+            number += 1
+            name = f"{base}-{number}"
+        commit = run_git(self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}").decode().strip()
+        message = (
+            f"ReqTable sign-off {record.baseline} {record.role} {record.decision}\n\n"
+            f"{json.dumps(record.to_dict(), indent=2, ensure_ascii=False)}\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            message_file = Path(folder) / "message"
+            message_file.write_text(message, encoding="utf-8")
+            try:
+                run_git(self.root, "tag", "-s", name, "-F", str(message_file), commit)
+            except InputError as exc:
+                raise InputError(
+                    f"{exc}\nSign-off tags must be signed. Configure a signing key for git, either GPG "
+                    "(user.signingkey) or SSH (gpg.format ssh and user.signingkey), then try again."
+                ) from exc
+        return f"as tag {name}"
+
+    def signoffs(self, manifest: Manifest) -> list[CheckedSignOff]:
+        commit = run_git(self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}").decode().strip()
+        listing = run_git(
+            self.root, "for-each-ref", "--format=%(refname)%00%(objecttype)%00%(*objectname)%00%(contents)%01",
+            f"refs/tags/{SIGNOFF_PREFIX}{manifest.name}/",
+        ).decode("utf-8", "replace")
+        found = []
+        for entry in listing.split("\x01"):
+            if not entry.strip():
+                continue
+            ref, kind, target, contents = entry.lstrip("\n").split("\x00", 3)
+            try:
+                if kind != "tag":
+                    raise ValueError("not an annotated tag")
+                _, _, body = contents.partition("\n\n")
+                record = SignOff.from_dict(json.JSONDecoder().raw_decode(body.lstrip())[0])
+            except ValueError as exc:
+                self.warn(f"ignoring tag {ref.removeprefix('refs/tags/')}: {exc}")
+                continue
+            if record.baseline != manifest.name:
+                continue
+            verification, detail = self._verify_tag(ref)
+            problems = []
+            if target != commit:
+                problems.append("the tag does not point at the baseline commit")
+            if record.content_hash != manifest.content_hash:
+                problems.append("its content hash differs from the baseline's")
+            counts = verification == "good" and not problems
+            reason = "; ".join(problems)
+            found.append((record, ref, CheckedSignOff(record, verification, "; ".join(filter(None, (reason, detail))), counts)))
+        found.sort(key=lambda item: (item[0].moment, _tag_number(item[1]), item[1]))
+        return [checked for _, _, checked in found]
+
+    def _verify_tag(self, ref: str) -> tuple[str, str]:
+        try:
+            completed = subprocess.run(["git", "-C", str(self.root), "verify-tag", ref], capture_output=True)
+        except OSError as exc:
+            raise InputError(f"cannot run git: {exc}") from exc
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        return classify_verification(completed.returncode, detail), detail
+
 
 class FileStore(BaselineStore):
     def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
@@ -388,7 +486,10 @@ class FileStore(BaselineStore):
             if any(part.startswith(".") for part in relative.parts):
                 continue
             try:
-                manifest = Manifest.from_dict(json.loads(path.read_text(encoding="utf-8")))
+                stored = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(stored, dict):
+                    stored.pop("signoffs", None)
+                manifest = Manifest.from_dict(stored)
                 if manifest.name != relative.as_posix():
                     raise ValueError("folder name does not match its manifest")
             except (OSError, ValueError, InputError) as exc:
@@ -427,6 +528,42 @@ class FileStore(BaselineStore):
 
     def where(self, manifest: Manifest) -> str:
         return f"in {self._folder(manifest)}"
+
+    def _manifest_path(self, manifest: Manifest) -> Path:
+        return self._folder(manifest) / "manifest.json"
+
+    def add_signoff(self, manifest: Manifest, record: SignOff) -> str:
+        path = self._manifest_path(manifest)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise InputError(f"cannot read {path}: {exc}") from exc
+        data["signoffs"] = [*data.get("signoffs", []), record.to_dict()]
+        atomic_write_text(str(path), json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        return f"in {path}"
+
+    def signoffs(self, manifest: Manifest) -> list[CheckedSignOff]:
+        path = self._manifest_path(manifest)
+        try:
+            entries = json.loads(path.read_text(encoding="utf-8")).get("signoffs", [])
+        except (OSError, ValueError) as exc:
+            raise InputError(f"cannot read {path}: {exc}") from exc
+        found = []
+        for index, entry in enumerate(entries):
+            try:
+                record = SignOff.from_dict(entry)
+            except ValueError as exc:
+                self.warn(f"ignoring sign-off {index + 1} in {path}: {exc}")
+                continue
+            found.append(CheckedSignOff(record, "recorded", self._evidence_detail(manifest, record), True))
+        return found
+
+    def _evidence_detail(self, manifest: Manifest, record: SignOff) -> str:
+        evidence = record.evidence
+        if not evidence or "://" in evidence or Path(evidence).is_absolute():
+            return ""
+        found = (self._folder(manifest) / evidence).exists()
+        return f"evidence {evidence} {'found' if found else 'not found'} in the baseline folder"
 
 
 def open_store(

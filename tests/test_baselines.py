@@ -99,7 +99,7 @@ class ConfigTests(unittest.TestCase):
         self.assertRejected(self.gates({"id": "A", "colour": "red"}), "gates[0].colour")
 
     def test_gate_checks_and_signoff_are_accepted_and_ignored(self) -> None:
-        validate_config(self.gates({"id": "A", "checks": [{"id": "x", "description": "d", "filled": "A"}], "signoff": [{"role": "Approver"}]}))
+        validate_config(self.gates({"id": "A", "checks": [{"id": "x", "description": "d", "filled": "A"}], "signoff": [{"role": "Approver", "min": 1}]}))
         self.assertRejected(self.gates({"id": "A", "checks": {}}), "checks")
 
 

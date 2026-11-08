@@ -10,7 +10,7 @@ from .findings import trace_findings
 
 Finding = tuple["str | None", str, str]
 
-RESERVED_PHASE = {"signoffs_complete": 3, "unchanged_since": 4}
+RESERVED_PHASE = {"unchanged_since": 4}
 MAX_LISTED = 10
 
 

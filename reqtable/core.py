@@ -36,10 +36,13 @@ class OutputError(ReqtableError):
 RECORD_TYPES = ("System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan")
 
 
-def _preset_gate(id: str, name: str, produces: str, checks: list[dict[str, Any]], **extra: Any) -> dict[str, Any]:
+def _preset_gate(
+    id: str, name: str, produces: str, checks: list[dict[str, Any]], reviewers: int = 2, **extra: Any
+) -> dict[str, Any]:
     return {
         "id": id, "name": name, "produces": produces, "scope": "table",
-        "includes": ["Requirement", "System"], "captures_status": False, "checks": checks, **extra,
+        "includes": ["Requirement", "System"], "captures_status": False, "checks": checks,
+        "signoff": [{"role": "Reviewer", "min": reviewers}, {"role": "Approver", "min": 1}], **extra,
     }
 
 
@@ -73,7 +76,7 @@ PRESET_GATES = [
     _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", [
         _check("ddr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
         _no_findings("ddr"),
-    ], scope="system"),
+    ], reviewers=1, scope="system"),
     _preset_gate("CDR", "Critical Design Review", "Product baseline", [
         _check("cdr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
         _no_findings("cdr"),
@@ -278,6 +281,7 @@ _GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", 
 
 def validate_gates(gates: Any) -> None:
     from .gates import validate_checks
+    from .signoff import validate_roles
 
     if not isinstance(gates, list) or not all(isinstance(g, dict) for g in gates):
         raise ConfigError("gates must be an array of objects")
@@ -308,8 +312,7 @@ def validate_gates(gates: Any) -> None:
             raise ConfigError(f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}")
         if not isinstance(gate.get("captures_status", False), bool):
             raise ConfigError(f"{where}.captures_status must be true or false")
-        if "signoff" in gate and not isinstance(gate["signoff"], list):
-            raise ConfigError(f"{where}.signoff must be an array")
+        validate_roles(gate.get("signoff", []), where)
         validate_checks(gate.get("checks", []), where)
 
 

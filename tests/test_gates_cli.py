@@ -95,7 +95,7 @@ class EmbeddedGatesTests(unittest.TestCase):
         data = build_report_data(self.table(), {**DEFAULT_CONFIG, "id_column": "ID"}, "r.html")
         self.assertEqual([gate["id"] for gate in data["gates"]][:2], ["SRR", "SFR"])
         self.assertEqual(data["gates"][0]["checks"][0]["id"], "srr-text")
-        self.assertEqual(set(data["gates"][0]), {"id", "name", "produces", "scope", "includes", "captures_status", "checks"})
+        self.assertEqual(set(data["gates"][0]), {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff"})
 
     def test_no_gates_gives_empty_list(self) -> None:
         data = build_report_data(self.table(), {**DEFAULT_CONFIG, "id_column": "ID", "gates": []}, "r.html")
