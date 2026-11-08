@@ -25,8 +25,10 @@ CSS = r"""
 #command-results small{color:var(--muted)}
 #command-results kbd{white-space:nowrap;font:inherit;font-size:.85em}
 .toolbar .popup-menu>summary:hover,.toolbar .popup-menu[open]>summary{background:var(--selected)}
-.toolbar .popover{top:100%;padding:5px 0;min-width:200px;max-width:calc(100vw - 20px)}
+.toolbar .popover{top:100%;padding:5px 0;min-width:min(17rem,calc(100vw - 20px));max-width:calc(100vw - 20px)}
 .toolbar .popover button:not([hidden]){display:flex;align-items:center;justify-content:space-between;gap:18px;position:relative;width:100%;padding:6px 12px 6px 30px;text-align:left;border:0;border-radius:0;background:transparent}
+.toolbar .popover button:not([hidden]){white-space:nowrap}
+@media(max-width:600px){.toolbar .popover button:not([hidden]){white-space:normal}}
 .toolbar .popover button:enabled:hover,.toolbar .popover button:focus-visible,.toolbar .popover label:focus-within,.toolbar .popover label:hover{background:var(--selected)}
 .toolbar .popover button[aria-pressed="true"]::before{content:"";position:absolute;left:13px;top:50%;width:5px;height:9px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-62%) rotate(45deg)}
 .toolbar .popover button:disabled{opacity:.55;cursor:default}
