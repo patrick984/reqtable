@@ -1303,7 +1303,7 @@ TRACE_CSS = """
 #trace-matrix-table .vcrm-mark {text-align:center;font-weight:700}
 #trace-matrix-table .vcrm-extra {font-weight:400;color:var(--muted);font-size:.85em}
 #trace-matrix-table th,#trace-matrix-table td:nth-last-child(-n+2) {overflow-wrap:normal;white-space:nowrap}
-#trace-matrix-table td:nth-child(2) {min-width:16rem}
+#trace-matrix-table tbody td:nth-child(2) {min-width:16rem;width:100%}
 #trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
