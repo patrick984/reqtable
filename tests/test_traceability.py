@@ -355,6 +355,83 @@ assert.equal(marks(""),"I- A- D- T-");
 assert.equal(marks("Unknown"),"I- A- D- T-");
 """)
 
+    MATRIX_PRELUDE = r"""
+const HEADERS=["ID","Type","Name","Field","Aliases","Multiple","Definition","Requirement","Verification Method","Verification Level","Compliance","Result","Verified by"];
+const value=(Field,Name,Aliases="")=>({ID:`V-${Field}-${Name}`,Type:"Value",Field,Name,Aliases,Definition:"Defined."});
+const field=Name=>({ID:`F-${Name}`,Type:"Field",Name,Multiple:"Yes",Definition:"Field."});
+const defined=[
+  field("Verification Method"),field("Verification Level"),
+  value("Verification Method","Inspection"),value("Verification Method","Test","Try it"),
+  value("Verification Level","Unit"),value("Verification Level","Acceptance","UAT"),
+  value("Compliance","Not verified"),value("Compliance","Compliant"),value("Result","Passed","Pass")
+];
+const build=(rows,withValues=true)=>{
+  const index=buildTraceIndex(withValues?[...defined,...rows]:rows,row=>row.ID,{headers:HEADERS,idColumn:"ID"});
+  const picked=rows.filter(row=>(row.Type??"Requirement")==="Requirement").map(row=>index.records.get(row.ID));
+  return buildVerificationMatrix(picked,index.values,"ID");
+};
+"""
+
+    def test_matrix_orders_columns_by_value_records_and_resolves_aliases(self):
+        self.run_js(self.MATRIX_PRELUDE + r"""
+const m=build([
+  {ID:"R1",Requirement:"Text","Verification Method":"Try it; Inspection","Verification Level":"UAT; Unit"},
+  {ID:"R2",Name:"Named",Requirement:"Text"}
+]);
+assert.deepEqual(m.methods,["Inspection","Test"]);
+assert.deepEqual(m.levels,["Unit","Acceptance"]);
+assert.deepEqual(m.rows[0].methods.slice().sort(),["Inspection","Test"]);
+assert.deepEqual(m.rows[0].levels.slice().sort(),["Acceptance","Unit"]);
+assert.equal(m.rows[0].requirement,"Text");
+assert.equal(m.rows[1].requirement,"Named");
+assert.deepEqual(m.totals.methods,{Inspection:1,Test:1});
+assert.deepEqual(m.totals.levels,{Unit:1,Acceptance:1});
+""")
+
+    def test_matrix_lists_undefined_values_as_extras(self):
+        self.run_js(self.MATRIX_PRELUDE + r"""
+const m=build([{ID:"R1","Verification Method":"Test; Telepathy","Verification Level":"Beta"}]);
+assert.deepEqual(m.rows[0].methods,["Test"]);
+assert.deepEqual(m.rows[0].extraMethods,["Telepathy"]);
+assert.deepEqual(m.rows[0].levels,[]);
+assert.deepEqual(m.rows[0].extraLevels,["Beta"]);
+assert.deepEqual(m.totals.methods,{Inspection:0,Test:1});
+""")
+
+    def test_matrix_carries_tests_results_compliance_and_totals(self):
+        self.run_js(self.MATRIX_PRELUDE + r"""
+const m=build([
+  {ID:"T1",Type:"Test",Name:"Core test",Result:"Pass"},{ID:"T2",Type:"Test"},
+  {ID:"R1",Compliance:"Compliant","Verified by":"T1; T2"},
+  {ID:"R2",Compliance:"Not verified"},{ID:"R3",Compliance:"Not verified"},{ID:"R4"}
+]);
+assert.deepEqual(m.rows.map(row=>row.id),["R1","R2","R3","R4"]);
+assert.deepEqual(m.rows[0].tests,[{id:"T1",name:"Core test",result:"Passed"},{id:"T2",name:"T2",result:""}]);
+assert.deepEqual(m.rows[1].tests,[]);
+assert.deepEqual(m.totals.compliance,{Compliant:1,"Not verified":2,"No compliance":1});
+""")
+
+    def test_matrix_without_method_values_has_no_method_columns(self):
+        self.run_js(self.MATRIX_PRELUDE + r"""
+const m=build([{ID:"R1","Verification Method":"Test"}],false);
+assert.deepEqual(m.methods,[]);
+assert.deepEqual(m.levels,[]);
+assert.deepEqual(m.rows[0].methods,[]);
+assert.deepEqual(m.rows[0].extraMethods,["Test"]);
+""")
+
+    def test_matrix_csv_rows_mark_methods_levels_tests_and_extras(self):
+        self.run_js(self.MATRIX_PRELUDE + r"""
+const m=build([
+  {ID:"T1",Type:"Test",Result:"Passed"},{ID:"T2",Type:"Test"},
+  {ID:"R1",Requirement:"Shall work","Verification Method":"Test; Telepathy","Verification Level":"Unit",Compliance:"Compliant","Verified by":"T1; T2"}
+]);
+assert.deepEqual(verificationMatrixCsvRows(m),[
+  ["ID","Requirement","Inspection","Test","Unit","Acceptance","Tests","Compliance"],
+  ["R1","Shall work","","X; Telepathy","X","","T1 (Passed); T2 (No result)","Compliant"]
+]);
+""")
+
     def test_shipped_uat_csv_links_tests_without_findings(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
         source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]

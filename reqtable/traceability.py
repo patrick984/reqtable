@@ -45,6 +45,41 @@ function verificationMethodMarks(rule,cell){
   const present=new Set(definedValues(rule,cell));
   return [...rule.values.keys()].map(name=>({name,letter:name.trim().charAt(0).toUpperCase(),filled:present.has(name)}));
 }
+function buildVerificationMatrix(records,values,idColumn){
+  const names=column=>[...(values.get(column)?.values.keys()??[])];
+  const methods=names("Verification Method"),levels=names("Verification Level");
+  const split=(record,column,known)=>{
+    const rule=values.get(column),cell=record.row[column];
+    const parts=rule?definedValues(rule,cell):traceIds(cell);
+    return [parts.filter(part=>known.includes(part)),parts.filter(part=>!known.includes(part))];
+  };
+  const totals={methods:Object.fromEntries(methods.map(name=>[name,0])),levels:Object.fromEntries(levels.map(name=>[name,0])),compliance:{}};
+  const rows=[...records].map(record=>{
+    const [rowMethods,extraMethods]=split(record,"Verification Method",methods);
+    const [rowLevels,extraLevels]=split(record,"Verification Level",levels);
+    const compliance=verificationState(values,"Compliance",record.row.Compliance);
+    const tests=(record.outgoing.get("Verified by")??[]).filter(test=>test.type==="Test")
+      .map(test=>({id:test.id,name:test.row.Name?.trim()||test.id,result:verificationState(values,"Result",test.row.Result)}));
+    for(const name of rowMethods)totals.methods[name]++;
+    for(const name of rowLevels)totals.levels[name]++;
+    const key=compliance||"No compliance";
+    totals.compliance[key]=(totals.compliance[key]??0)+1;
+    return {id:record.id??record.row[idColumn],requirement:record.row.Name?.trim()||record.row.Requirement?.trim()||"",
+      methods:rowMethods,levels:rowLevels,tests,compliance,extraMethods,extraLevels};
+  });
+  return {methods,levels,rows,totals};
+}
+function verificationMatrixMarks(row,kind,names){
+  const extra=kind==="methods"?row.extraMethods:row.extraLevels;
+  return names.map((name,i)=>[row[kind].includes(name)?"X":"",i===names.length-1?extra.join("; "):""]);
+}
+function verificationMatrixTest(test){return `${test.id} (${test.result||"No result"})`;}
+function verificationMatrixCsvRows(matrix){
+  const marks=(row,kind,names)=>verificationMatrixMarks(row,kind,names).map(parts=>parts.filter(Boolean).join("; "));
+  return [["ID","Requirement",...matrix.methods,...matrix.levels,"Tests","Compliance"],
+    ...matrix.rows.map(row=>[row.id,row.requirement,...marks(row,"methods",matrix.methods),...marks(row,"levels",matrix.levels),
+      row.tests.map(verificationMatrixTest).join("; "),row.compliance])];
+}
 function checkVerification(records,values,issue){
   const state=(record,column)=>verificationState(values,column,record.row[column]);
   const sentence=parts=>parts.length>1?`${parts.slice(0,-1).join(", ")} and ${parts.at(-1)}`:parts[0];
