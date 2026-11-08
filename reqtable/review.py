@@ -3,16 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .baselines import BaselineStore, Manifest, current_user, recompute_hash, resolve
-from .core import ConfigError, InputError, generation_time
-from .signoff import CheckedSignOff, SignOff, approval_status, match_decision, match_role
-
-
-def gate_roles(config: dict[str, Any], gate_id: str) -> list[dict[str, Any]]:
-    for gate in config["gates"]:
-        if gate["id"] == gate_id:
-            return list(gate.get("signoff", []))
-    return []
+from .baselines import (
+    BaselineStore, Manifest, current_user, gate_roles, load_baselines, recompute_hash, resolve,
+)
+from .core import (
+    ConfigError, CsvTable, InputError, build_report_data, extract_report_json, generation_time,
+)
+from .signoff import (
+    DECISIONS, SignOff, approval_status, match_decision, match_role, parse_date,
+)
 
 
 def resolve_baseline(store: BaselineStore, requested: str) -> Manifest:
@@ -101,3 +100,107 @@ def verify_baseline(store: BaselineStore, config: dict[str, Any], requested: str
     approved = hash_ok and status["approved"]
     lines.append("approved" if approved else "not approved")
     return lines, approved
+
+
+def previous_baseline(manifests: list[Manifest], config: dict[str, Any], manifest: Manifest) -> Manifest | None:
+    order = [gate["id"] for gate in config["gates"]]
+    if manifest.gate not in order:
+        return None
+    for gate_id in reversed(order[: order.index(manifest.gate)]):
+        siblings = [m for m in manifests if m.gate == gate_id and m.system == manifest.system]
+        if siblings:
+            return max(siblings, key=lambda m: m.number)
+    return None
+
+
+def build_package(store: BaselineStore, config: dict[str, Any], requested: str, output_name: str) -> dict[str, Any]:
+    manifests = store.list()
+    manifest = resolve(requested, manifests)
+    id_column = config["id_column"]
+    table, rows, digest = recompute_hash(store, id_column, manifest)
+    hash_ok = digest == manifest.content_hash
+    if not hash_ok:
+        store.warn(f"baseline {manifest.name} does not match its recorded hash")
+    gate = next((entry for entry in config["gates"] if entry["id"] == manifest.gate), None)
+    if gate is None:
+        raise ConfigError(f"gate {manifest.gate} of baseline {manifest.name} is not configured")
+    frozen = CsvTable(
+        f"{manifest.name} (frozen)", manifest.source, table.headers, rows,
+        [row[id_column].strip() for row in rows], {row[id_column].strip(): row for row in rows},
+    )
+    previous = previous_baseline(manifests, config, manifest)
+    embedded = load_baselines(store, config, [previous.name], store.warn) if previous else []
+    gate_name = gate.get("name", gate["id"])
+    package_config = {
+        **config, "title": f"{gate_name} gate package: {manifest.name}", "document_mode": "review", "gates": [gate],
+    }
+    data = build_report_data(frozen, package_config, output_name, baselines=embedded)
+    checked = store.signoffs(manifest)
+    roles = gate_roles(config, manifest.gate)
+    if previous:
+        data["options"]["initialCompareWith"] = f"baseline:{previous.name}"
+    data["decisions"] = []
+    data["package"] = {
+        "gate": {"id": gate["id"], "name": gate_name, "produces": gate.get("produces", ""), "scope": gate.get("scope", "table")},
+        "baseline": {
+            "name": manifest.name, "gate": manifest.gate, "system": manifest.system, "created": manifest.created,
+            "createdBy": manifest.created_by, "hash": manifest.content_hash, "hashOk": hash_ok, "source": manifest.source,
+        },
+        "previous": previous.name if previous else None,
+        "roles": roles,
+        "signoffs": [item.to_dict() for item in checked],
+        "approval": approval_status(roles, checked),
+        "decisionOptions": list(DECISIONS),
+    }
+    return data
+
+
+def _package_decisions(path: str, data: dict[str, Any]) -> tuple[str, str, list[dict[str, Any]]]:
+    package = data.get("package")
+    baseline = package.get("baseline") if isinstance(package, dict) else None
+    if not isinstance(baseline, dict) or not isinstance(baseline.get("name"), str) or not isinstance(baseline.get("hash"), str):
+        raise InputError(f"{path}: not a gate package; generate one with --gate-package")
+    decisions = data.get("decisions", [])
+    if not isinstance(decisions, list):
+        raise InputError(f"{path}: decisions must be a list")
+    return baseline["name"], baseline["hash"], decisions
+
+
+def import_decisions(store: BaselineStore, config: dict[str, Any], path: str) -> list[str]:
+    data = extract_report_json(path)
+    name, digest, decisions = _package_decisions(path, data)
+    manifest = next((m for m in store.list() if m.name == name), None)
+    if manifest is None:
+        raise InputError(f"{path}: baseline {name!r} does not exist in this store")
+    if manifest.content_hash != digest:
+        raise InputError(f"{path}: package was made for a different {name} (hash {digest}); this store has {manifest.content_hash}")
+    require_intact(store, config, manifest)
+    roles = gate_roles(config, manifest.gate)
+    pending = []
+    for index, entry in enumerate(decisions, start=1):
+        where = f"{path}: decision {index}"
+        if not isinstance(entry, dict) or not all(isinstance(entry.get(key), str) for key in ("role", "user", "decision", "date")):
+            raise InputError(f"{where} needs role, user, decision and date")
+        note = entry.get("note", "")
+        if not isinstance(note, str):
+            raise InputError(f"{where}: note must be text")
+        try:
+            pending.append((match_role(roles, entry["role"], manifest.gate), match_decision(entry["decision"]), entry, note))
+        except ConfigError as exc:
+            raise InputError(f"{where}: {exc}") from exc
+        parse_date(entry["date"])
+    seen = {item.record.key() for item in store.signoffs(manifest)}
+    lines = []
+    for role, decision, entry, note in pending:
+        user, date = entry["user"].strip(), parse_date(entry["date"]).isoformat()
+        label = f"{decision} by {user} as {role} on {date}"
+        probe = SignOff(manifest.name, role, user, decision, date, manifest.content_hash)
+        if probe.key() in seen:
+            lines.append(f"skipped {label}: already recorded")
+            continue
+        _, where = record_signoff(
+            store, config, manifest, role, decision, user, note, Path(path).name, via="package", date=date
+        )
+        seen.add(probe.key())
+        lines.append(f"imported {label} {where}")
+    return lines or [f"no decisions in {path}"]

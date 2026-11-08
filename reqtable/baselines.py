@@ -25,7 +25,7 @@ from .core import (
     generation_time,
     read_csv_source,
 )
-from .signoff import CheckedSignOff, SignOff, slug
+from .signoff import CheckedSignOff, SignOff, approval_status, slug
 from .xlsx import block_to_csv, is_xlsx
 
 HASH_FORMAT = "reqtable-baseline/1"
@@ -615,6 +615,13 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
     return manifest
 
 
+def gate_roles(config: dict[str, Any], gate_id: str) -> list[dict[str, Any]]:
+    for gate in config["gates"]:
+        if gate["id"] == gate_id:
+            return list(gate.get("signoff", []))
+    return []
+
+
 def recompute_hash(store: BaselineStore, id_column: str, manifest: Manifest) -> tuple[CsvTable, list[dict[str, str]], str]:
     table = store.read(manifest)
     rows = select_scope(table.rows, id_column, manifest.system, manifest.includes)
@@ -641,6 +648,7 @@ def load_baselines(
         if not hash_ok:
             warn(f"baseline {found.name} does not match its recorded hash")
         gate = gates.get(found.gate)
+        checked = store.signoffs(found)
         entries.append({
             "name": found.name,
             "gate": found.gate,
@@ -657,5 +665,7 @@ def load_baselines(
             "source": found.source,
             "headers": table.headers,
             "rows": rows,
+            "signoffs": [item.to_dict() for item in checked],
+            "approval": approval_status(gate_roles(config, found.gate), checked),
         })
     return entries

@@ -22,7 +22,7 @@ CSV_TEXT = (
 BASE = ("--id-column", "ID", "--traceability")
 CONTRACT_KEYS = {
     "name", "gate", "gateName", "produces", "system", "created", "createdBy", "hash", "hashOk", "includes",
-    "capturesStatus", "statusColumns", "source", "headers", "rows",
+    "capturesStatus", "statusColumns", "source", "headers", "rows", "signoffs", "approval",
 }
 
 

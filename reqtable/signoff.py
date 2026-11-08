@@ -92,8 +92,8 @@ class SignOff:
     def moment(self) -> datetime:
         return parse_date(self.date)
 
-    def key(self) -> tuple[str, str, str, str, str]:
-        return (self.baseline, self.role.casefold(), self.user.casefold(), self.decision, self.moment.isoformat())
+    def key(self) -> tuple[str, str, str, str, datetime]:
+        return (self.baseline, self.role.casefold(), self.user.casefold(), self.decision, self.moment)
 
 
 @dataclass(frozen=True)

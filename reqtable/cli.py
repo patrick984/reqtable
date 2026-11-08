@@ -26,7 +26,7 @@ from .core import (
 )
 from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
-from .review import sign_off, verify_baseline
+from .review import build_package, import_decisions, sign_off, verify_baseline
 from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
 
@@ -86,6 +86,14 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument(
         "--verify-baseline", metavar="BASELINE",
         help="recheck a baseline's content hash and sign-offs; exit 0 when intact and approved, 1 otherwise",
+    )
+    result.add_argument(
+        "--gate-package", metavar="BASELINE",
+        help="write the review package for a gate baseline to -o OUT.html, and exit",
+    )
+    result.add_argument(
+        "--import-decisions", metavar="PACKAGE.html",
+        help="record the decisions saved in a gate package copy as sign-offs, and exit",
     )
     result.add_argument("--print-default-config", action="store_true")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -171,19 +179,29 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
     print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
 
 
-REVIEW_FLAGS = ("sign_off", "verify_baseline")
+REVIEW_FLAGS = ("sign_off", "verify_baseline", "gate_package", "import_decisions")
 
 
 def run_review_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
-    if args.input and args.new:
-        raise ConfigError("give the input as a positional argument or as --new, not both")
     if not args.input:
-        raise ConfigError("--sign-off and --verify-baseline need an input CSV or .xlsx")
+        raise ConfigError("--sign-off, --verify-baseline, --gate-package and --import-decisions need an input CSV or .xlsx")
     store = open_store(args.input, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
     if args.sign_off:
         if not args.role or not args.decision:
             raise ConfigError("--sign-off needs --role and --decision")
         print(sign_off(store, config, args.sign_off, args.role, args.decision, args.user, args.note, args.evidence))
+        return 0
+    if args.gate_package:
+        if not args.output:
+            raise ConfigError("--gate-package needs --output")
+        data = build_package(store, config, args.gate_package, Path(args.output).name)
+        for warning in data["meta"].get("warnings", []):
+            print(f"warning: {warning}", file=sys.stderr)
+        atomic_write_text(args.output, render_report(data))
+        print(f"Wrote {data['package']['baseline']['name']} gate package to {args.output}")
+        return 0
+    if args.import_decisions:
+        print("\n".join(import_decisions(store, config, args.import_decisions)))
         return 0
     lines, approved = verify_baseline(store, config, args.verify_baseline)
     print("\n".join(lines))
