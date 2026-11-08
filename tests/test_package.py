@@ -8,7 +8,7 @@ from pathlib import Path
 
 from reqtable.core import build_report_data, extract_report_json, load_config, read_csv_table
 from reqtable.html_report import render_report
-from reqtable.package import PACKAGE_MODEL_JS
+from reqtable.package import PACKAGE_JS, PACKAGE_MODEL_JS
 
 PACKAGE = {
     "gate": {"id": "SRR", "name": "System Requirements Review", "produces": "SRR", "scope": "table"},
@@ -28,6 +28,19 @@ class PackageModelTests(unittest.TestCase):
     def run_js(self, assertions, tz="UTC"):
         subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + PACKAGE_MODEL_JS + assertions,
                        text=True, check=True, env={"TZ": tz, "PATH": shutil.which("node").rsplit("/", 1)[0]})
+
+    def test_cover_facts_name_the_gate_output_and_hash(self):
+        subprocess.run(["node"], input=r"""
+const assert=require("node:assert/strict");
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const state={decisions:[]},data={};
+""" + PACKAGE_JS + r"""
+const html=packageFacts({gate:{id:"PDR",name:"Preliminary Design Review",produces:"Allocated baseline",scope:"table"},
+  baseline:{name:"PDR",system:null,created:"2026-11-08",createdBy:"Casey",hash:"sha256:abc",hashOk:true},previous:"SRR"});
+assert.match(html,/<dt>Produces<\/dt><dd>Allocated baseline<\/dd>/);
+assert.match(html,/sha256:abc/);
+assert.match(html,/<dd>SRR<\/dd>/);
+""", text=True, check=True)
 
     def test_verification_labels(self):
         self.run_js(r"""

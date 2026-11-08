@@ -72,7 +72,7 @@ function packageFooterText(pkg){return `${pkg.baseline.name} · ${pkg.baseline.h
 PACKAGE_JS = PACKAGE_MODEL_JS + r"""
 const packageCover=data.package?$("#package-cover"):null;
 function packageFacts(pkg){
-  const {baseline}=pkg,scope=baseline.system?`System ${baseline.system}`:"Whole table";
+  const {baseline,gate}=pkg,scope=baseline.system?`System ${baseline.system}`:"Whole table";
   return [["Baseline",baseline.name],["Produces",gate.produces],["Scope",scope],
     ["Created",`${baseline.created}${baseline.createdBy?` by ${baseline.createdBy}`:""}`],
     ["Content hash",`<span class="package-hash">${escapeHtml(baseline.hash)}</span>`,true],
