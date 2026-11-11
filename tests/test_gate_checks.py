@@ -57,6 +57,17 @@ assert.deepEqual(gateBadgeLabel([pass]),{tone:"gate-pass",mark:"✓ Ready"});
 assert.deepEqual(gateBadgeLabel([]),{tone:"gate-pass",mark:"✓ Ready"});
 """)
 
+    def test_evaluated_results_carry_the_check_enforcement(self):
+        self.run_js("""
+const rows=[{ID:"R1",Type:"",Priority:""},{ID:"R2",Type:"",Priority:"Must"}];
+const check=enforcement=>({id:"p",description:"d",filled:"Priority",...(enforcement?{enforcement}:{})});
+const strict=evaluateGateCheck(check("strict"),rows,"ID",["ID","Type","Priority"],null,[]);
+assert.equal(strict.enforcement,"strict");
+assert.deepEqual(gateCheckLabel(strict),{tone:"gate-fail",mark:"✗ Fail · blocking"});
+assert.deepEqual(gateBadgeLabel([strict]),{tone:"gate-fail",mark:"✗ Blocked"});
+assert.equal(evaluateGateCheck(check(),rows,"ID",["ID","Type","Priority"],null,[]).enforcement,"advisory");
+""")
+
     def test_linked_looks_up_every_row_not_only_the_scope(self):
         self.run_js("""
 const run=(spec,system)=>evaluateGateCheck({id:"c",description:"d",applies_to:{type:"Requirement"},...spec},

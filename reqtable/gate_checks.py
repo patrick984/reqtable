@@ -30,7 +30,7 @@ function gateAppliesTo(check,context){
 function evaluateGateCheck(check,rows,idColumn,headers,system,findings,controls=null){
   const cell=(row,column)=>String(row[column]??"").trim(),parts=text=>text.split(";").map(part=>part.trim()).filter(Boolean);
   const id=row=>cell(row,idColumn);
-  const base={id:check.id,description:check.description};
+  const base={id:check.id,description:check.description,enforcement:check.enforcement??"advisory"};
   const condition=gateCondition(check);
   if(!condition)return {...base,error:"The check has no condition."};
   const context={cell,parts,id};
