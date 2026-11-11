@@ -16,9 +16,9 @@
 - [x] Flag a requirement whose Verification Level differs from the levels of the tests in its Verified by.
 - [x] VCRM: requirement Compliance and test Result columns with a cross-check, and a Verification tab showing method marks, tests with results and compliance counts.
 - [x] Printable/exportable VCRM matrix page with I/A/D/T and per-level columns.
-- [ ] Gate baselines (requirements-baselines-proposal.md)
+- [x] Gate baselines (requirements-baselines-proposal.md)
   - [x] Phase 1: content hash, table and system scopes, record types, status columns, Git and file stores, `--create-baseline`, `--list-baselines`, `--baselines`, View → Compare with.
   - [x] Phase 2: gate readiness checks, Gates view, `--check-gate`, and a Python port of trace findings with parity tests.
   - [x] Phase 3: gate package, review decisions, sign-off roles, signed-tag verification, `--verify-baseline`.
   - [x] Phase 4: change requests (`Affects`, `Change status`), controlling baselines, the unapproved-change findings and `unchanged_since`. Signed approval of change requests is deferred.
-  - [ ] Phase 5: strict enforcement.
+  - [x] Phase 5: strict enforcement per gate or check, with recorded waivers.

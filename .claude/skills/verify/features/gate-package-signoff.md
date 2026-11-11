@@ -36,6 +36,8 @@ Preconditions:
 - **Record decision.** Type a name in `#package-decision-user`, click `#package-decision-submit`. The Reviewer row's last cell lists the decision with a Remove button, and `state.dirty` is true. The cover grows, so take a new screenshot before clicking the form again.
 - **Save copy.** Set reviewer initials first (Save report copy refuses without them and only alerts). File → Save report copy downloads `<name>-reviewed-<initials>-<time>.html`; its embedded JSON has `decisions` with both entries, and the rendered cover is not duplicated.
 
+- **Strict gates and waivers.** Copy the default gates into `config.json` with PDR `"enforcement": "strict"`. `--check-gate PDR` prints `not ready, blocked` and `FAIL (strict)` for `pdr-allocated-leaf` (31) and `pdr-level` (1). `--create-baseline PDR` exits 1 with `blocked:` lines and the hint `--waive pdr-allocated-leaf,pdr-level --reason "..."`; waiving one still exits 1. Waiving both with a `--reason` each creates the baseline and prints `Waived … (31 records)` and `(1 record)`. `--verify-baseline` lists both `waived …` lines. In a Develop report's Gates view, PDR shows `✗ Blocked` and `✗ Fail · blocking`; advisory CDR shows `✗ Not ready` and `✗ Fail · advisory`. The PDR package cover shows a Waivers table with each reason.
+
 ## Gotchas
 
 - The pane cannot write its download to disk. Prove import by injecting the captured decisions into the generated package with Python.

@@ -177,7 +177,7 @@ A gate baseline always resolves to the same result: frozen CSV content, the cont
 
 - A **Gates** view lists the configured gates in order. Each gate shows its checks with pass and fail counts. Clicking a failing check filters the grid to the failing rows through the existing filter and reveal machinery.
 - `--check-gate PDR` evaluates the same checks in the CLI. It prints failures and exits 0 when ready and 1 when not, so CI can report readiness on every change.
-- `enforcement: "advisory"` is the default. A later `"strict"` setting, globally or per check, would make `--check-gate` failures block `--create-baseline` and would show failing checks as errors in the report. Strictness never prevents editing in Develop mode, because the report cannot stop someone editing the CSV directly.
+- `enforcement` is `advisory` by default and can be set to `strict` in `baselines`, per gate or per check; the most specific setting wins. `--check-gate` still exits 1 whenever any check fails, and marks each failure strict or advisory. A failing strict check blocks `--create-baseline` for that gate unless it is waived with `--waive <check> --reason "..."`. The waiver (check, reason, user, date, failing records) is stored in the baseline manifest or tag and shown by `--verify-baseline` and on the gate package cover. The Gates view marks strict failures as blocking and the gate as Blocked. Strictness never prevents editing in Develop mode, because nothing can stop someone editing the CSV directly.
 
 ## Sign-off
 
@@ -247,6 +247,7 @@ Recorded on 2026-11-08 from the first review of this proposal.
 7. **Recording decisions.** Reviewers record decisions in the gate package report, and `--import-decisions` turns a saved copy's decisions into sign-offs. In the Git store, reqtable creates the signed sign-off tags itself with the user's configured key. In the file store, the configuration manager records sign-offs with `--sign-off`.
 8. **Approval status replaces `signoffs_complete`.** Sign-offs follow a baseline, so they cannot gate its creation. Each baseline has an approval status instead (see Sign-off roles and approval status).
 9. **Change control.** Each record is controlled by the latest baseline that contained it. A change request authorises IDs through its own `Affects` column rather than a `Changed by` column on each requirement, which also covers removals and leaves requirement rows untouched. `Change status` Approved or Implemented authorises the change; signed approval of change requests is deferred.
+10. **Strict checks can be waived.** A failing strict check blocks baseline creation unless it is waived with a recorded reason, mirroring formal deviation and waiver practice. Each waiver keeps its own reason and is part of the baseline's record.
 
 ## Open questions
 

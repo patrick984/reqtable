@@ -405,6 +405,25 @@ python -m reqtable requirements.csv -c config.json --check-gate DDR --system SYS
 
 The CLI evaluates trace findings with a Python port of the report's rules, so it needs only the standard library. Parity tests run both implementations on the same tables and require identical findings.
 
+### Strict gates and waivers
+
+Gate checks are advisory unless configured otherwise. Set `enforcement` to `"strict"` in `baselines` for every check, on a gate, or on a single check; the most specific setting wins:
+
+```json
+{"id": "PDR", "name": "Preliminary Design Review", "enforcement": "strict", "checks": [
+  {"id": "pdr-no-findings", "description": "There are no trace findings", "no_findings": true, "enforcement": "advisory"}]}
+```
+
+A failing strict check blocks `--create-baseline` for that gate. Advisory failures are printed as warnings and do not block. To proceed anyway, waive the blocking checks with a reason for each, in the order they are named, or one reason for all:
+
+```sh
+python -m reqtable requirements.csv -c config.json --create-baseline PDR \
+  --waive pdr-allocated-leaf --reason "Leaf allocation completes at DDR" \
+  --waive pdr-level --reason "REQ-178 is a documentation requirement"
+```
+
+Only failing strict checks can be waived. Each waiver records the check, reason, user (`--user` to override), date and failing records in the baseline, and appears in `--verify-baseline` and on the gate package cover. Waivers do not affect approval. `--check-gate` marks failures `FAIL (strict)` or `FAIL (advisory)` and still exits 1 when any check fails. The Gates view shows strict failures as blocking and the gate as **Blocked**. Strictness never prevents editing in Develop mode.
+
 ### Gate packages and sign-off
 
 A gate package is the report reviewers receive for a baseline:
