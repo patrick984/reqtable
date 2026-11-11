@@ -20,6 +20,7 @@ PACKAGE_CSS = r"""
 .signoff-table{width:100%;min-width:0;table-layout:auto;border:1px solid var(--line);border-bottom:0}
 .signoff-table th,.signoff-table td{font-size:.92rem;border-left:0}
 .signoff-table th:nth-child(-n+2),.signoff-table td:nth-child(-n+2){white-space:nowrap;overflow-wrap:normal;width:1%}
+.waiver-table th:nth-child(2),.waiver-table td:nth-child(2){white-space:normal;overflow-wrap:anywhere;width:auto}
 .signoff-table thead th{position:static;height:auto}
 .signoff-table ul{margin:0;padding:0;list-style:none}
 .signoff-table li+li{margin-top:4px}
@@ -58,6 +59,9 @@ function signoffTable(pkg,decisions){
       verification:verificationLabel(s.verification),counts:s.counts!==false})),
     pending:decisions.filter(d=>d.role===role)}));
 }
+function waiverRows(waivers){
+  return (waivers??[]).map(w=>({check:w.check,description:w.description??"",reason:w.reason,user:w.user,date:w.date,records:(w.failing??[]).length}));
+}
 function isoWithOffset(d){
   const off=-d.getTimezoneOffset(),pad=n=>String(Math.abs(n)).padStart(2,"0");
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${off>=0?"+":"-"}${pad(Math.trunc(Math.abs(off)/60))}:${pad(Math.abs(off)%60)}`;
@@ -82,6 +86,13 @@ function packageFacts(pkg){
     ["Compared with",pkg.previous??"No earlier baseline"]]
     .map(([term,value,raw])=>`<dt>${term}</dt><dd>${raw?value:escapeHtml(value??"")}</dd>`).join("");
 }
+function packageWaivers(pkg){
+  const rows=waiverRows(pkg.waivers);
+  if(!rows.length)return "";
+  const body=rows.map(w=>`<tr><th scope="row">${escapeHtml(w.check)}</th><td>${escapeHtml(w.description)}</td><td>${escapeHtml(w.reason)}</td><td>${escapeHtml(w.user)}</td><td>${escapeHtml(displayTimestamp(w.date))}</td><td>${w.records}</td></tr>`).join("");
+  return `<h3>Waivers</h3>
+<table class="signoff-table waiver-table" id="package-waiver-table"><thead><tr><th scope="col">Check</th><th scope="col">Description</th><th scope="col">Reason</th><th scope="col">Waived by</th><th scope="col">Date</th><th scope="col">Records</th></tr></thead><tbody>${body}</tbody></table>`;
+}
 function signoffItem(s){
   return `<li class="signoff${s.counts?"":" signoff-excluded"}">${escapeHtml(s.user)}: ${escapeHtml(s.decision)}, ${escapeHtml(s.date)}, ${escapeHtml(s.verification)}${s.counts?"":" (does not count)"}${s.note?` <span class="meta">${escapeHtml(s.note)}</span>`:""}</li>`;
 }
@@ -102,6 +113,7 @@ function buildPackageCover(){
   packageCover.innerHTML=`<h2 id="package-title">${escapeHtml(pkg.gate.name)} (${escapeHtml(pkg.gate.id)}) gate package</h2>
 <dl class="package-facts" id="package-facts">${packageFacts(pkg)}</dl>
 <p id="package-hash-warning" class="package-warning" role="alert" ${pkg.baseline.hashOk?"hidden":""}>The baseline content does not match its recorded hash.</p>
+${packageWaivers(pkg)}
 <div id="package-approval" class="package-approval"></div>
 <table class="signoff-table" id="package-signoff-table"><thead><tr><th scope="col">Role</th><th scope="col">Required</th><th scope="col">Recorded sign-offs</th><th scope="col">Recorded in this package, not yet imported</th></tr></thead><tbody id="package-signoffs"></tbody></table>
 <form id="package-decision-form" class="decision-form" aria-label="Record decision">

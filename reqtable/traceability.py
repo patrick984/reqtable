@@ -621,8 +621,8 @@ const trace=(()=>{
     gateEvaluations=gates.map(gate=>gate.scope==="system"&&!system?null
       :gate.checks.map(check=>evaluateGateCheck(check,state.currentRows,data.meta.idColumn,headers,gate.scope==="system"?system:null,index.issues,data.controls??null)));
     gatesPage.innerHTML=gates.length?gates.map((gate,gateIndex)=>{
-      const results=gateEvaluations[gateIndex],ready=results&&!results.some(gateCheckFailed);
-      const badge=!results?"":ready?'<span class="gate-badge gate-pass">✓ Ready</span>':'<span class="gate-badge gate-fail">✗ Not ready</span>';
+      const results=gateEvaluations[gateIndex];
+      const badge=results?(({tone,mark})=>`<span class="gate-badge ${tone}">${mark}</span>`)(gateBadgeLabel(results)):"";
       const scopeText=gate.scope==="system"&&system?` · Scope: ${escapeHtml(caption(index.records.get(system)))}`:"";
       const body=results?`<ul class="gate-checks">${results.map((result,checkIndex)=>gateCheckItem(result,gateIndex,checkIndex)).join("")}</ul>`
         :'<p class="meta">Choose a system in the System selector to check this gate.</p>';
@@ -632,7 +632,7 @@ const trace=(()=>{
     }).join(""):"<p>No gates are configured.</p>";
   }
   function gateCheckItem(result,gateIndex,checkIndex){
-    const [tone,mark]=result.error?["gate-error","! Error"]:gateCheckFailed(result)?["gate-fail","✗ Fail"]:["gate-pass","✓ Pass"];
+    const {tone,mark}=gateCheckLabel(result);
     const records=result.error?[]:result.failing.filter(Boolean);
     const count=result.error?escapeHtml(result.error):`${result.failing.length} of ${result.total} failing`;
     const show=records.length?` <button type="button" data-gate-show="${gateIndex}:${checkIndex}">Show records</button>`:"";
@@ -1508,7 +1508,7 @@ TRACE_CSS = """
 .gate-badge,.gate-mark {display:inline-block;padding:0 8px;border:1px solid var(--line);border-radius:9px;font-size:.88em;font-weight:600;white-space:nowrap;color:var(--text)}
 .gate-pass {background:var(--add);border-color:var(--addStrong)}
 .gate-fail {background:var(--remove);border-color:var(--removeStrong)}
-.gate-error {background:var(--changed)}
+.gate-error,.gate-advisory {background:var(--changed)}
 #trace-system-actions {align-self:start;border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
 .trace-actions+.trace-actions {margin-top:8px}
 #trace-tree,#trace-record ul,#trace-candidates {list-style:none;padding:0;margin:4px 0 8px}

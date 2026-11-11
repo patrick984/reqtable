@@ -41,6 +41,22 @@ const table=run([{id:null,field:"Part of",message:"Expected one top-level system
 assert.deepEqual([table.failing,table.global,table.total],[[""],["Expected one top-level system. Found 0."],9]);
 """)
 
+    def test_labels_separate_blocking_from_advisory_failures(self):
+        self.run_js("""
+const fail=enforcement=>({id:"c",enforcement,failing:["R1"],total:2,error:null});
+const pass={id:"p",enforcement:"strict",failing:[],total:2,error:null};
+assert.deepEqual(gateCheckLabel(fail("strict")),{tone:"gate-fail",mark:"✗ Fail · blocking"});
+assert.deepEqual(gateCheckLabel(fail("advisory")),{tone:"gate-advisory",mark:"✗ Fail · advisory"});
+assert.deepEqual(gateCheckLabel(fail(undefined)),{tone:"gate-advisory",mark:"✗ Fail · advisory"});
+assert.deepEqual(gateCheckLabel(pass),{tone:"gate-pass",mark:"✓ Pass"});
+assert.equal(gateCheckLabel({id:"e",enforcement:"strict",error:"x",failing:[]}).mark,"! Error · blocking");
+assert.equal(gateCheckLabel({id:"e",enforcement:"advisory",error:"x",failing:[]}).mark,"! Error");
+assert.deepEqual(gateBadgeLabel([pass,fail("advisory")]),{tone:"gate-advisory",mark:"✗ Not ready"});
+assert.deepEqual(gateBadgeLabel([pass,fail("advisory"),fail("strict")]),{tone:"gate-fail",mark:"✗ Blocked"});
+assert.deepEqual(gateBadgeLabel([pass]),{tone:"gate-pass",mark:"✓ Ready"});
+assert.deepEqual(gateBadgeLabel([]),{tone:"gate-pass",mark:"✓ Ready"});
+""")
+
     def test_linked_looks_up_every_row_not_only_the_scope(self):
         self.run_js("""
 const run=(spec,system)=>evaluateGateCheck({id:"c",description:"d",applies_to:{type:"Requirement"},...spec},

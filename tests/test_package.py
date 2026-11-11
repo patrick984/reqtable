@@ -42,6 +42,29 @@ assert.match(html,/sha256:abc/);
 assert.match(html,/<dd>SRR<\/dd>/);
 """, text=True, check=True)
 
+    def test_waiver_rows_count_records_and_tolerate_missing_description(self):
+        self.run_js(r"""
+assert.deepEqual(waiverRows(undefined),[]);
+assert.deepEqual(waiverRows([{check:"a",description:"A",reason:"r",user:"u",date:"d",failing:["R1","R2"]},{check:"b",reason:"r",user:"u",date:"d",failing:[]}]).map(w=>[w.check,w.description,w.records]),
+  [["a","A",2],["b","",0]]);
+""")
+
+    def test_cover_waivers_list_reason_and_are_absent_when_empty(self):
+        subprocess.run(["node"], input=r"""
+const assert=require("node:assert/strict");
+const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const displayTimestamp=v=>v;
+const state={decisions:[]},data={};
+""" + PACKAGE_JS + r"""
+assert.equal(packageWaivers({waivers:[]}),"");
+assert.equal(packageWaivers({}),"");
+const html=packageWaivers({waivers:[{check:"srr-text",description:"Every <b>requirement</b> has text",reason:"Vendor data due 2026-12",user:"ann",date:"2026-11-09T10:00:00+01:00",failing:["R1","R2","R3"]}]});
+assert.match(html,/<h3>Waivers<\/h3>/);
+assert.match(html,/<th scope="row">srr-text<\/th>/);
+assert.match(html,/Every &lt;b&gt;requirement&lt;\/b&gt; has text/);
+assert.match(html,/Vendor data due 2026-12<\/td><td>ann<\/td><td>2026-11-09T10:00:00\+01:00<\/td><td>3<\/td>/);
+""", text=True, check=True)
+
     def test_verification_labels(self):
         self.run_js(r"""
 const labels=["good","unsigned","bad","unverifiable","cannot verify","Signature Good","recorded","",null,"surprise"].map(verificationLabel);
@@ -118,6 +141,15 @@ class PackageReportTests(unittest.TestCase):
         self.assertIn('id="package-footer"', report)
         self.assertIn("break-after:page", report)
         self.assertIn("position:fixed", report)
+
+    def test_package_report_with_waivers_carries_the_cover_markup_and_reason(self):
+        waiver = {"check": "srr-text", "description": "Every requirement has text", "reason": "Vendor data due in December",
+                  "user": "ann", "date": "2026-11-09T10:00:00+01:00", "failing": ["R1"]}
+        report = self.build(package={**PACKAGE, "waivers": [waiver]})
+        self.assertIn("function packageWaivers", report)
+        self.assertIn("<h3>Waivers</h3>", report)
+        self.assertIn("Vendor data due in December", report)
+        self.assertIn("buildPackageCover()", report)
 
     def test_normal_report_has_no_cover(self):
         report = self.build()

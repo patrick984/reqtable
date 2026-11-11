@@ -67,4 +67,18 @@ function evaluateGateCheck(check,rows,idColumn,headers,system,findings,controls=
 function gateCheckFailed(result){
   return !!result.error||result.failing.length>0;
 }
+function gateCheckBlocks(result){
+  return result.enforcement==="strict"&&gateCheckFailed(result);
+}
+function gateCheckLabel(result){
+  const level=result.enforcement==="strict"?"blocking":"advisory";
+  if(result.error)return {tone:"gate-error",mark:result.enforcement==="strict"?"! Error · blocking":"! Error"};
+  if(!gateCheckFailed(result))return {tone:"gate-pass",mark:"✓ Pass"};
+  return {tone:level==="blocking"?"gate-fail":"gate-advisory",mark:`✗ Fail · ${level}`};
+}
+function gateBadgeLabel(results){
+  if(results.some(gateCheckBlocks))return {tone:"gate-fail",mark:"✗ Blocked"};
+  if(results.some(gateCheckFailed))return {tone:"gate-advisory",mark:"✗ Not ready"};
+  return {tone:"gate-pass",mark:"✓ Ready"};
+}
 """
