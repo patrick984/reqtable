@@ -7,7 +7,7 @@ from pathlib import Path
 
 from . import __version__
 from .baselines import (
-    BaselineStore, build_controls, create_baseline, find_gate, load_baselines, open_store, require_scope_args,
+    BaselineStore, build_controls, create_baseline, current_user, find_gate, load_baselines, open_store, require_scope_args,
     require_system_record, run_git, sort_manifests,
 )
 from .core import (
@@ -23,12 +23,14 @@ from .core import (
     prepare_trace_table,
     resolve_gate_enforcement,
     extract_comments_csv,
+    generation_time,
     load_config,
     read_csv_source,
 )
 from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
 from .review import build_package, import_decisions, sign_off, verify_baseline
+from .waivers import describe_failure, plan_waivers, split_ids
 from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
 
@@ -67,6 +69,11 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--create-baseline", metavar="GATE", help="freeze the input as a baseline for this review gate, and exit")
     result.add_argument("--system", metavar="ID", help="System ID for --create-baseline or --check-gate on a system-scoped gate")
+    result.add_argument(
+        "--waive", metavar="CHECK_ID", action="append", default=[],
+        help="with --create-baseline, waive this failing strict check (repeat, or comma-separate); needs --reason",
+    )
+    result.add_argument("--reason", help="why the --waive checks are waived; recorded in the baseline")
     result.add_argument("--list-baselines", action="store_true", help="list the baselines of the input (or --new), and exit")
     result.add_argument(
         "--baselines", metavar="NAME[,NAME...]",
@@ -82,7 +89,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--role", help="sign-off role for --sign-off, one of the gate's roles")
     result.add_argument("--decision", help="sign-off decision for --sign-off: Reviewed, Changes requested, Approved or Rejected")
-    result.add_argument("--user", help="who made the decision for --sign-off; default is git user.name or the login name")
+    result.add_argument("--user", help="who made the decision for --sign-off, or who waives for --waive; default is git user.name or the login name")
     result.add_argument("--note", default="", help="free-text note for --sign-off")
     result.add_argument("--evidence", metavar="PATH", help="file that backs the decision for --sign-off, such as a signed PDF")
     result.add_argument(
@@ -162,7 +169,7 @@ def table_store(path: str, selection: XlsxSelection, config: dict[str, object]) 
     return open_store(path, config, lambda found: read_csv_source(input_source(str(found), selection, config), config))
 
 
-def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> None:
+def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
     if args.create_baseline and args.list_baselines:
         raise ConfigError("--create-baseline and --list-baselines cannot be combined")
     if args.old or args.extract_comments or args.baselines or (args.create_baseline and args.new):
@@ -180,9 +187,30 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
             print("\t".join((manifest.name, manifest.gate, manifest.system or "-", manifest.created, manifest.created_by, digest)))
         if not manifests:
             print("No baselines.")
-        return
-    made = create_baseline(store, config, args.create_baseline, args.system)
+        return 0
+    result = evaluate_input(store.current(), store, config, args.create_baseline, args.system)
+    ids = split_ids(args.waive)
+    user = args.user or current_user(store.input_path.resolve().parent)
+    waivers = plan_waivers(result, ids, args.reason, user, generation_time())
+    waived = set(ids)
+    for check in result["checks"]:  # type: ignore[attr-defined]
+        if check["error"] is None and not check["failing"] or check["id"] in waived:
+            continue
+        if check["enforcement"] == "strict":
+            continue
+        print(f"warning: {describe_failure(check)}", file=sys.stderr)
+    blocked = [check for check in result["checks"] if check["id"] in result["blocking"] and check["id"] not in waived]  # type: ignore[attr-defined,index]
+    if blocked:
+        for check in blocked:
+            print(f"blocked: {describe_failure(check)}", file=sys.stderr)
+        hint = ", ".join(f"--waive {check['id']}" for check in blocked)
+        print(f'Fix the data, or record a waiver: {hint} --reason "..."', file=sys.stderr)
+        return 1
+    made = create_baseline(store, config, args.create_baseline, args.system, waivers)
+    for waiver in waivers:
+        print(f"Waived {waiver.check} ({len(waiver.failing)} records): {waiver.reason}")
     print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
+    return 0
 
 
 REVIEW_FLAGS = ("sign_off", "verify_baseline", "gate_package", "import_decisions")
@@ -262,8 +290,14 @@ def run(argv: list[str] | None = None) -> int:
                 f"{names} cannot be combined with each other, --create-baseline, --list-baselines, --check-gate, "
                 "--baselines, --old, --new or --extract-comments"
             )
-    if (args.role or args.decision or args.user or args.note or args.evidence) and not args.sign_off:
-        raise ConfigError("--role, --decision, --user, --note and --evidence apply only to --sign-off")
+    if (args.role or args.decision or args.note or args.evidence) and not args.sign_off:
+        raise ConfigError("--role, --decision, --note and --evidence apply only to --sign-off")
+    if args.user and not (args.sign_off or args.waive):
+        raise ConfigError("--user applies only to --sign-off and --waive")
+    if (args.waive or args.reason is not None) and not args.create_baseline:
+        raise ConfigError("--waive and --reason apply only to --create-baseline")
+    if args.reason is not None and not args.waive:
+        raise ConfigError("--reason applies only with --waive")
     if args.system and not (args.create_baseline or args.check_gate):
         raise ConfigError("--system applies only to --create-baseline and --check-gate")
     if not args.output and not baseline_command and not args.check_gate and not review_command:
@@ -280,8 +314,7 @@ def run(argv: list[str] | None = None) -> int:
     if args.check_gate:
         return run_check_gate(args, selection, config)
     if baseline_command:
-        run_baseline_command(args, selection, config)
-        return 0
+        return run_baseline_command(args, selection, config)
     if args.extract_comments:
         if args.input or args.old or args.new:
             raise ConfigError("--extract-comments cannot be combined with CSV inputs")

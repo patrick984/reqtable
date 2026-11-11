@@ -77,6 +77,10 @@ def verify_baseline(store: BaselineStore, config: dict[str, Any], requested: str
         f"{manifest.name} {manifest.content_hash} "
         + ("content hash matches" if hash_ok else f"content hash DOES NOT MATCH (stored content hashes to {digest})")
     ]
+    for waiver in manifest.waivers:
+        lines.append(
+            f"waived {waiver.check} by {waiver.user} on {waiver.date}: {waiver.reason} ({len(waiver.failing)} records)"
+        )
     checked = store.signoffs(manifest)
     for item in checked:
         record = item.record
@@ -128,6 +132,7 @@ def build_package(store: BaselineStore, config: dict[str, Any], requested: str, 
         f"{manifest.name} (frozen)", manifest.source, table.headers, rows,
         [row[id_column].strip() for row in rows], {row[id_column].strip(): row for row in rows},
     )
+    checks = {check["id"]: check["description"] for check in gate.get("checks", [])}
     previous = previous_baseline(manifests, config, manifest)
     embedded = load_baselines(store, config, [previous.name], store.warn) if previous else []
     gate_name = gate.get("name", gate["id"])
@@ -150,6 +155,9 @@ def build_package(store: BaselineStore, config: dict[str, Any], requested: str, 
         "roles": roles,
         "signoffs": [item.to_dict() for item in checked],
         "approval": approval_status(roles, checked),
+        "waivers": [
+            {**waiver.to_dict(), "description": checks.get(waiver.check)} for waiver in manifest.waivers
+        ],
         "decisionOptions": list(DECISIONS),
     }
     return data

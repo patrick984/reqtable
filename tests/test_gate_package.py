@@ -9,7 +9,7 @@ from pathlib import Path
 from signoff_support import TOOLS_PRESENT, git, init_signing_repo
 from test_baselines_cli import CSV_TEXT, CliTestCase, report_data
 
-PACKAGE_KEYS = {"gate", "baseline", "previous", "roles", "signoffs", "approval", "decisionOptions"}
+PACKAGE_KEYS = {"gate", "baseline", "previous", "roles", "signoffs", "approval", "waivers", "decisionOptions"}
 BASELINE_KEYS = {"name", "gate", "system", "created", "createdBy", "hash", "hashOk", "source"}
 EDITED = CSV_TEXT.replace("One", "Uno")
 

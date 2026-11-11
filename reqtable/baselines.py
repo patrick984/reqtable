@@ -28,6 +28,7 @@ from .core import (
     read_csv_source,
 )
 from .signoff import CheckedSignOff, SignOff, approval_status, slug
+from .waivers import Waiver
 from .xlsx import block_to_csv, is_xlsx
 
 HASH_FORMAT = "reqtable-baseline/1"
@@ -178,6 +179,7 @@ class Manifest:
     source: str
     created: str
     created_by: str
+    waivers: tuple[Waiver, ...] = ()
     format: str = HASH_FORMAT
 
     @property
@@ -187,12 +189,15 @@ class Manifest:
 
     def to_dict(self) -> dict[str, Any]:
         fields = asdict(self)
-        return {key: fields[key] for key in _MANIFEST_TYPES}
+        return {**{key: fields[key] for key in _MANIFEST_TYPES}, "waivers": [waiver.to_dict() for waiver in self.waivers]}
 
     @classmethod
     def from_dict(cls, data: Any) -> Manifest:
-        if not isinstance(data, dict) or set(data) != set(_MANIFEST_TYPES):
+        if not isinstance(data, dict) or set(data) - {"waivers"} != set(_MANIFEST_TYPES):
             raise ValueError("manifest has the wrong keys")
+        waivers = data.get("waivers", [])
+        if not isinstance(waivers, list):
+            raise ValueError("manifest waivers must be a list")
         for key, kind in _MANIFEST_TYPES.items():
             if not isinstance(data[key], kind):
                 raise ValueError(f"manifest {key} has the wrong type")
@@ -204,7 +209,7 @@ class Manifest:
         parsed = BaselineName.parse(data["name"])
         if parsed.gate != data["gate"] or parsed.system != data["system"] or parsed.number == 0:
             raise ValueError("manifest name does not match its gate and system")
-        return cls(**data)
+        return cls(**{key: data[key] for key in _MANIFEST_TYPES}, waivers=tuple(Waiver.from_dict(item) for item in waivers))
 
 
 def next_name(existing: Iterable[Manifest], gate: str, system: str | None) -> tuple[BaselineName, str | None]:
@@ -596,7 +601,9 @@ def require_system_record(table: CsvTable, system: str | None) -> None:
         raise InputError(f"{system!r} is not a System record in {table.label}")
 
 
-def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None) -> Manifest:
+def create_baseline(
+    store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None, waivers: Sequence[Waiver] = ()
+) -> Manifest:
     gate = find_gate(config, gate_id)
     require_scope_args(gate, system, config)
     table = store.current()
@@ -612,6 +619,7 @@ def create_baseline(store: BaselineStore, config: dict[str, Any], gate_id: str, 
         name=str(name), gate=gate.id, supersedes=supersedes, system=system, includes=list(gate.includes),
         captures_status=gate.captures_status, status_columns=list(status_columns), content_hash=digest,
         source=store.source, created=generation_time(), created_by=current_user(store.input_path.resolve().parent),
+        waivers=tuple(waivers),
     )
     store.write(manifest, table)
     return manifest
@@ -669,6 +677,7 @@ def load_baselines(
             "rows": rows,
             "signoffs": [item.to_dict() for item in checked],
             "approval": approval_status(gate_roles(config, found.gate), checked),
+            "waivers": [waiver.to_dict() for waiver in found.waivers],
         })
     return entries
 
