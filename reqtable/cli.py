@@ -14,12 +14,14 @@ from .core import (
     DEFAULT_CONFIG,
     ConfigError,
     CsvSource,
+    CsvTable,
     InputError,
     OutputError,
     ReqtableError,
     atomic_write_text,
     build_report_data,
     prepare_trace_table,
+    resolve_gate_enforcement,
     extract_comments_csv,
     load_config,
     read_csv_source,
@@ -212,6 +214,21 @@ def run_review_command(args: argparse.Namespace, selection: XlsxSelection, confi
     return 0 if approved else 1
 
 
+def evaluate_input(
+    table: CsvTable, store: BaselineStore, config: dict[str, object], gate_id: str, system: str | None
+) -> dict[str, object]:
+    gate = find_gate(config, gate_id)
+    require_scope_args(gate, system, config)
+    if config["traceability"]:
+        table, _ = prepare_trace_table(table, config)
+    require_system_record(table, system)
+    controls = build_controls(store, config)
+    findings = table_findings(table.rows, table.headers, config["id_column"], controls)  # type: ignore[arg-type]
+    configured = next(entry for entry in config["gates"] if entry["id"] == gate.id)  # type: ignore[attr-defined]
+    resolved = resolve_gate_enforcement(configured, config["baselines"]["enforcement"])  # type: ignore[index]
+    return evaluate_gate(resolved, table.rows, table.headers, config["id_column"], system, findings, controls)  # type: ignore[arg-type]
+
+
 def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: dict[str, object]) -> int:
     if args.create_baseline or args.list_baselines or args.baselines or args.old or args.new or args.extract_comments:
         raise ConfigError(
@@ -219,16 +236,8 @@ def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: d
         )
     if not args.input:
         raise ConfigError("--check-gate needs an input CSV or .xlsx")
-    gate = find_gate(config, args.check_gate)
-    require_scope_args(gate, args.system, config)
     table = read_csv_source(input_source(args.input, selection, config), config)
-    if config["traceability"]:
-        table, _ = prepare_trace_table(table, config)
-    require_system_record(table, args.system)
-    controls = build_controls(table_store(args.input, selection, config), config)
-    findings = table_findings(table.rows, table.headers, config["id_column"], controls)  # type: ignore[arg-type]
-    configured = next(entry for entry in config["gates"] if entry["id"] == gate.id)  # type: ignore[attr-defined]
-    result = evaluate_gate(configured, table.rows, table.headers, config["id_column"], args.system, findings, controls)  # type: ignore[arg-type]
+    result = evaluate_input(table, table_store(args.input, selection, config), config, args.check_gate, args.system)
     print("\n".join(format_result(result)))
     return 0 if result["ready"] else 1
 

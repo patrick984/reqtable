@@ -154,7 +154,7 @@ class ReportEmbeddingTests(CliTestCase):
         self.assertEqual(self.run_main(str(self.csv), "--create-baseline", "SRR")[0], 0)
         self.csv.write_text(self.csv.read_text(encoding="utf-8").replace("One", "Uno"), encoding="utf-8")
         code, out, _ = self.run_main(str(self.csv), "--check-gate", "SFR")
-        self.assertIn("  FAIL sfr-no-findings  There are no trace findings: 2 of 5 records: R1, (table)", out)
+        self.assertIn("  FAIL (advisory) sfr-no-findings  There are no trace findings: 2 of 5 records: R1, (table)", out)
 
 
 @unittest.skipUnless(shutil.which("git"), "git is not on PATH")
@@ -176,7 +176,7 @@ class CheckGateChangeControlTests(CliTestCase):
         code, out, _ = self.run_main(str(self.csv), "--check-gate", "PDR")
         self.assertEqual(code, 1)
         self.assertIn(
-            "  FAIL pdr-change-control  Every change since the last baseline has an approved change request: "
+            "  FAIL (advisory) pdr-change-control  Every change since the last baseline has an approved change request: "
             "1 of 4 records: R1", out,
         )
         self.csv.write_text(edited + "CR1,Change request,Reword R1,,,,,,,R1,Approved\n", encoding="utf-8")

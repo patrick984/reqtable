@@ -81,9 +81,16 @@ class ConfigTests(unittest.TestCase):
         self.assertRejected(self.baselines(git={"tag_prefix": "baseline"}), "tag_prefix")
         self.assertRejected(self.baselines(git={"tag_prefix": ""}), "tag_prefix")
         self.assertRejected(self.baselines(files={"directory": " "}), "directory")
-        self.assertRejected(self.baselines(enforcement="strict"), "enforcement")
+        self.assertRejected(self.baselines(enforcement="blocking"), "baselines.enforcement")
+        validate_config(self.baselines(enforcement="strict"))
         self.assertRejected(self.baselines(status_columns="Compliance"), "status_columns")
         self.assertRejected(self.baselines(status_columns=[1]), "status_columns")
+
+    def test_rejects_bad_enforcement_naming_gate_and_check(self) -> None:
+        self.assertRejected(self.gates({"id": "A", "enforcement": "hard"}), "gates[0] (A).enforcement")
+        gate = {"id": "A", "checks": [{"id": "c1", "description": "d", "filled": "Name", "enforcement": "hard"}]}
+        self.assertRejected(self.gates(gate), "checks[c1].enforcement")
+        validate_config(self.gates({**gate, "enforcement": "strict", "checks": [{**gate["checks"][0], "enforcement": "strict"}]}))
 
     def test_rejects_bad_gates(self) -> None:
         self.assertRejected(config_with(gates={"id": "X"}), "gates must be an array")

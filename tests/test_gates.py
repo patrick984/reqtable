@@ -4,7 +4,7 @@ import json
 import unittest
 from pathlib import Path
 
-from reqtable.core import DEFAULT_CONFIG, ConfigError, validate_gates
+from reqtable.core import DEFAULT_CONFIG, ConfigError, resolve_gate_enforcement, validate_gates
 from reqtable.gates import evaluate_check, evaluate_gate, format_result
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "gate_checks.json").read_text(encoding="utf-8"))
@@ -111,6 +111,48 @@ class UnchangedSinceTests(unittest.TestCase):
         self.assertEqual(self.run_check(findings)["failing"], ["T2"])
 
 
+class EnforcementTests(unittest.TestCase):
+    gate = {"id": "G", "name": "Gate", "checks": [
+        check_with(id="a", filled="Priority"),
+        check_with(id="b", filled="Priority", enforcement="advisory"),
+        check_with(id="c", filled="Priority", enforcement="strict"),
+        check_with(id="ok", filled="Requirement", enforcement="strict"),
+    ]}
+
+    def levels(self, gate, default):
+        return {check["id"]: check["enforcement"] for check in resolve_gate_enforcement(gate, default)["checks"]}
+
+    def test_effective_level_is_check_then_gate_then_default(self) -> None:
+        self.assertEqual(self.levels(self.gate, "advisory"), {"a": "advisory", "b": "advisory", "c": "strict", "ok": "strict"})
+        self.assertEqual(self.levels(self.gate, "strict"), {"a": "strict", "b": "advisory", "c": "strict", "ok": "strict"})
+        gate = {**self.gate, "enforcement": "strict"}
+        self.assertEqual(self.levels(gate, "advisory"), {"a": "strict", "b": "advisory", "c": "strict", "ok": "strict"})
+        self.assertEqual(self.levels({**self.gate, "enforcement": "advisory"}, "strict")["a"], "advisory")
+
+    def evaluate(self, gate):
+        return evaluate_gate(gate, FIXTURE["rows"], FIXTURE["headers"], "ID", None, [])
+
+    def test_only_failing_strict_checks_block(self) -> None:
+        result = self.evaluate(resolve_gate_enforcement(self.gate, "advisory"))
+        self.assertEqual((result["ready"], result["blocking"], result["blocked"]), (False, ["c"], True))
+        self.assertEqual([check["enforcement"] for check in result["checks"]], ["advisory", "advisory", "strict", "strict"])
+
+    def test_failing_advisory_checks_do_not_block(self) -> None:
+        result = self.evaluate(resolve_gate_enforcement({**self.gate, "checks": self.gate["checks"][:2]}, "advisory"))
+        self.assertEqual((result["ready"], result["blocking"], result["blocked"]), (False, [], False))
+
+    def test_a_strict_check_that_errors_blocks(self) -> None:
+        result = self.evaluate(resolve_gate_enforcement({"id": "G", "checks": [check_with(filled="Owner")]}, "strict"))
+        self.assertEqual((result["blocking"], result["blocked"]), (["c"], True))
+
+    def test_format_marks_strict_failures_and_blocked(self) -> None:
+        lines = format_result(self.evaluate(resolve_gate_enforcement(self.gate, "advisory")))
+        self.assertEqual(lines[0], "G Gate: not ready, blocked")
+        self.assertEqual(lines[1][:24], "  FAIL (advisory) a  d: ")
+        self.assertTrue(lines[3].startswith("  FAIL (strict) c  d: "))
+        self.assertEqual(lines[4], "  pass ok  d")
+
+
 class GateTests(unittest.TestCase):
     def test_ready_needs_no_failures_and_no_errors(self) -> None:
         run = lambda *checks: evaluate_gate(
@@ -130,11 +172,12 @@ class GateTests(unittest.TestCase):
             ]},
             FIXTURE["rows"], FIXTURE["headers"], "ID", "SYS-A", [],
         )
+        self.assertFalse(result["blocked"])
         self.assertEqual(format_result(result), [
             "G Gate for SYS-A: not ready",
-            "  FAIL a  d: 1 of 2 records: R2",
+            "  FAIL (advisory) a  d: 1 of 2 records: R2",
             "  pass b  d",
-            "  ERROR c  The table has no “Owner” column.",
+            "  ERROR (advisory) c  The table has no “Owner” column.",
         ])
 
 

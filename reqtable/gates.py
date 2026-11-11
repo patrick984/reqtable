@@ -6,7 +6,7 @@ from functools import cached_property
 from typing import Any, Callable, Sequence
 
 from .baselines import links, record_type, select_scope
-from .core import RECORD_TYPES, ConfigError
+from .core import RECORD_TYPES, ConfigError, validate_enforcement
 from .findings import trace_findings
 
 Finding = tuple["str | None", str, str]
@@ -98,7 +98,7 @@ CONDITIONS: dict[str, Condition] = {condition.key: condition for condition in (
 )}
 WHOLE_RECORD_CONDITIONS = ("no_findings", "unchanged_since")
 
-CHECK_KEYS = {"id", "description", "applies_to", "leaf", *CONDITIONS}
+CHECK_KEYS = {"id", "description", "applies_to", "leaf", "enforcement", *CONDITIONS}
 
 
 def _validate_applies_to(applies: Any, where: str) -> None:
@@ -139,6 +139,8 @@ def validate_checks(checks: Any, gate_where: str) -> None:
         CONDITIONS[used[0]].validate(check[used[0]], f"{where}.{used[0]}")
         if "applies_to" in check:
             _validate_applies_to(check["applies_to"], where)
+        if "enforcement" in check:
+            validate_enforcement(check["enforcement"], f"{where}.enforcement")
 
 
 def _applies(check: dict[str, Any], row: dict[str, str]) -> bool:
@@ -179,7 +181,9 @@ def evaluate_check(
     findings: Sequence[Finding],
     controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {"id": check["id"], "description": check["description"], "error": None}
+    result: dict[str, Any] = {
+        "id": check["id"], "description": check["description"], "enforcement": check.get("enforcement", "advisory"), "error": None,
+    }
     key = next(key for key in CONDITIONS if key in check)
     condition = CONDITIONS[key]
     columns = [*(k for k in check.get("applies_to", {}) if k != "type"), *condition.columns(check[key])]
@@ -209,8 +213,12 @@ def evaluate_gate(
     controls: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     checks = [evaluate_check(check, rows, headers, id_column, system, findings, controls) for check in gate.get("checks", [])]
-    ready = all(check["error"] is None and not check["failing"] for check in checks)
-    return {"gate": gate["id"], "name": gate.get("name", gate["id"]), "system": system, "ready": ready, "checks": checks}
+    failed = [check for check in checks if check["error"] is not None or check["failing"]]
+    blocking = [check["id"] for check in failed if check["enforcement"] == "strict"]
+    return {
+        "gate": gate["id"], "name": gate.get("name", gate["id"]), "system": system, "ready": not failed,
+        "blocking": blocking, "blocked": bool(blocking), "checks": checks,
+    }
 
 
 def table_findings(
@@ -221,15 +229,17 @@ def table_findings(
 
 def format_result(result: dict[str, Any]) -> list[str]:
     scope = f" for {result['system']}" if result["system"] else ""
-    lines = [f"{result['gate']} {result['name']}{scope}: {'ready' if result['ready'] else 'not ready'}"]
+    blocked = ", blocked" if result["blocked"] else ""
+    lines = [f"{result['gate']} {result['name']}{scope}: {'ready' if result['ready'] else 'not ready'}{blocked}"]
     for check in result["checks"]:
+        level = f"({check['enforcement']})"
         if check["error"]:
-            lines.append(f"  ERROR {check['id']}  {check['error']}")
+            lines.append(f"  ERROR {level} {check['id']}  {check['error']}")
         elif check["failing"]:
             shown = ", ".join(found or "(table)" for found in check["failing"][:MAX_LISTED])
             more = ", …" if len(check["failing"]) > MAX_LISTED else ""
             lines.append(
-                f"  FAIL {check['id']}  {check['description']}: "
+                f"  FAIL {level} {check['id']}  {check['description']}: "
                 f"{len(check['failing'])} of {check['total']} records: {shown}{more}"
             )
         else:

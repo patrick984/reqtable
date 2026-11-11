@@ -287,8 +287,7 @@ def validate_baselines(baselines: dict[str, Any]) -> None:
     directory = baselines["files"]["directory"]
     if not isinstance(directory, str) or not directory.strip():
         raise ConfigError("baselines.files.directory must be a non-empty string")
-    if baselines["enforcement"] != "advisory":
-        raise ConfigError("baselines.enforcement must be 'advisory'")
+    validate_enforcement(baselines["enforcement"], "baselines.enforcement")
     columns = baselines["status_columns"]
     if not isinstance(columns, list) or not all(isinstance(x, str) for x in columns):
         raise ConfigError("baselines.status_columns must be an array of strings")
@@ -296,7 +295,21 @@ def validate_baselines(baselines: dict[str, Any]) -> None:
         raise ConfigError("baselines.change_control must be true or false")
 
 
-_GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff"}
+ENFORCEMENT_LEVELS = ("advisory", "strict")
+
+
+def validate_enforcement(value: Any, where: str) -> None:
+    if value not in ENFORCEMENT_LEVELS:
+        raise ConfigError(f"{where} must be 'advisory' or 'strict'")
+
+
+def resolve_gate_enforcement(gate: dict[str, Any], default: str) -> dict[str, Any]:
+    """The gate with every check carrying its effective enforcement: the check's, else the gate's, else the default."""
+    level = gate.get("enforcement", default)
+    return {**gate, "checks": [{**check, "enforcement": check.get("enforcement", level)} for check in gate.get("checks", [])]}
+
+
+_GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff", "enforcement"}
 
 
 def validate_gates(gates: Any) -> None:
@@ -332,6 +345,8 @@ def validate_gates(gates: Any) -> None:
             raise ConfigError(f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}")
         if not isinstance(gate.get("captures_status", False), bool):
             raise ConfigError(f"{where}.captures_status must be true or false")
+        if "enforcement" in gate:
+            validate_enforcement(gate["enforcement"], f"{where}.enforcement")
         validate_roles(gate.get("signoff", []), where)
         validate_checks(gate.get("checks", []), where)
 
@@ -804,7 +819,7 @@ def build_report_data(
         "comments": comments,
         "baselines": list(baselines),
         "controls": controls,
-        "gates": config["gates"],
+        "gates": [resolve_gate_enforcement(gate, config["baselines"]["enforcement"]) for gate in config["gates"]],
     }
 
 
