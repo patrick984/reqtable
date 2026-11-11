@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .waivers import records
+
 from pathlib import Path
 from typing import Any
 
@@ -79,7 +81,7 @@ def verify_baseline(store: BaselineStore, config: dict[str, Any], requested: str
     ]
     for waiver in manifest.waivers:
         lines.append(
-            f"waived {waiver.check} by {waiver.user} on {waiver.date}: {waiver.reason} ({len(waiver.failing)} records)"
+            f"waived {waiver.check} by {waiver.user} on {waiver.date}: {waiver.reason} ({records(len(waiver.failing))})"
         )
     checked = store.signoffs(manifest)
     for item in checked:

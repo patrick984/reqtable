@@ -30,7 +30,7 @@ from .core import (
 from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
 from .review import build_package, import_decisions, sign_off, verify_baseline
-from .waivers import describe_failure, plan_waivers, split_ids
+from .waivers import describe_failure, plan_waivers, records, split_ids
 from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
 
 
@@ -73,7 +73,10 @@ def parser() -> argparse.ArgumentParser:
         "--waive", metavar="CHECK_ID", action="append", default=[],
         help="with --create-baseline, waive this failing strict check (repeat, or comma-separate); needs --reason",
     )
-    result.add_argument("--reason", help="why the --waive checks are waived; recorded in the baseline")
+    result.add_argument(
+        "--reason", action="append", default=[],
+        help="why the --waive checks are waived; give one for all, or repeat it once per check in the same order",
+    )
     result.add_argument("--list-baselines", action="store_true", help="list the baselines of the input (or --new), and exit")
     result.add_argument(
         "--baselines", metavar="NAME[,NAME...]",
@@ -203,12 +206,12 @@ def run_baseline_command(args: argparse.Namespace, selection: XlsxSelection, con
     if blocked:
         for check in blocked:
             print(f"blocked: {describe_failure(check)}", file=sys.stderr)
-        hint = ", ".join(f"--waive {check['id']}" for check in blocked)
-        print(f'Fix the data, or record a waiver: {hint} --reason "..."', file=sys.stderr)
+        hint = ",".join(check["id"] for check in blocked)
+        print(f'Fix the data, or record a waiver: --waive {hint} --reason "..."', file=sys.stderr)
         return 1
     made = create_baseline(store, config, args.create_baseline, args.system, waivers)
     for waiver in waivers:
-        print(f"Waived {waiver.check} ({len(waiver.failing)} records): {waiver.reason}")
+        print(f"Waived {waiver.check} ({records(len(waiver.failing))}): {waiver.reason}")
     print(f"Created baseline {made.name} ({made.content_hash}) {store.where(made)}")
     return 0
 
@@ -294,9 +297,9 @@ def run(argv: list[str] | None = None) -> int:
         raise ConfigError("--role, --decision, --note and --evidence apply only to --sign-off")
     if args.user and not (args.sign_off or args.waive):
         raise ConfigError("--user applies only to --sign-off and --waive")
-    if (args.waive or args.reason is not None) and not args.create_baseline:
+    if (args.waive or args.reason) and not args.create_baseline:
         raise ConfigError("--waive and --reason apply only to --create-baseline")
-    if args.reason is not None and not args.waive:
+    if args.reason and not args.waive:
         raise ConfigError("--reason applies only with --waive")
     if args.system and not (args.create_baseline or args.check_gate):
         raise ConfigError("--system applies only to --create-baseline and --check-gate")

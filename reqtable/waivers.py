@@ -43,14 +43,23 @@ def describe_failure(check: dict[str, Any]) -> str:
     return f"{check['id']} fails ({len(check['failing'])} of {check['total']}): {check['description']}"
 
 
+def records(count: int) -> str:
+    return f"{count} record" if count == 1 else f"{count} records"
+
+
 def plan_waivers(
-    result: dict[str, Any], ids: Sequence[str], reason: str | None, user: str, date: str
+    result: dict[str, Any], ids: Sequence[str], reasons: Sequence[str], user: str, date: str
 ) -> list[Waiver]:
     """Validate --waive against the evaluation and build the records. Raises ConfigError naming the first problem."""
     if not ids:
         return []
-    if reason is None or not reason.strip():
+    if not reasons or any(not reason.strip() for reason in reasons):
         raise ConfigError("--waive needs --reason with the grounds for the waiver")
+    if len(reasons) not in (1, len(ids)):
+        raise ConfigError(
+            f"give one --reason for all waived checks, or one per check in the order they are named "
+            f"({len(ids)} checks, {len(reasons)} reasons)"
+        )
     checks = {check["id"]: check for check in result["checks"]}
     for check_id in ids:
         check = checks.get(check_id)
@@ -60,4 +69,8 @@ def plan_waivers(
             raise ConfigError(f"cannot waive {check_id}: it is advisory and does not block")
         if not check["error"] and not check["failing"]:
             raise ConfigError(f"cannot waive {check_id}: it is not failing")
-    return [Waiver(check_id, reason.strip(), user, date, tuple(checks[check_id]["failing"])) for check_id in ids]
+    paired = list(reasons) if len(reasons) == len(ids) else [reasons[0]] * len(ids)
+    return [
+        Waiver(check_id, reason.strip(), user, date, tuple(checks[check_id]["failing"]))
+        for check_id, reason in zip(ids, paired)
+    ]

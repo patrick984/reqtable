@@ -80,7 +80,7 @@ class WaiverFlow:
         code, out, err = self.create("--waive", "has-name", "--reason", "Names arrive with the vendor data", "--user", "ann")
         self.assertEqual(code, 0, err)
         lines = out.splitlines()
-        self.assertEqual(lines[0], "Waived has-name (1 records): Names arrive with the vendor data")
+        self.assertEqual(lines[0], "Waived has-name (1 record): Names arrive with the vendor data")
         self.assertTrue(lines[1].startswith("Created baseline SRR "))
         (waiver,) = self.manifest_waivers()
         self.assertEqual(
@@ -95,9 +95,19 @@ class WaiverFlow:
         code, out, err = self.create("--waive", "has-name,has-compliance", "--waive", "has-name", "--reason", "r")
         self.assertEqual(code, 0, err)
         self.assertEqual(
-            out.splitlines()[:2], ["Waived has-name (1 records): r", "Waived has-compliance (2 records): r"],
+            out.splitlines()[:2], ["Waived has-name (1 record): r", "Waived has-compliance (2 records): r"],
         )
         self.assertEqual({w["user"] for w in self.manifest_waivers()}, {current_user(self.root)})
+
+    def test_reasons_pair_with_waived_checks_in_order(self) -> None:
+        self.csv.write_text(UNNAMED.replace("Not verified", ""), encoding="utf-8")
+        self.commit()
+        code, out, err = self.create("--waive", "has-name", "--reason", "names later", "--waive", "has-compliance", "--reason", "not verified yet")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out.splitlines()[:2], ["Waived has-name (1 record): names later", "Waived has-compliance (2 records): not verified yet"])
+        code, _, err = self.create("--waive", "has-name,has-compliance", "--reason", "a", "--reason", "b", "--reason", "c")
+        self.assertEqual(code, 2)
+        self.assertIn("one per check", err)
 
     def test_verify_lists_waivers_and_they_do_not_change_approval(self) -> None:
         self.create("--waive", "has-name", "--reason", "vendor data", "--user", "ann")
@@ -105,7 +115,7 @@ class WaiverFlow:
         lines = out.splitlines()
         self.assertEqual(code, 1)
         self.assertRegex(lines[0], r"^SRR sha256:[0-9a-f]{64} content hash matches$")
-        self.assertRegex(lines[1], rf"^waived has-name by ann on {DATE}: vendor data \(1 records\)$")
+        self.assertRegex(lines[1], rf"^waived has-name by ann on {DATE}: vendor data \(1 record\)$")
         self.assertEqual(lines[-1], "not approved")
 
     def test_embedded_baselines_and_packages_carry_waivers(self) -> None:
