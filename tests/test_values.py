@@ -179,6 +179,7 @@ assert.equal(booleanApplies("Multiple","Term"),false);
 assert.equal(booleanApplies("Auto Link","Requirement"),false);
 assert.equal(booleanApplies("Name","Term"),false);
 assert.equal(booleanApplies("Auto Link",undefined),false);
+assert.equal(booleanApplies("Requirement",undefined),false);
 """)
 
 
