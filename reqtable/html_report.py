@@ -2007,7 +2007,7 @@ function renderCommandResults(){
       const labelNode=item.labels?.[0]??item;
       const label=[...labelNode.childNodes].filter(node=>!node.matches?.("kbd"))
         .map(node=>node.textContent).join("").trim();
-      if(!terms.every(term=>`${group} ${label}`.toLocaleLowerCase().includes(term)))continue;
+      if(!terms.every(term=>`${group} ${label} ${item.getAttribute("aria-label")??""}`.toLocaleLowerCase().includes(term)))continue;
       const result=document.createElement("button");
       const name=document.createElement("span");
       const context=document.createElement("small");
