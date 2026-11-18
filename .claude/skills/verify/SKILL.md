@@ -57,6 +57,8 @@ The pane auto-cancels native `confirm()`, and reqtable uses it for Delete requir
 
 **Act like a user.** Use `computer` clicks and keys on cells and menu items. Use `find` to get refs for buttons by accessible name, for example `find("Export changes for review")`. Stable handles:
 
+- Tables with more than 300 display rows are windowed: only rows near the viewport are in `#requirements-body`, between `tr.window-spacer` rows. Find rows through `grid.display` (the ordered display model) and move to one with `focusGridCell(row, column)` before reading its cells. Scroll updates run in `requestAnimationFrame`, which does not fire while the pane is hidden: after setting `scrollTop` from script, call `updateWindow()` or use a real wheel scroll.
+- To test performance, generate a large table by repeating the `requirements-uat.csv` requirements with new IDs (about 5,000 rows) and time `render()` with `performance.now()` plus a forced layout. Run more than three renders in separate calls, because each call has a 45 s limit.
 - Menus are `<details class="popup-menu">` with summaries `File`, `Edit`, `View`, `Filter`, `Columns`, `Help`.
 - Menu buttons have ids: `#save-csv`, `#save-as`, `#save-copy`, `#export-review`, `#export-review-changes`, `#add-end`, `#add-above`, `#add-below`, `#move-up`, `#move-down`, `#rename-requirement`, `#delete-requirement`, `#undo-edit`, `#redo-edit`, `#unsaved-diff`, `#review-comparison`, `#view-toggle`, `#check-quality`.
 - Grid rows are `tbody tr[data-row-id="<ID>"]`, with status classes `row-added`, `row-removed`, `row-changed` and `row-unchanged`. The blank entry row has `data-row-id=""`.
