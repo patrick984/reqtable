@@ -89,3 +89,17 @@ assert.equal(range.top,2000+2*100);
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class EdgeScrollTests(unittest.TestCase):
+    def test_scroll_speed_follows_the_pointer_toward_the_edge(self):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + WINDOW_JS + """
+assert.equal(edgeScrollSpeed(300,100,500),0);
+assert.equal(edgeScrollSpeed(100,100,500),-28);
+assert.equal(edgeScrollSpeed(20,100,500),-28);
+assert.equal(edgeScrollSpeed(500,100,500),28);
+assert.equal(edgeScrollSpeed(900,100,500),28);
+assert.ok(edgeScrollSpeed(120,100,500)<0&&edgeScrollSpeed(120,100,500)>-28);
+assert.ok(edgeScrollSpeed(480,100,500)>0&&edgeScrollSpeed(480,100,500)<28);
+""", text=True, check=True)
