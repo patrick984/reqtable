@@ -377,7 +377,7 @@ const trace=(()=>{
   const label=record=>record.row.Name?.trim()||record.id;
   const caption=record=>label(record)===record.id?record.id:`${label(record)} (${record.id})`;
   const writable=()=>developMode()&&!state.editingCell;
-  const visible=id=>[...tableBody.rows].some(row=>row.dataset.rowId===id);
+  const visible=id=>displayIndex(id)>=0;
   const children=record=>record.incoming.filter(edge=>edge.field==="Part of").map(edge=>edge.record);
   const link=(id,text)=>`<button type="button" class="trace-link" data-trace-jump="${escapeHtml(id)}">${escapeHtml(text)}</button>`;
   const focusControl=(container,attribute,value)=>{
@@ -448,7 +448,7 @@ const trace=(()=>{
     downloadBlob(new Blob(["\ufeff"+lines.join("\r\n")+"\r\n"],{type:"text/csv;charset=utf-8"}),`${data.meta.baseFilename}-vcrm.csv`);
   }
   function paintStrip(){
-    const records=[...tableBody.rows].map(row=>index.records.get(row.dataset.rowId)).filter(Boolean);
+    const records=grid.display.map(row=>index.records.get(row.id)).filter(Boolean);
     const box=$("#trace-verification-summary"),items=listViews[view]?.strip?.(records);
     matrixRecords=records;
     if(matrixShown())paintMatrix();
@@ -897,9 +897,8 @@ const trace=(()=>{
     writeHistory(false);
   }
   function restoreGridSelection(id,column){
-    const row=id&&[...tableBody.rows].find(row=>row.dataset.rowId===id);
-    const cell=[...row?.cells??[]].find(cell=>cell.dataset.column===column);
-    state.focus.row=cell?+cell.dataset.rowIndex:0;
+    const row=id?displayIndex(id):-1;
+    state.focus.row=row>=0&&visibleColumns().some(item=>item.name===column)?row:0;
     setRovingFocus();
   }
   function changeScope(id,onlyUnallocated=false){

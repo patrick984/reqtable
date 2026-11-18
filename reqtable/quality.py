@@ -160,7 +160,7 @@ function qualityCardTitle(card,id,column,text,hidden){
 function renderQualityPanel(){
   if(qualityPanel.hidden)return;
   const list=$("#quality-findings"),body=list.parentElement,scroll=body.scrollTop;
-  const displayed=new Set([...tableBody.rows].map(row=>row.dataset.rowId));
+  const displayed=new Set(grid.display.map(row=>row.id));
   const columns=new Set(visibleColumns().map(column=>column.name));
   let count=0;
   const cards=[];
@@ -270,7 +270,7 @@ function jumpToQualityCell(id,column,hidden,issue){
   }
   quality.activeCell={id,column};
   if(hidden){
-    const rowVisible=[...tableBody.rows].some(row=>row.dataset.rowId===id);
+    const rowVisible=displayIndex(id)>=0;
     trace?.reveal(id,column);
     state.hidden.delete(column);
     if(!rowVisible){
