@@ -114,9 +114,9 @@ function underlineQualityPhrases(wrapper,issues){
     node.replaceWith(fragment);
   }
 }
-function paintQualityMarkers(){
+function paintQualityMarkers(rows=renderedRows()){
   if(!quality.checked)return;
-  for(const row of tableBody.rows){
+  for(const row of rows){
     const fields=quality.findings.get(row.dataset.rowId);
     if(!fields)continue;
     for(const cell of row.querySelectorAll("[data-grid-cell]")){

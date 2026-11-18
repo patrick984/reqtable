@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from reqtable.core import build_report_data, load_config, read_csv_table
-from reqtable.html_report import render_report
+from reqtable.html_report import WINDOW_JS, render_report
 
 
 def large_report(rows: int, **options) -> str:
@@ -39,6 +39,52 @@ class LargeReportTests(unittest.TestCase):
                 handle.write(script)
                 handle.flush()
                 subprocess.run(["node", "--check", handle.name], check=True)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class WindowRangeTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + WINDOW_JS + assertions,
+                       text=True, check=True)
+
+    def test_small_tables_draw_every_row(self):
+        self.run_js("""
+const offsets=rowOffsets(Array.from({length:300},(_,i)=>i),new Map());
+assert.deepEqual(windowRange(offsets,5000,600),{start:0,end:300,top:0,bottom:0});
+assert.deepEqual(windowRange(rowOffsets([],new Map()),0,600),{start:0,end:0,top:0,bottom:0});
+""")
+
+    def test_large_tables_draw_the_viewport_plus_overscan(self):
+        self.run_js("""
+const ids=Array.from({length:5000},(_,i)=>i),offsets=rowOffsets(ids,new Map(),50);
+assert.deepEqual(windowRange(offsets,10000,500,15),{start:185,end:226,top:9250,bottom:(5000-226)*50});
+assert.deepEqual(windowRange(offsets,10000,500,0),{start:200,end:211,top:10000,bottom:(5000-211)*50});
+""")
+
+    def test_range_clamps_at_both_ends(self):
+        self.run_js("""
+const offsets=rowOffsets(Array.from({length:1000},(_,i)=>i),new Map(),20);
+assert.deepEqual(windowRange(offsets,-300,400,15),{start:0,end:21,top:0,bottom:(1000-21)*20});
+const last=windowRange(offsets,10**7,400,15);
+assert.equal(last.end,1000);
+assert.equal(last.bottom,0);
+assert.equal(last.start,1000-1-15);
+""")
+
+    def test_unmeasured_rows_use_the_average_of_measured_rows(self):
+        self.run_js("""
+const heights=new Map([["a",40],["b",80]]);
+assert.deepEqual([...rowOffsets(["a","x","b","y"],heights)],[0,40,100,180,240]);
+assert.deepEqual([...rowOffsets(["x","y"],new Map())],[0,ROW_HEIGHT_GUESS,2*ROW_HEIGHT_GUESS]);
+""")
+
+    def test_measured_heights_place_the_window(self):
+        self.run_js("""
+const ids=Array.from({length:400},(_,i)=>i),heights=new Map(ids.map(id=>[id,id<200?10:100]));
+const range=windowRange(rowOffsets(ids,heights),2000+250,300,0);
+assert.deepEqual([range.start,range.end],[202,206]);
+assert.equal(range.top,2000+2*100);
+""")
 
 
 if __name__ == "__main__":

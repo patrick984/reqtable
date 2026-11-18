@@ -699,9 +699,9 @@ const trace=(()=>{
     }
     first?.scrollIntoView({block:"nearest"});
   }
-  function paintMarkers(){
+  function paintMarkers(rows){
     const cells=groupFindingsByCell(index.issues);
-    for(const row of tableBody.rows){
+    for(const row of rows){
       const columns=cells.get(row.dataset.rowId);
       if(!columns)continue;
       for(const cell of row.querySelectorAll("[data-grid-cell]")){
@@ -1303,7 +1303,8 @@ const trace=(()=>{
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
       :listViews[view]?.order?.().indexOf(name)??0,
-    linkGlossary:()=>glossaryPopover.decorate(index.glossary),
+    linkGlossary:rows=>glossaryPopover.decorate(index.glossary,rows),
+    viewKey:()=>[view,glossaryKind,viewMode()].join(":"),
     cellDisplay:(id,column)=>{
       const record=index.records.get(id);
       return record&&listViews[view]?.cells?.[column]?.(record)||null;

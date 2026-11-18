@@ -124,10 +124,10 @@ function createGlossaryPopover(jump){
   },true);
   $(".table-wrap").addEventListener("scroll",()=>close());
   window.addEventListener("resize",()=>close());
-  return {close,decorate(glossary){
+  return {close,decorate(glossary,rows){
     if(!glossary.enabled)return;
     const columns=["Requirement","Acceptance Criteria","Rationale"];
-    for(const cell of tableBody.querySelectorAll("[data-grid-cell]")){
+    for(const cell of [...rows].flatMap(row=>[...row.querySelectorAll("[data-grid-cell]")])){
       if(!columns.includes(cell.dataset.column))continue;
       const wrapper=cell.querySelector(".cell-wrap");
       if(!wrapper)continue;
