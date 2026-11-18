@@ -234,7 +234,7 @@ function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell
 function commentKey(rid,column){return `${rid}\u0000${column}`;}
 function indexComments(){grid.comments=new Map();for(const c of state.comments){const key=commentKey(c.requirementId,c.column);grid.comments.set(key,(grid.comments.get(key)??0)+1);}}
 
-function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
+function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=naturalCompare(av,bv);return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
 function commentCard(c,actions=""){const stamp=displayTimestamp(c.modified||c.created);return `<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(stamp)}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><div class="markdown">${renderCommentMarkdown(c.text)}</div>${actions}</article>`;}
 
 function dataCell(row,column,ri,ci,{canDrag,focus,bounds,wholeRows,firstColumn}){
@@ -2125,6 +2125,7 @@ document.addEventListener("keydown",event=>{
 """ + QUALITY_JS
 
 FILTER_JS = r"""
+const naturalCompare=new Intl.Collator(undefined,{numeric:true,sensitivity:"base"}).compare;
 // Listed options are never blank, so "" cannot collide with a real value.
 const EMPTY_FILTER="";
 function isBlankValue(value){return String(value??"").trim()==="";}
@@ -2134,7 +2135,7 @@ function valueFilterLabel(value){return value===EMPTY_FILTER?"Empty":`“${value
 function valueFilterOptions(values){
   const blank=values.some(isBlankValue);
   const listed=[...new Set(values.filter(value=>!isBlankValue(value)))]
-    .sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:"base"}));
+    .sort(naturalCompare);
   return {blank,listed};
 }
 """
