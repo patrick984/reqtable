@@ -51,6 +51,8 @@ class TraceCsvTests(TempFiles):
         self.assertIn('data-trace-view="glossary"', report)
         self.assertIn('id="glossary-definition"', report)
         self.assertIn('data-trace-view="tests"', report)
+        self.assertIn('data-trace-view="changes" aria-pressed="false">Change requests</button>', report)
+        self.assertIn('<label>System <select id="trace-gates-system">', report)
         order = ["sources", "requirements", "systems", "tests", "verification", "glossary", "all"]
         positions = [report.index(f'data-trace-view="{view}"') for view in order]
         self.assertEqual(positions, sorted(positions))

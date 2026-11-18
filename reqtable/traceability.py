@@ -304,7 +304,7 @@ const trace=(()=>{
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
   const viewBar=$("#trace-views"),systemSelect=$("#trace-system"),status=$("#trace-status");
   const wrap=$(".table-wrap"),systemsPage=$("#trace-systems"),matrixPage=$("#trace-matrix"),modeBar=$("#trace-view-mode");
-  const selectedLinks=$("#trace-selected-links"),gatesPage=$("#trace-gates");
+  const selectedLinks=$("#trace-selected-links"),gatesPage=$("#trace-gates"),gatesList=$("#trace-gates-list"),gatesSystem=$("#trace-gates-system");
   const gates=data.gates??[];
   let gateEvaluations=[];
   const requirementsDefaults=new Set([
@@ -607,8 +607,11 @@ const trace=(()=>{
     if(usesScope()){
       const options=inGates?[new Option("No system chosen","all")]:[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
       for(const [record,depth] of systemEntries())options.push(new Option("  ".repeat(Math.min(depth,8))+caption(record),"system:"+record.id));
-      systemSelect.replaceChildren(...options);
-      systemSelect.value=unallocated&&!inGates?"unallocated":system?"system:"+system:"all";
+      const value=unallocated&&!inGates?"unallocated":system?"system:"+system:"all";
+      for(const select of [systemSelect,gatesSystem]){
+        select.replaceChildren(...options.map(option=>option.cloneNode(true)));
+        select.value=value;
+      }
       $("#trace-descendants").closest("label").hidden=inGates;
       $("#trace-descendants").checked=descendants;
       $("#trace-descendants").disabled=!system;
@@ -620,7 +623,7 @@ const trace=(()=>{
     const headers=data.source.new.headers;
     gateEvaluations=gates.map(gate=>gate.scope==="system"&&!system?null
       :gate.checks.map(check=>evaluateGateCheck(check,state.currentRows,data.meta.idColumn,headers,gate.scope==="system"?system:null,index.issues,data.controls??null)));
-    gatesPage.innerHTML=gates.length?gates.map((gate,gateIndex)=>{
+    gatesList.innerHTML=gates.length?gates.map((gate,gateIndex)=>{
       const results=gateEvaluations[gateIndex];
       const badge=results?(({tone,mark})=>`<span class="gate-badge ${tone}">${mark}</span>`)(gateBadgeLabel(results)):"";
       const scopeText=gate.scope==="system"&&system?` · Scope: ${escapeHtml(caption(index.records.get(system)))}`:"";
@@ -1078,11 +1081,13 @@ const trace=(()=>{
     const button=event.target.closest("[data-trace-view]");
     if(button)selectView(button.dataset.traceView);
   });
-  systemSelect.addEventListener("change",()=>{
-    if(!canNavigate()){renderWorkspace();return;}
-    const value=systemSelect.value;
-    changeScope(value.startsWith("system:")?value.slice(7):"",value==="unallocated");
-  });
+  for(const select of [systemSelect,gatesSystem]){
+    select.addEventListener("change",()=>{
+      if(!canNavigate()){renderWorkspace();return;}
+      const value=select.value;
+      changeScope(value.startsWith("system:")?value.slice(7):"",value==="unallocated");
+    });
+  }
   $("#trace-descendants").addEventListener("change",event=>{
     if(!canNavigate()){event.target.checked=descendants;return;}
     descendants=event.target.checked;
@@ -1315,6 +1320,7 @@ const trace=(()=>{
     rowOrderIds:()=>view==="requirements"?state.currentRows.filter(row=>traceType(row)==="Requirement").map(rowId):null,
     entry:()=>view==="requirements"||view==="all",
     pageView:()=>view==="systems"||view==="gates",
+    recordNoun:()=>view==="requirements"?"requirements":view==="all"?"records":view==="changes"?"change requests":"records",
     gridSummary:count=>{
       if(view==="systems")return `${index.systems.length} systems`;
       if(listViews[view])return listViews[view].summary(count);
@@ -1362,7 +1368,7 @@ TRACE_WORKSPACE = """
       <button type="button" data-trace-view="tests" aria-pressed="false">Tests</button>
       <button type="button" data-trace-view="verification" aria-pressed="false">Verification</button>
       <button type="button" data-trace-view="gates" aria-pressed="false">Gates</button>
-      <button type="button" data-trace-view="changes" aria-pressed="false">Changes</button>
+      <button type="button" data-trace-view="changes" aria-pressed="false">Change requests</button>
     </div>
     <div role="group" aria-label="Reference">
       <button type="button" data-trace-view="glossary" aria-pressed="false">Glossary</button>
@@ -1411,7 +1417,10 @@ TRACE_SYSTEMS = """
   </div>
   <div class="trace-matrix-scroll"><table id="trace-matrix-table"></table></div>
 </section>
-<section id="trace-gates" aria-label="Gate readiness" hidden></section>
+<section id="trace-gates" aria-label="Gate readiness" hidden>
+  <div id="trace-gates-scope"><label>System <select id="trace-gates-system"></select></label></div>
+  <div id="trace-gates-list"></div>
+</section>
 <section id="trace-systems" aria-label="System hierarchy" hidden>
   <div>
     <h2>System hierarchy</h2>
@@ -1499,6 +1508,8 @@ TRACE_CSS = """
 #trace-systems {display:grid;grid-template-columns:minmax(14rem,1fr) minmax(16rem,1fr);gap:16px;padding:14px 18px;overflow:auto}
 #trace-systems h2 {font-size:1.08em;margin:0 0 8px}
 #trace-gates {display:grid;gap:14px;align-content:start;padding:14px 18px;overflow:auto}
+#trace-gates-list {display:grid;gap:14px}
+#trace-gates-system {max-width:min(24ch,60vw)}
 .gate {border:1px solid var(--line);border-radius:6px;padding:12px;background:var(--panel)}
 .gate header {display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px}
 .gate h2 {font-size:1.08em;margin:0}

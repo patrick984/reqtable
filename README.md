@@ -396,7 +396,7 @@ Each gate in the configuration can list `checks`, declarative conditions that sa
 
 The default gates ship with checks. For example, SRR needs requirement text, a verification method and a priority. PDR needs allocation to a leaf system and a verification level. TRR needs every test to have a test plan and a method. SVR, FCA and PCA need Compliant or Waived requirements, and SVR also needs passing tests. Every gate also needs no trace findings. Replace the `gates` list in your configuration to use your own.
 
-The **Gates** view in the report lists each gate as ready or not ready, with each check's result. Results update as you edit in Develop mode. For a system-scoped gate, choose the system in the System selector. **Show records** opens the failing records with a removable filter.
+The **Gates** view in the report lists each gate as ready or not ready, with each check's result. Results update as you edit in Develop mode. For a system-scoped gate, choose the system in the System picker at the top of the Gates view (it shares the workspace bar's System selector). **Show records** opens the failing records with a removable filter.
 
 In the CLI, `--check-gate` runs the same checks for CI. It prints one line per check and exits 0 when the gate is ready and 1 when it is not:
 
@@ -462,7 +462,7 @@ Each record is controlled by the most recently created baseline that contained i
 - a new record inside a baselined scope
 - a record removed since its baseline
 
-In Develop mode, the **Changes** view lists change requests, with **Add change request…** to create one. Use **Link affected record…** in its Links panel, which also offers removed records. A requirement's Links panel lists the change requests that affect it. Every gate after SRR includes an `unchanged_since` check, so `--check-gate` and the Gates view report unauthorised changes.
+In Develop mode, the **Change requests** view lists change requests, with **Add change request…** to create one. Use **Link affected record…** in its Links panel, which also offers removed records. A requirement's Links panel lists the change requests that affect it. Every gate after SRR includes an `unchanged_since` check, so `--check-gate` and the Gates view report unauthorised changes.
 
 ## Build and test
 

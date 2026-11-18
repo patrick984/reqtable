@@ -44,3 +44,14 @@ assert.equal(valueFilterLabel("Must"),"“Must”");
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class FilteredToEmptyTests(unittest.TestCase):
+    def test_only_filters_that_hide_every_existing_row_count(self):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + FILTER_JS + """
+assert.equal(filteredToEmpty(1,0,5),true);
+assert.equal(filteredToEmpty(0,0,5),false);
+assert.equal(filteredToEmpty(2,3,5),false);
+assert.equal(filteredToEmpty(1,0,0),false);
+""", text=True, check=True)
