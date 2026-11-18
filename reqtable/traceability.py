@@ -296,6 +296,20 @@ function parseTraceLocation(hash){
   return {view:text("view")||"requirements",kind:text("kind")==="values"?"values":"terms",mode:text("mode"),system:text("system"),
     unallocated:flag("unallocated",false),descendants:flag("descendants",true),record:text("record")};
 }
+const workspaceAddActions={requirements:"trace-view-add",sources:"trace-source-actions",tests:"trace-test-actions",
+  changes:"trace-change-actions",glossary:{terms:"trace-term-add",values:"trace-value-add"}};
+const workspaceControlIds=["trace-scope","trace-descendants","trace-glossary-kind","trace-view-mode",
+  "trace-view-add","trace-term-add","trace-value-add","trace-source-actions","trace-test-actions","trace-change-actions","trace-selected-links"];
+function workspaceControls({view,develop,systemScope,modes,matrix,system,glossaryKind}){
+  const shown=[];
+  if(systemScope&&view!=="gates")shown.push("trace-scope",...system?["trace-descendants"]:[]);
+  if(view==="glossary")shown.push("trace-glossary-kind");
+  if(modes)shown.push("trace-view-mode");
+  const add=workspaceAddActions[view];
+  if(develop&&add)shown.push(typeof add==="string"?add:add[glossaryKind]);
+  if(view!=="systems"&&view!=="gates"&&!matrix)shown.push("trace-selected-links");
+  return shown;
+}
 """
 
 TRACE_UI_JS = GLOSSARY_UI_JS + r"""
@@ -584,25 +598,21 @@ const trace=(()=>{
     systemsPage.hidden=!inSystems;
     gatesPage.hidden=!inGates;
     matrixPage.hidden=!inMatrix;
-    modeBar.hidden=!listViews[view]?.modes;
     for(const button of modeBar.querySelectorAll("[data-view-mode]")){
       button.setAttribute("aria-pressed",String(button.dataset.viewMode===viewMode()));
     }
     $("#columns-menu").hidden=inPage||inMatrix;
     $("#filter-menu").hidden=inPage;
-    $("#trace-scope").hidden=!usesScope();
-    selectedLinks.hidden=inPage;
-    $("#trace-view-add").hidden=!developMode()||view!=="requirements";
-    $("#trace-source-actions").hidden=!developMode()||view!=="sources";
-    $("#trace-test-actions").hidden=!developMode()||view!=="tests";
-    $("#trace-change-actions").hidden=!developMode()||view!=="changes";
-    const inGlossary=view==="glossary";
-    $("#trace-glossary-kind").hidden=!inGlossary;
+    const shown=workspaceControls({view,develop:developMode(),systemScope:usesScope(),modes:!!listViews[view]?.modes,
+      matrix:inMatrix,system,glossaryKind});
+    for(const id of workspaceControlIds){
+      const control=$("#"+id);
+      (id==="trace-descendants"?control.closest("label"):control).hidden=!shown.includes(id);
+    }
+    $("#trace-controls").hidden=!shown.length;
     for(const button of $("#trace-glossary-kind").querySelectorAll("[data-glossary-kind]")){
       button.setAttribute("aria-pressed",String(button.dataset.glossaryKind===glossaryKind));
     }
-    $("#trace-term-add").hidden=!developMode()||!inGlossary||glossaryKind!=="terms";
-    $("#trace-value-add").hidden=!developMode()||!inGlossary||glossaryKind!=="values";
     $("#trace-system-add").hidden=!developMode()||!!index.systems.length;
     if(usesScope()){
       const options=inGates?[new Option("No system chosen","all")]:[new Option("All requirements","all"),new Option("Unallocated requirements","unallocated")];
@@ -612,10 +622,7 @@ const trace=(()=>{
         select.replaceChildren(...options.map(option=>option.cloneNode(true)));
         select.value=value;
       }
-      $("#trace-descendants").closest("label").hidden=inGates;
-      systemSelect.closest("label").hidden=inGates;
       $("#trace-descendants").checked=descendants;
-      $("#trace-descendants").disabled=!system;
     }
     if(inSystems)renderTree();
     if(inGates)renderGates();
@@ -1392,7 +1399,6 @@ TRACE_WORKSPACE = """
   </span>
   <button id="trace-term-add" type="button" hidden>Add term…</button>
   <button id="trace-value-add" type="button" hidden>Add value…</button>
-  <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
   <span id="trace-source-actions" hidden>
     <button id="trace-need-add" type="button">Add need…</button>
     <button id="trace-source-add" type="button">Add source…</button>
@@ -1404,6 +1410,7 @@ TRACE_WORKSPACE = """
   <span id="trace-change-actions" hidden>
     <button id="trace-change-add" type="button">Add change request…</button>
   </span>
+  <button id="trace-selected-links" type="button" aria-controls="trace-panel" aria-expanded="false" disabled>Links</button>
   </div>
   <p id="trace-status" class="meta" role="status"></p>
   <p id="trace-verification-summary" class="meta" hidden></p>
@@ -1593,7 +1600,7 @@ TRACE_CSS = """
 #trace-matrix-table .vcrm-nowrap {white-space:nowrap}
 .vcrm-legend {display:flex;flex-wrap:wrap;gap:2px 18px;font-weight:400;color:var(--muted);margin-top:3px}
 #trace-matrix-table tbody td:nth-child(2) {min-width:12rem;width:100%}
-#trace-matrix[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-gates[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
+#trace-matrix[hidden],#trace-controls[hidden],#trace-view-mode[hidden],#trace-systems[hidden],#trace-gates[hidden],#trace-scope[hidden],#trace-glossary-kind[hidden],.trace-actions[hidden],#trace-record-form label[hidden],#trace-delete-form label[hidden] {display:none}
 @media screen and (min-width:901px) {body:has(#trace-panel:not([hidden])) .page {margin-right:380px}}
 @media screen and (max-width:650px) {#trace-systems {grid-template-columns:1fr}}
 @page matrix {size:landscape}

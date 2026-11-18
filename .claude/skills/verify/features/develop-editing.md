@@ -5,7 +5,7 @@ In a Develop report, an author edits cells, adds, deletes and reorders requireme
 ## Sub-features
 
 - `edit-cell` changes a cell value through the inline editor.
-- `add-row` creates a requirement from the entry row or **Edit → Add requirement**.
+- `add-row` creates a requirement from the entry row or **Edit → Add requirement…**.
 - `delete-row` removes a requirement after confirmation.
 - `move-row` reorders a requirement with **Edit → Move up/down** or `Alt+Shift+Up/Down`.
 - `rename-id` renames an ID through a prompt and keeps comments attached.

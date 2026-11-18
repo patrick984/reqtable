@@ -10,7 +10,7 @@ from pathlib import Path
 
 from reqtable.core import build_report_data, extract_comments_csv, load_config, read_csv_table
 from reqtable.html_report import JS, render_report
-from reqtable.traceability import TRACE_COLUMNS, TRACE_MODEL_JS
+from reqtable.traceability import TRACE_COLUMNS, TRACE_MODEL_JS, TRACE_WORKSPACE
 from tests.test_core import TempFiles
 
 UAT_CSV = Path(__file__).resolve().parent.parent / "requirements-uat.csv"
@@ -229,6 +229,32 @@ assert.deepEqual(parseTraceLocation("#unallocated=yes&descendants=maybe&kind=oth
 assert.equal(parseTraceLocation("#view=tests&view=all").view,"tests");
 assert.equal(traceLocationHash(parseTraceLocation("#view=tests&bogus=1")),"#view=tests");
 """)
+
+    def test_workspace_shows_only_controls_for_the_current_view(self):
+        self.run_js(r"""
+const bar=(view,options={})=>workspaceControls({view,develop:false,systemScope:false,modes:false,matrix:false,system:"",glossaryKind:"terms",...options});
+assert.deepEqual(bar("requirements",{systemScope:true}),["trace-scope","trace-selected-links"]);
+assert.deepEqual(bar("requirements",{systemScope:true,system:"SYS",develop:true}),
+  ["trace-scope","trace-descendants","trace-view-add","trace-selected-links"]);
+assert.deepEqual(bar("verification",{systemScope:true,modes:true}),["trace-scope","trace-view-mode","trace-selected-links"]);
+assert.deepEqual(bar("verification",{systemScope:true,modes:true,matrix:true}),["trace-scope","trace-view-mode"]);
+assert.deepEqual(bar("gates",{systemScope:true,develop:true}),[]);
+assert.deepEqual(bar("systems",{develop:true}),[]);
+assert.deepEqual(bar("tests",{develop:true}),["trace-test-actions","trace-selected-links"]);
+assert.deepEqual(bar("glossary",{develop:true,glossaryKind:"values"}),["trace-glossary-kind","trace-value-add","trace-selected-links"]);
+assert.deepEqual(bar("glossary"),["trace-glossary-kind","trace-selected-links"]);
+assert.deepEqual(bar("all",{develop:true}),["trace-selected-links"]);
+for(const view of ["sources","requirements","systems","tests","verification","gates","changes","glossary","all"]){
+  for(const id of bar(view,{develop:true,systemScope:true,modes:true,system:"SYS"}))assert.ok(workspaceControlIds.includes(id),id);
+}
+""")
+
+    def test_workspace_control_ids_exist_in_the_report(self):
+        script = 'console.log(JSON.stringify(workspaceControlIds))'
+        ids = json.loads(subprocess.run(["node"], input=TRACE_MODEL_JS + script, text=True, check=True,
+                                        capture_output=True).stdout)
+        for control_id in ids:
+            self.assertIn(f'id="{control_id}"', TRACE_WORKSPACE)
 
     def test_trace_columns_include_test_links(self):
         self.assertIn("Verified by", TRACE_COLUMNS)
