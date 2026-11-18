@@ -65,8 +65,10 @@ function qualityDismissal(id,column,value,issue){
     &&record.value===value&&record.rule===issue.rule&&record.start===issue.start
     &&record.obligation===keyword);
 }
+let qualityScanVersion=null;
 function scanQuality(){
-  if(!quality.checked)return;
+  if(!quality.checked||qualityScanVersion===dataVersion)return;
+  qualityScanVersion=dataVersion;
   configureQuality();
   const findings=new Map();
   quality.dismissed=[];
