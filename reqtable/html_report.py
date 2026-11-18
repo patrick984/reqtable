@@ -978,12 +978,26 @@ function syncModeUi(){
     $("#rename-requirement").disabled=trace.pageView();
   }
   document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();renderPackage?.();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+// Rows and comments are flat records of primitive values, so a per-record spread is a full copy that shares the strings.
+function cloneRecords(records){return records.map(record=>({...record}));}
+function sameRecords(a,b){
+  if(a.length!==b.length)return false;
+  for(let i=0;i<a.length;i++){
+    const x=a[i],y=b[i];
+    if(x===y)continue;
+    let count=0;
+    for(const key in x){if(x[key]!==y[key]||!Object.hasOwn(y,key))return false;count++;}
+    for(const key in y)count--;
+    if(count)return false;
+  }
+  return true;
+}
 // Every edit to rows, comments, quality review or decisions reports here, so caches of derived data key off this counter.
 let dataVersion=0;
 function updateDirty(){
   dataVersion++;
-  state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
-  state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
+  state.requirementsDirty=!sameRecords(state.currentRows,state.savedRows);
+  state.commentsDirty=!sameRecords(state.comments,state.savedComments);
   state.qualityDirty=JSON.stringify(state.qualityReview)!==JSON.stringify(state.savedQualityReview);
   state.decisionsDirty=JSON.stringify(state.decisions)!==JSON.stringify(state.savedDecisions);
   state.dirty=state.requirementsDirty||state.commentsDirty||state.qualityDirty||state.decisionsDirty;
@@ -1003,7 +1017,12 @@ function updateDirty(){
 }
 window.addEventListener("beforeunload",event=>{if(!state.dirty)return;event.preventDefault();event.returnValue="";});
 function setDirty(value){if(!value){state.savedComments=cloneValue(state.comments);state.savedDecisions=cloneValue(state.decisions);}updateDirty();}
-function remember(){state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});if(state.undo.length>100)state.undo.shift();state.redo=[];}function restoreHistory(snapshot){state.currentRows=cloneValue(snapshot.rows);state.comments=cloneValue(snapshot.comments);if(snapshot.qualityReview)state.qualityReview=cloneValue(snapshot.qualityReview);state.editingCell=null;updateDirty();render();}function undoEdit(){if(!state.undo.length)return;state.redo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.undo.pop());}function redoEdit(){if(!state.redo.length)return;state.undo.push({rows:cloneValue(state.currentRows),comments:cloneValue(state.comments)});restoreHistory(state.redo.pop());}
+function historySnapshot(){return {rows:cloneRecords(state.currentRows),comments:cloneRecords(state.comments)};}
+function remember(){state.undo.push(historySnapshot());if(state.undo.length>100)state.undo.shift();state.redo=[];}
+// Takes ownership of the snapshot's arrays; callers pass records nothing else holds.
+function restoreHistory(snapshot){state.currentRows=snapshot.rows;state.comments=snapshot.comments;state.editingCell=null;updateDirty();render();}
+function undoEdit(){if(!state.undo.length)return;state.redo.push(historySnapshot());restoreHistory(state.undo.pop());}
+function redoEdit(){if(!state.redo.length)return;state.undo.push(historySnapshot());restoreHistory(state.redo.pop());}
 function selectedRequirementId(){return grid.display[state.focus.row]?.id||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The ID cannot be empty.");return null;}if(trace&&id.includes(";")){alert("A traceable ID cannot contain a semicolon.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`ID ${id} already exists.`);return null;}return id;}
 function nextRecordId(preferredPrefix=null){
   const rows=[...state.currentRows,...state.savedRows,...(data.source.old?.rows??[])];

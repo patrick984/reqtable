@@ -145,7 +145,7 @@ $("#draft-restore").addEventListener("click",()=>{
   closeDraftBanner();
   remember();
   if(record.decisions)state.decisions=cloneValue(record.decisions);
-  restoreHistory({rows:developMode()&&record.rows?record.rows:state.currentRows,comments:record.comments??state.comments});
+  restoreHistory({rows:developMode()&&record.rows?cloneRecords(record.rows):state.currentRows,comments:record.comments?cloneRecords(record.comments):state.comments});
   $("#save-status").textContent="Unsaved edits restored";
   restoreSelectedCell();
 });
