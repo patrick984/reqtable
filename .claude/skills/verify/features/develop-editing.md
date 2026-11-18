@@ -13,6 +13,7 @@ In a Develop report, an author edits cells, adds, deletes and reorders requireme
 - `compare-last-save` shows a live diff against the last save with **View → Compare with → Last save**.
 - `save-csv` writes the current rows and comments to CSV and clears the badge.
 - `clear-cells` empties the editable cells in the selection with plain Delete/Backspace or **Edit → Clear cells**, skipping ID and removed rows, with one Undo.
+- `drag-select` drags across cells to select a range, auto-scrolls at the edge, and works in Review mode for Copy.
 - `menu-copy` and `menu-paste` run **Edit → Copy** and **Edit → Paste** on the selection as tab-separated text.
 
 ## How to get to it (user POV)
@@ -38,9 +39,14 @@ Preconditions:
 - **Clear cells.** Select R2's Requirement cell, press `shift+Down`, press `Delete`. R2 and R3 read `Empty` and `Unsaved changes` shows. `cmd+z` restores both.
 - **Menu Paste.** Stub `navigator.clipboard.readText=async()=>"Pasted one\tMust\r\nPasted two\tShould"`, select R3's Requirement cell, choose **Edit → Paste**. R3 and R4 read `Pasted one | Must` and `Pasted two | Should`. One `cmd+z` restores both.
 - **Menu Copy.** Wrap `navigator.clipboard.writeText` to record its argument, select R1 to R2 in Requirement, choose **Edit → Copy**. The recorded text is R1 and R2's values joined by `\r\n`.
+- **Drag select.** Compute cell centres with `getBoundingClientRect` scaled by `800/innerWidth` (the screenshot frame is not CSS pixels). `left_click_drag` from R1's first data cell to R2's Requirement: `rangeSelection` spans both, `.range-selected` covers the rectangle, `getSelection().toString()` is empty, and `table.selecting` is gone. A plain click clears the range; a double-click still edits. A drag that starts on a `.glossary-link` selects without opening `#glossary-definition`, and a click on it still opens it. In a Review report the same drag works; dispatch a `ClipboardEvent("copy")` with a `DataTransfer` on the focused cell to read the TSV.
+- **Drag auto-scroll.** In a windowed report (over 300 rows), the tool releases at once, so script a held drag: dispatch `pointerdown` on row 0, `pointermove` on row 1, set `tableWrap.scrollTop` far down, call `updateWindow()`, dispatch `pointermove` over the table, then `pointerup`. The extent follows the newly drawn row and `selectionText()` holds every row in between.
 - **Save.** Open **File** via `find("File")`, choose `find("Save CSV")`. The captured download is `base.csv` with header `ID,Requirement,Priority,Comments` and the current rows in grid order. `#save-status` reads `CSV download initiated` and `Unsaved changes` disappears.
 
 ## Gotchas
+
+- `left_click_drag` reports `Page navigated during drag` because focus updates the `#record=` hash. The drag still ran; read the DOM.
+- The pane throttles `requestAnimationFrame` to a few frames a second, so edge auto-scroll looks slow there. Per-frame speed is up to 28px.
 
 - The `Alt+Shift+Down` move works, but a screenshot taken straight after it can still show the old order. Read the DOM.
 - Undo needs focus in the grid. Click a cell first, or `cmd+z` goes to whatever control has focus.
