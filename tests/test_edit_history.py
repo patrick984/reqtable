@@ -14,8 +14,10 @@ const assert=require("node:assert/strict");
 const elements=new Map();
 const $=selector=>{if(!elements.has(selector))elements.set(selector,{textContent:"",hidden:true,open:false});return elements.get(selector);};
 const window={addEventListener(){}};
-let renders=0;
+let renders=0,rendered=[];
 const render=()=>{renders++;},scheduleAutosave=()=>{},draftChanged=()=>{};
+const renderChanges=changes=>{renders++;rendered.push(changes);};
+const rowId=row=>row.ID;
 const cloneValue=value=>JSON.parse(JSON.stringify(value));
 const rows=()=>[{ID:"R1",Text:"One"},{ID:"R2",Text:"Two"}];
 const state={currentRows:rows(),savedRows:rows(),comments:[],savedComments:[],
@@ -81,6 +83,60 @@ assert.equal(state.dirty,false);
 while(state.redo.length){redoEdit();assert.deepEqual({rows:state.currentRows,comments:state.comments},steps[state.redo.length]);}
 assert.equal(state.comments[0].text,"Edited");
 assert.equal(state.dirty,true);
+""")
+
+    def test_changed_records_lists_each_changed_record_and_column(self):
+        self.run_js(r"""
+const after=rows();after[1].Text="Two!";after[1].Note="new";
+assert.deepEqual(changedRecords(rows(),after,rowId),[{index:1,id:"R2",columns:new Set(["Text","Note"])}]);
+const dropped=rows();delete dropped[0].Text;
+assert.deepEqual(changedRecords(rows(),dropped,rowId),[{index:0,id:"R1",columns:new Set(["Text"])}]);
+assert.deepEqual(changedRecords(rows(),rows(),rowId),[]);
+""")
+
+    def test_changed_records_refuses_inserts_removals_reorders_and_id_changes(self):
+        self.run_js(r"""
+assert.equal(changedRecords(rows(),[...rows(),{ID:"R3"}],rowId),null);
+assert.equal(changedRecords(rows(),rows().slice(1),rowId),null);
+assert.equal(changedRecords(rows(),rows().reverse(),rowId),null);
+const renamed=rows();renamed[0].ID="R7";
+assert.equal(changedRecords(rows(),renamed,rowId),null);
+""")
+
+    def test_rows_redraw_alone_only_when_nothing_else_reads_the_changed_columns(self):
+        self.run_js(r"""
+const plain={comparing:false,qualityOnly:false,ranged:false,idColumn:"ID",sortColumn:null,filtered:()=>false,traceColumns:new Set()};
+const edit=column=>[{index:0,id:"R1",columns:new Set([column])}];
+assert.equal(confinedToRows(edit("Text"),plain),true);
+assert.equal(confinedToRows([],plain),true);
+assert.equal(confinedToRows(edit("ID"),plain),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,sortColumn:"Text"}),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,sortColumn:"Priority"}),true);
+assert.equal(confinedToRows(edit("Text"),{...plain,filtered:column=>column==="Text"}),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,filtered:column=>column==="Priority"}),true);
+assert.equal(confinedToRows(edit("Text"),{...plain,comparing:true}),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,qualityOnly:true}),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,ranged:true}),false);
+assert.equal(confinedToRows(edit("Verified by"),{...plain,traceColumns:new Set(["Verified by"])}),false);
+assert.equal(confinedToRows(edit("Text"),{...plain,traceColumns:new Set(["Verified by"])}),true);
+assert.equal(confinedToRows(edit("Text"),{...plain,traceColumns:null}),false);
+""")
+
+    def test_undo_of_a_value_edit_restores_into_the_same_records(self):
+        self.run_js(r"""
+const live=state.currentRows.slice();
+remember();state.currentRows[1].Text="Two!";updateDirty();
+undoEdit();
+assert.ok(state.currentRows.every((row,i)=>row===live[i]));
+assert.deepEqual(state.currentRows,rows());
+assert.deepEqual(rendered.at(-1),[{index:1,id:"R2",columns:new Set(["Text"])}]);
+redoEdit();
+assert.ok(state.currentRows.every((row,i)=>row===live[i]));
+assert.equal(state.currentRows[1].Text,"Two!");
+remember();state.currentRows.push({ID:"R3"});updateDirty();
+undoEdit();
+assert.equal(rendered.at(-1),null);
+assert.deepEqual(state.currentRows,[{ID:"R1",Text:"One"},{ID:"R2",Text:"Two!"}]);
 """)
 
 

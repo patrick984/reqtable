@@ -672,20 +672,52 @@ function rebuildRows(){
   savedRowIndex=byId(state.savedRows);
   const source=comparisonSource(),moved=source?.moves?movedRowIds(byId(source.rows),byId(state.currentRows)):new Set();
   if((source?.rows??null)!==rowModelSource){rowModels=new Map();rowModelSource=source?.rows??null;}
-  const value=(row,name)=>row&&Object.hasOwn(row,name)?String(row[name]??""):null;
   data.rows=comparisonPairs(state.currentRows,source,data.meta.idColumn).map(({id,oldRow,newRow},index)=>{
     const previous=rowModels.get(id),isMoved=moved.has(id);
     if(previous&&previous.moved===isMoved&&data.columns.every(({name})=>
-      previous.cells[name].old===value(oldRow,name)&&previous.cells[name].new===value(newRow,name))){
+      previous.cells[name].old===cellValue(oldRow,name)&&previous.cells[name].new===cellValue(newRow,name))){
       previous.sourceOrder=index;
       return previous;
     }
-    const status=!source?"unchanged":isMoved?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
-    const cells=Object.create(null);
-    for(const column of data.columns)cells[column.name]=runtimeCell(column,value(oldRow,column.name),value(newRow,column.name),source);
-    return{id,status,moved:isMoved,sourceOrder:index,cells};
+    return rowModel(id,oldRow,newRow,index,source,isMoved);
   });
   rowModels=new Map(data.rows.map(row=>[row.id,row]));
+}
+function cellValue(row,name){return row&&Object.hasOwn(row,name)?String(row[name]??""):null;}
+function rowModel(id,oldRow,newRow,sourceOrder,source,moved){
+  const status=!source?"unchanged":moved?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
+  const cells=Object.create(null);
+  for(const column of data.columns)cells[column.name]=runtimeCell(column,cellValue(oldRow,column.name),cellValue(newRow,column.name),source);
+  return{id,status,moved,sourceOrder,cells};
+}
+// After an edit that changed values in place, rebuilds only the changed rows' models and redraws them where shown.
+// Anything another row, a filter, the sort, a comparison or the trace index could read renders in full instead.
+function renderChanges(changes){
+  const since=dataVersion-1,modelsCurrent=rowModelKey?.[0]===since&&rowModelKey[1]===state.compareWith&&rowModelKey[2]===state.savedRows;
+  if(!changes||!modelsCurrent||!confinedToRows(changes,{comparing:diffActive(),qualityOnly:quality.only,ranged:!!rangeSelection,
+    idColumn:data.meta.idColumn,sortColumn:state.sort?.column??null,filtered:filterActive,traceColumns:trace?trace.indexColumns(since):new Set()}))return render();
+  rowModelKey=[dataVersion,state.compareWith,state.savedRows];
+  const positions=[];
+  for(const {index,id} of changes){
+    const previous=rowModels.get(id),model=rowModel(id,null,state.currentRows[index],previous.sourceOrder,null,false);
+    data.rows[previous.sourceOrder]=model;
+    rowModels.set(id,model);
+    const position=grid.display.indexOf(previous);
+    if(position<0)continue;
+    grid.display[position]=model;
+    positions.push(position);
+  }
+  trace?.keepIndex(since);
+  trace?.refresh();
+  scanQuality();
+  redrawRows(positions);
+  setRovingFocus();
+  trace?.syncSelection(selectedRequirementId(),true);
+  trace?.paintStrip();
+  renderQualityPanel();
+  positionCellEditor();
+  syncModeUi();
+  renderPackage?.();
 }
 function canRevertCell(column,cell){
   return developMode()&&diffActive()&&column!==data.meta.idColumn
@@ -868,6 +900,23 @@ function keepInPlace(anchor,before){
 function parkFocus(active){
   if(active&&active!==document.body&&!active.isConnected)tableWrap.focus({preventScroll:true});
 }
+function redrawRows(positions){
+  const cols=visibleColumns(),context=cellContext(currentRange()),active=document.activeElement,drawn=[];
+  for(const position of positions){
+    const old=rowElement(position);
+    if(!old)continue;
+    old.insertAdjacentHTML("afterend",rowsHtml(position,position+1,cols,context));
+    drawn.push(old.nextElementSibling);
+    old.remove();
+  }
+  decorateRows(drawn);
+  if(windowed()&&drawn.length){
+    const anchor=anchorRow(viewportBand()),before=anchor?.getBoundingClientRect().top;
+    measureRows();
+    keepInPlace(anchor,before);
+  }
+  parkFocus(active);
+}
 function drawRows(){
   paintedRange=currentRange();
   const cols=visibleColumns(),count=grid.display.length,context=cellContext(paintedRange),active=document.activeElement;
@@ -980,15 +1029,43 @@ function syncModeUi(){
   document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();renderPackage?.();}function renderBodyOnly(){renderBody();renderColumnChooser();}
 // Rows and comments are flat records of primitive values, so a per-record spread is a full copy that shares the strings.
 function cloneRecords(records){return records.map(record=>({...record}));}
+function sameRecord(x,y){
+  if(x===y)return true;
+  let count=0;
+  for(const key in x){const value=x[key];if(value!==y[key]||(value===undefined&&!Object.hasOwn(y,key)))return false;count++;}
+  for(const key in y)count--;
+  return !count;
+}
 function sameRecords(a,b){
   if(a.length!==b.length)return false;
-  for(let i=0;i<a.length;i++){
-    const x=a[i],y=b[i];
-    if(x===y)continue;
-    let count=0;
-    for(const key in x){if(x[key]!==y[key]||!Object.hasOwn(y,key))return false;count++;}
-    for(const key in y)count--;
-    if(count)return false;
+  for(let i=0;i<a.length;i++)if(!sameRecord(a[i],b[i]))return false;
+  return true;
+}
+// Each record whose values differ, with its position and the columns that differ, or null when the lists do not
+// hold the same ids in the same order.
+function changedRecords(before,after,idOf){
+  if(before.length!==after.length)return null;
+  const changes=[];
+  for(let index=0;index<before.length;index++){
+    const x=before[index],y=after[index];
+    if(sameRecord(x,y))continue;
+    const id=idOf(y);
+    if(idOf(x)!==id)return null;
+    const columns=new Set();
+    for(const key in x)if(x[key]!==y[key]||!Object.hasOwn(y,key))columns.add(key);
+    for(const key in y)if(!Object.hasOwn(x,key))columns.add(key);
+    changes.push({index,id,columns});
+  }
+  return changes;
+}
+// Whether redrawing the changed rows alone shows the same table as a full render: no changed column may decide row
+// order, row membership, a comparison status or the trace index (traceColumns null means it reads every column).
+function confinedToRows(changes,{comparing,qualityOnly,ranged,idColumn,sortColumn,filtered,traceColumns}){
+  if(comparing||qualityOnly||ranged||!traceColumns)return false;
+  for(const {columns} of changes){
+    for(const column of columns){
+      if(column===idColumn||column===sortColumn||filtered(column)||traceColumns.has(column))return false;
+    }
   }
   return true;
 }
@@ -1020,7 +1097,23 @@ function setDirty(value){if(!value){state.savedComments=cloneValue(state.comment
 function historySnapshot(){return {rows:cloneRecords(state.currentRows),comments:cloneRecords(state.comments)};}
 function remember(){state.undo.push(historySnapshot());if(state.undo.length>100)state.undo.shift();state.redo=[];}
 // Takes ownership of the snapshot's arrays; callers pass records nothing else holds.
-function restoreHistory(snapshot){state.currentRows=snapshot.rows;state.comments=snapshot.comments;state.editingCell=null;updateDirty();render();}
+function restoreHistory(snapshot){
+  const changes=!state.editingCell&&sameRecords(state.comments,snapshot.comments)?changedRecords(state.currentRows,snapshot.rows,rowId):null;
+  if(changes){
+    // Restore values into the live records so records keep their identity, which the trace index relies on.
+    for(const {index} of changes){
+      const live=state.currentRows[index],restored=snapshot.rows[index];
+      for(const key in live)if(!Object.hasOwn(restored,key))delete live[key];
+      Object.assign(live,restored);
+    }
+  }else{
+    state.currentRows=snapshot.rows;
+    state.comments=snapshot.comments;
+  }
+  state.editingCell=null;
+  updateDirty();
+  renderChanges(changes);
+}
 function undoEdit(){if(!state.undo.length)return;state.redo.push(historySnapshot());restoreHistory(state.undo.pop());}
 function redoEdit(){if(!state.redo.length)return;state.undo.push(historySnapshot());restoreHistory(state.redo.pop());}
 function selectedRequirementId(){return grid.display[state.focus.row]?.id||null;}function findCurrentRow(id){return state.currentRows.find(row=>rowId(row)===id);}function validateNewId(value,current=null){const id=String(value??"").trim();if(!id){alert("The ID cannot be empty.");return null;}if(trace&&id.includes(";")){alert("A traceable ID cannot contain a semicolon.");return null;}if(state.currentRows.some(row=>rowId(row)===id&&rowId(row)!==current)){alert(`ID ${id} already exists.`);return null;}return id;}
@@ -1369,6 +1462,7 @@ function applyCellEdit(form,next,continueAtEntry=false){
   let id=form.dataset.rowId;
   const column=form.dataset.column,value=form.querySelector("textarea").value.replace(/\r\n?/g,"\n").trimEnd();
   const row=findCurrentRow(id);
+  let changes=null;
   if(id===""&&value){
     remember();
     id=nextRecordId();
@@ -1381,10 +1475,16 @@ function applyCellEdit(form,next,continueAtEntry=false){
     remember();
     row[column]=value;
     trace?.followValueRename(row,column,before);
+    changes=changedRecords(state.undo.at(-1).rows,state.currentRows,rowId);
+  }else if(row){
+    changes=[];
   }
+  if(form.dataset.rowId==="")changes=null;
+  // The edited row always redraws to close its editor.
+  else if(changes&&!changes.some(change=>change.id===id))changes.push({index:state.currentRows.indexOf(row),id,columns:new Set()});
   state.editingCell=null;
   updateDirty();
-  render();
+  renderChanges(changes);
   if(next&&focusRequirement(sameRow?id:nextId,nextColumn))return;
   if(continueAtEntry&&form.dataset.rowId===""&&id!==""&&focusRequirement("",column))return;
   if(!focusRequirement(id,column))restoreSelectedCell();
@@ -2307,8 +2407,8 @@ function edgeScrollSpeed(y,top,bottom,zone=40,max=28){
 """
 
 INITIAL_RENDER_JS = """
-render();
 updateDirty();
+render();
 draftsStart();
 """
 

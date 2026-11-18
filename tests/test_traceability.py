@@ -88,6 +88,24 @@ class TraceModelTests(unittest.TestCase):
         subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
                        + TRACE_MODEL_JS + assertions, text=True, check=True)
 
+    def test_trace_index_reads_only_its_declared_columns(self):
+        config = load_config(None, {"id_column": "ID", "traceability": True})
+        table = read_csv_table(str(UAT_CSV), config)
+        rows = json.dumps([dict(zip(table.headers, row)) if isinstance(row, list) else row for row in table.rows])
+        self.run_js(f"const rows={rows},headers={json.dumps(table.headers)};" + r"""
+rows.push({ID:"BAD-1",Type:"Requirement",Origin:"Self-derived",Compliance:"Compliant",Priority:"Bogus",
+  "Verified by":"BAD-T; BAD-T; NOPE","Derived from":"BAD-2"},{ID:"BAD-2",Type:"Requirement","Derived from":"BAD-1"},
+  {ID:"BAD-T",Type:"Test",Result:"Failed"},{ID:"BAD-X",Type:"Weird",Compliance:"Compliant"});
+const read=new Set();
+const watched=rows.map(row=>new Proxy(row,{get(target,key){if(typeof key==="string")read.add(key);return target[key];}}));
+const index=buildTraceIndex(watched,row=>String(row.ID??"").trim(),{headers,idColumn:"ID"});
+assert.ok(index.values.size>0&&index.issues.length>=6);
+const declared=traceIndexColumns(index.values,"ID",false);
+assert.deepEqual([...read].filter(column=>!declared.has(column)),[]);
+assert.ok(!declared.has("Requirement")&&!declared.has("Acceptance Criteria"));
+assert.equal(traceIndexColumns(index.values,"ID",true),null);
+""")
+
     def test_glossary_matching_and_validation(self):
         self.run_js(r"""
 const term=(ID,Name,Aliases="",extra={})=>({ID,Type:"Term",Name,Aliases,Definition:"Definition",...extra});

@@ -232,6 +232,13 @@ function buildTraceIndex(rows,identify,schema={}){
   if(schema.controls)checkChanges(rows,identify,records,values,headers,schema,issue);
   return {records,systems,roots,issues,glossary,values};
 }
+// The columns buildTraceIndex reads, or null when it reads every column (change controls compare whole rows).
+// An edit confined to other columns leaves the index's links, findings, glossary and value rules as they were.
+function traceIndexColumns(values,idColumn,controlled){
+  if(controlled)return null;
+  return new Set([idColumn,"Type","Name","Origin","Rationale","Definition","Aliases","Auto Link","Field","Multiple",
+    ...Object.keys(traceFields),...Object.keys(verificationStates),...values.keys()]);
+}
 function groupFindingsByCell(issues){
   const cells=new Map();
   for(const finding of issues){
@@ -1324,6 +1331,11 @@ const trace=(()=>{
   }
 
   return {recordType:id=>index.records.get(id)?.type,refresh,followValueRename,paintMarkers,valueRule:column=>index.values.get(column),matches,filters,reset,syncSelection,close,clearCopy,columnAvailable,defaultHidden,openDeletion,
+    // Null (every column) unless the index was built from the data as of `since`.
+    indexColumns:since=>indexVersion===since?traceIndexColumns(index.values,data.meta.idColumn,Boolean(data.controls)):null,
+    // Records keep their identity through edits and undo, so an index current at `since` stays current after
+    // a change confined to columns outside indexColumns(since).
+    keepIndex:since=>{if(indexVersion===since)indexVersion=dataVersion;},
     columnLayout:()=>listViews[view]?.layout??null,
     columnRank:name=>view==="glossary"&&glossaryKind==="values"?[...glossaryKinds.values.columns].indexOf(name)
       :listViews[view]?.order?.().indexOf(name)??0,
