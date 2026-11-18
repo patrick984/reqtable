@@ -331,9 +331,15 @@ const trace=(()=>{
     overrides:new Map(),
   };
   const testTypes=["Test","Test plan"];
+  const constrainedByIndex=new WeakMap();
   const constrainedColumns=types=>{
-    const records=[...(index?.records.values()??[])].filter(record=>types.includes(record.type));
-    return [...(index?.values.keys()??[])].filter(name=>records.some(record=>record.row[name]?.trim()));
+    const current=syncIndex(),cache=constrainedByIndex.get(current)??new Map(),key=types.join("\u0000");
+    constrainedByIndex.set(current,cache);
+    if(!cache.has(key)){
+      const records=[...current.records.values()].filter(record=>types.includes(record.type));
+      cache.set(key,[...current.values.keys()].filter(name=>records.some(record=>record.row[name]?.trim())));
+    }
+    return cache.get(key);
   };
   const testColumnOrder=()=>[data.meta.idColumn,"Type","Name","Test plan",...constrainedColumns(testTypes),"Reference","Requirement"];
   const testLayout={
