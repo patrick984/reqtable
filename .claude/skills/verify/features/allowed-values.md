@@ -16,7 +16,7 @@ In a traceability Develop report, a column with `Value` records (Priority and Ve
 
 - Open `<URL>uat-develop.html`.
 - Edit a Priority or Verification Method cell with `Return`, `F2` or a double-click.
-- Click the flag button in a cell, or open **View → Record links and trace findings**.
+- Click the flag button in a cell, or open **View → Links**.
 
 ## Driving it with the browser pane
 

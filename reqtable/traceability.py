@@ -738,7 +738,7 @@ const trace=(()=>{
       <button type="button" id="trace-reveal">Reveal in grid</button></div>`:"";
     paintBack();
     if(!record){
-      detail.innerHTML=reveal+"<p>Select a current record to inspect its links.</p>";
+      detail.innerHTML=reveal+"<p>Select a current record to see its links.</p>";
       return;
     }
     const {id,row,type}=record;
@@ -779,8 +779,8 @@ const trace=(()=>{
     selected=id;
     if(ready&&!guard&&!force&&id&&id!==recordId){recordId=id;writeHistory(false);}
     selectedLinks.disabled=!index.records.has(id);
-    selectedLinks.title=selectedLinks.disabled?"Select a current record to view its links":`Show links for ${id}`;
-    selectedLinks.setAttribute("aria-label",selectedLinks.disabled?"Links":`Links for ${id}`);
+    selectedLinks.title=selectedLinks.disabled?"Select a current record to see its links":`Links and trace findings for ${id}`;
+    selectedLinks.setAttribute("aria-label",selectedLinks.disabled?"Links and trace findings":`Links and trace findings for ${id}`);
     pending=null;
     renderDetail();
   }
@@ -791,6 +791,7 @@ const trace=(()=>{
     return Object.keys(listViews).find(name=>listViews[name].types.includes(type))??"all";
   }
   const recordView=id=>viewForType(index.records.get(id)?.type);
+  const linksTarget=()=>view==="systems"?selectedSystem:view==="gates"||matrixShown()?null:selectedRequirementId();
   function openPanel(id){
     closeReview();
     closeQuality();
@@ -1158,12 +1159,12 @@ const trace=(()=>{
   });
   $("#open-trace").addEventListener("click",()=>{
     if(!canNavigate())return;
-    if(panel.hidden)openPanel(view==="systems"?selectedSystem:selectedRequirementId());
+    if(panel.hidden)openPanel(linksTarget());
     else {close();restoreSelectedCell();}
   });
   selectedLinks.addEventListener("click",()=>{
     if(!canNavigate())return;
-    openPanel(selectedRequirementId());
+    openPanel(linksTarget());
   });
   for(const dialog of [editor,picker,deletion])dialog.addEventListener("keydown",event=>event.stopPropagation());
   $("#close-trace").addEventListener("click",()=>{
@@ -1339,7 +1340,7 @@ const trace=(()=>{
     rowMarker:id=>{
       const record=index.records.get(id);
       if(!record||(!record.incoming.length&&!Object.keys(traceFields).some(field=>traceIds(record.row[field]).length)))return "";
-      return '<span class="trace-row-marker" role="img" aria-label="Has trace links" title="Has trace links"></span>';
+      return '<span class="trace-row-marker" role="img" aria-label="Has links" title="Has links"></span>';
     },
     rename:(oldId,newId)=>{
       if(system===oldId)system=newId;
@@ -1362,7 +1363,7 @@ const trace=(()=>{
 })();
 """
 
-TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace-panel">Record links and trace findings</button>'
+TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace-panel" aria-label="Links and trace findings">Links</button>'
 
 TRACE_WORKSPACE = """
 <section id="trace-workspace" aria-label="Traceability workspace">
@@ -1440,7 +1441,7 @@ TRACE_SYSTEMS = """
     <p class="meta" id="trace-system-parent"></p>
     <div class="trace-actions">
       <button type="button" id="trace-system-requirements">View allocated requirements</button>
-      <button type="button" id="trace-system-links">View links</button>
+      <button type="button" id="trace-system-links" aria-controls="trace-panel">Links</button>
     </div>
     <div class="trace-actions" id="trace-system-edit" hidden>
       <button type="button" id="trace-subsystem-add">Add subsystem…</button>
@@ -1454,7 +1455,7 @@ TRACE_SYSTEMS = """
 
 TRACE_HTML = """
 <aside id="trace-panel" class="review-panel" hidden aria-labelledby="trace-title">
-  <div class="review-head"><h2 id="trace-title" tabindex="-1">Record links</h2><button id="close-trace">Close</button></div>
+  <div class="review-head"><h2 id="trace-title" tabindex="-1">Links</h2><button id="close-trace">Close</button></div>
   <div class="review-body">
     <button type="button" id="trace-back" hidden>Back to previous record</button>
     <div id="trace-record"></div>
