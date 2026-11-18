@@ -664,8 +664,11 @@ function diffStatuses(source,{includeMoves=false,includeUnchanged=true}={}){
   }
   return statuses;
 }
-let savedRowIndex,rowModels=new Map(),rowModelSource=null;
+let savedRowIndex,rowModels=new Map(),rowModelSource=null,rowModelKey=null;
 function rebuildRows(){
+  const key=[dataVersion,state.compareWith,state.savedRows];
+  if(rowModelKey?.every((part,i)=>part===key[i]))return;
+  rowModelKey=key;
   savedRowIndex=byId(state.savedRows);
   const source=comparisonSource(),moved=source?.moves?movedRowIds(byId(source.rows),byId(state.currentRows)):new Set();
   if((source?.rows??null)!==rowModelSource){rowModels=new Map();rowModelSource=source?.rows??null;}
@@ -975,7 +978,10 @@ function syncModeUi(){
     $("#rename-requirement").disabled=trace.pageView();
   }
   document.querySelectorAll(".develop-only").forEach(el=>el.hidden=!developMode());document.querySelectorAll(".diff-only").forEach(el=>el.hidden=!diffActive());if(!data.options.commentsEnabled)document.querySelectorAll(".comments-only").forEach(el=>el.hidden=true);renderCompareMenu();$("#undo-edit").disabled=!state.undo.length;$("#redo-edit").disabled=!state.redo.length;}function render(){rebuildRows();renderLayout();renderHead();renderBody();$("#view-toggle").textContent=state.view==="unified"?"Side-by-side view":"Unified view";renderColumnChooser();renderStatusControls();syncModeUi();renderPackage?.();}function renderBodyOnly(){renderBody();renderColumnChooser();}
+// Every edit to rows, comments, quality review or decisions reports here, so caches of derived data key off this counter.
+let dataVersion=0;
 function updateDirty(){
+  dataVersion++;
   state.requirementsDirty=JSON.stringify(state.currentRows)!==JSON.stringify(state.savedRows);
   state.commentsDirty=JSON.stringify(state.comments)!==JSON.stringify(state.savedComments);
   state.qualityDirty=JSON.stringify(state.qualityReview)!==JSON.stringify(state.savedQualityReview);

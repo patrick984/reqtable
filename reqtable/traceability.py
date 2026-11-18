@@ -384,7 +384,14 @@ const trace=(()=>{
     "Affects":["Affects","Link affected record…"],
   };
   const removedSince=id=>data.controls&&Object.hasOwn(data.controls.records,id)?data.controls.records[id].baseline:null;
-  let index,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
+  let index,indexVersion=null,view="requirements",glossaryKind="terms",system="",unallocated=false,descendants=true;
+  const syncIndex=()=>{
+    if(indexVersion!==dataVersion){
+      index=buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn,controls:data.controls});
+      indexVersion=dataVersion;
+    }
+    return index;
+  };
   let selected=null,selectedSystem=null,revealed=null,pending=null;
   let scope=new Set(),recordEdit=null,linkEdit=null,deleteEdit=null;
 
@@ -539,10 +546,9 @@ const trace=(()=>{
       :traceIds(row.cells["Allocated to"]?.old);
     return unallocated?!allocated.length:allocated.some(id=>scope.has(id));
   }
-  const buildIndex=()=>buildTraceIndex(state.currentRows,rowId,{headers:data.source.new.headers,idColumn:data.meta.idColumn,controls:data.controls});
   function refresh(){
     glossaryPopover.close();
-    index=buildIndex();
+    syncIndex();
     if(index.records.get(system)?.type!=="System")system="";
     if(revealed&&!index.records.has(revealed)&&!data.rows.some(row=>row.id===revealed))revealed=null;
     scope=new Set();
@@ -1077,7 +1083,7 @@ const trace=(()=>{
     const [gateIndex,checkIndex]=(event.target.closest("[data-gate-show]")?.dataset.gateShow??"").split(":").map(Number);
     if(gateIndex>=0)showGateRecords(gates[gateIndex],gateEvaluations[gateIndex][checkIndex]);
   });
-  index=buildIndex();
+  syncIndex();
   if(!data.controls&&!data.source.new.headers.some(name=>name==="Change status"||name==="Affects")
       &&![...index.records.values()].some(record=>record.type==="Change request")){
     viewBar.querySelector('[data-trace-view="changes"]').remove();
