@@ -613,6 +613,7 @@ const trace=(()=>{
         select.value=value;
       }
       $("#trace-descendants").closest("label").hidden=inGates;
+      systemSelect.closest("label").hidden=inGates;
       $("#trace-descendants").checked=descendants;
       $("#trace-descendants").disabled=!system;
     }
