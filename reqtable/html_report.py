@@ -126,6 +126,11 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
   body:has(#quality-panel:not([hidden])) .page {margin-right:360px}
 }
 @media print {.quality-marker {display:none}}
+.popover-head {display:flex;align-items:start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.popover-head h3 {margin:0}
+.popover-close {padding:0 6px;line-height:1.2}
+#finding-popover-list {margin:0;padding:0;list-style:none}
+#finding-popover-list li {padding:6px 0;border-top:1px solid var(--line)}
 .report-header {
   display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
   position:relative; gap:4px 12px; margin-bottom:14px;
@@ -193,6 +198,7 @@ state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
 const grid={display:[],start:0,end:0,heights:new Map(),offsets:new Float64Array(1),columns:0,canDrag:false,comments:new Map(),layouts:new Map(),layoutKey:"",stale:false,printing:false,frame:0,filteredEmpty:false};
 const $=s=>document.querySelector(s),table=$("#requirements-table"),tableBody=$("#requirements-body"),headRow=$("#heading-row"),filterRow=$("#filter-row"),resultCount=$("#result-count"),quick=$("#quick-comment"),hover=$("#comment-hover"),valuePopover=$("#value-filter-popover"),review=$("#review-panel"),help=$("#keyboard-help");
+const findingPopover=createFindingPopover();
 if(window.ResizeObserver)new ResizeObserver(()=>table.style.setProperty("--heading-height",`${headRow.getBoundingClientRect().height}px`)).observe(headRow);
 function rowElement(index){return tableBody.querySelector(`tr[data-row-index="${index}"]`);}
 function cellElement(row,column){return rowElement(row)?.querySelector(`[data-column-index="${column}"]`)??null;}
@@ -221,6 +227,7 @@ function displayTimestamp(value){const d=new Date(value);if(Number.isNaN(d.getTi
 function filenameTimestamp(){const d=new Date(),pad=n=>String(n).padStart(2,"0");return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;}
 function reviewerColor(initials){let hash=0;for(const ch of initials.toLocaleUpperCase())hash=(hash*31+ch.codePointAt(0))>>>0;return `hsl(${hash%360} 68% 48%)`;}
 function availableColumns(){return trace?data.columns.filter(c=>trace.columnAvailable(c.name)).sort((a,b)=>trace.columnRank(a.name)-trace.columnRank(b.name)):data.columns;}
+function columnLabel(name){return data.columns.find(column=>column.name===name)?.label??name;}
 function visibleColumns(){return availableColumns().filter(c=>!state.hidden.has(c.name));}
 function defaultHiddenColumns(){return trace?.defaultHidden()??new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));}
 function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell.old:cell.new)??"";}function commentsFor(rid,column){return state.comments.filter(c=>c.requirementId===rid&&c.column===column);}
@@ -367,7 +374,7 @@ function clearAllFilters(){
   state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.idFilter=null;quality.only=false;
   state.statuses=new Set(["added","removed","changed","unchanged"]);trace?.reset();
 }
-function closeHeaderPopups(except=null){document.querySelectorAll("details.popup-menu[open]").forEach(d=>{if(d!==except)d.removeAttribute("open");});}function positionPopover(element,anchor){const r=anchor.getBoundingClientRect(),margin=8;element.hidden=false;const width=element.offsetWidth,height=element.offsetHeight;let left=Math.min(r.left,innerWidth-width-margin),top=r.bottom+5;if(top+height>innerHeight-margin)top=Math.max(margin,r.top-height-5);element.style.left=`${Math.max(margin,left)}px`;element.style.top=`${Math.max(margin,top)}px`;}function closeQuick(){quick.hidden=true;quick.innerHTML="";state.editingId=null;}function sameReviewer(c){return c&&c.initials.toLocaleUpperCase()===reviewerInitials().toLocaleUpperCase()&&Boolean(reviewerInitials());}
+function closeHeaderPopups(except=null){document.querySelectorAll("details.popup-menu[open]").forEach(d=>{if(d!==except)d.removeAttribute("open");});}function closeQuick(){quick.hidden=true;quick.innerHTML="";state.editingId=null;}function sameReviewer(c){return c&&c.initials.toLocaleUpperCase()===reviewerInitials().toLocaleUpperCase()&&Boolean(reviewerInitials());}
 function openQuick(button){hover.hidden=true;closeHeaderPopups();const cell=button.closest("[data-grid-cell]");if(cell){state.focus={row:+cell.dataset.rowIndex,column:+cell.dataset.columnIndex};setRovingFocus();}const rid=button.dataset.commentRow,column=button.dataset.commentColumn,existing=commentsFor(rid,column).sort((a,b)=>a.created.localeCompare(b.created)),previous=existing[existing.length-1];state.commentContext={rid,column};state.editingId=null;const previousHtml=previous?`<div class="quick-previous"><div class="meta">Previous comment${existing.length>1?` · ${existing.length-1} earlier`:''}</div>${commentCard(previous,sameReviewer(previous)?`<div class="comment-actions"><button type="button" data-quick-edit-comment="${escapeHtml(previous.id)}">Edit</button></div>`:"")}</div>`:"";quick.innerHTML=`<h3>${escapeHtml(rid)} / ${escapeHtml(column)}</h3>${previousHtml}<form id="quick-comment-form"><label for="quick-comment-text">New comment</label><textarea id="quick-comment-text" required></textarea><div class="comment-actions"><button class="primary" id="quick-comment-save" type="submit">Add comment</button><button type="button" id="open-comment-sidebar">Show sidebar</button><button type="button" id="close-quick-comment">Cancel</button></div></form>`;positionPopover(quick,button);$("#quick-comment-form").addEventListener("submit",saveQuickComment);$("#open-comment-sidebar").addEventListener("click",()=>{closeQuick();openComments(rid,column,true);});$("#close-quick-comment").addEventListener("click",()=>{closeQuick();restoreSelectedCell();});$("#quick-comment-text").focus();}
 function addComment(text,rid,column){if(column===data.meta.idColumn){alert("Comments cannot be attached to the ID column.");return false;}const initials=reviewerInitials();if(!validInitials(initials)){alert("Enter 1–16 reviewer initials without control characters.");focusReviewerInitials();return false;}persistReviewerInitials();if(developMode())remember();state.comments.push({id:(globalThis.crypto&&crypto.randomUUID?crypto.randomUUID():`${Date.now()}-${Math.random()}`),requirementId:rid,column,initials,created:localTimestamp(),modified:null,text});setDirty(true);return true;}
 function saveQuickComment(e){e.preventDefault();const text=$("#quick-comment-text").value.trim();if(!text)return;if(state.editingId){const c=state.comments.find(x=>x.id===state.editingId);if(!sameReviewer(c)){alert("Only the same reviewer can edit this comment from the quick view.");return;}if(developMode())remember();c.text=text;c.modified=localTimestamp();setDirty(true);}else if(!addComment(text,state.commentContext.rid,state.commentContext.column))return;closeQuick();render();restoreSelectedCell();}
@@ -1494,11 +1501,12 @@ function saveReportCopy({forReview=false,withChanges=false}={}){
   for(const id of ["requirements-body","heading-row","filter-row","column-widths","column-list",
     "active-filter-list","table-context-menu","row-drag-preview","comment-list","quality-findings",
     "quality-count","quality-dismiss-description","quick-comment","comment-hover","value-filter-popover",
+    "finding-popover-title","finding-popover-list","finding-popover-actions",
     "dirty-details","dirty-announcement","save-status","draft-message"]){
     clone.querySelector("#"+id).replaceChildren();
   }
   for(const id of ["table-context-menu","row-drag-preview","quality-panel","quick-comment","comment-hover",
-    "value-filter-popover","review-panel","dirty-indicator","draft-banner"]){
+    "value-filter-popover","finding-popover","review-panel","dirty-indicator","draft-banner"]){
     clone.querySelector("#"+id).hidden=true;
   }
   trace?.clearCopy(clone);
@@ -2124,6 +2132,120 @@ function valueFilterOptions(values){
 }
 """
 
+POPOVER_JS = r"""
+let activePopover=null;
+function popoverPlacement(anchor,size,viewport,margin=8,gap=5){
+  const below=viewport.height-margin-gap-anchor.bottom,above=anchor.top-gap-margin;
+  const under=size.height<=below||(size.height>above&&below>=above);
+  const height=Math.min(size.height,Math.max(under?below:above,Math.min(120,viewport.height-2*margin)));
+  const top=under?anchor.bottom+gap:anchor.top-gap-height;
+  return {
+    left:Math.max(margin,Math.min(anchor.left,viewport.width-size.width-margin)),
+    top:Math.max(margin,Math.min(top,viewport.height-height-margin)),
+    maxHeight:height<size.height?height:null
+  };
+}
+function positionPopover(element,anchor){
+  element.hidden=false;
+  element.style.maxHeight="";
+  const {left,top,maxHeight}=popoverPlacement(anchor.getBoundingClientRect(),
+    {width:element.offsetWidth,height:element.offsetHeight},{width:innerWidth,height:innerHeight});
+  element.style.left=`${left}px`;
+  element.style.top=`${top}px`;
+  if(maxHeight!==null)element.style.maxHeight=`${maxHeight}px`;
+}
+function anchoredPopover(popup){
+  let anchor=null;
+  const popover={
+    close(restoreFocus=false){
+      if(!anchor)return;
+      const previous=anchor,focused=popup.contains(document.activeElement);
+      anchor=null;
+      if(activePopover===popover)activePopover=null;
+      popup.hidden=true;
+      previous.setAttribute("aria-expanded","false");
+      if(!restoreFocus&&!focused)return;
+      if(previous.isConnected)previous.focus({preventScroll:true});
+      else restoreSelectedCell();
+    },
+    open(button,fill){
+      if(anchor===button){popover.close(true);return;}
+      activePopover?.close();
+      const focus=fill();
+      anchor=button;
+      activePopover=popover;
+      button.setAttribute("aria-expanded","true");
+      positionPopover(popup,button);
+      focus.focus({preventScroll:true});
+    }
+  };
+  document.addEventListener("click",event=>{
+    if(!anchor||popup.contains(event.target)||anchor.contains(event.target))return;
+    popover.close(!document.activeElement||document.activeElement===document.body);
+  });
+  document.addEventListener("keydown",event=>{
+    if(event.key!=="Escape"||!anchor)return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    popover.close(true);
+  },true);
+  document.addEventListener("scroll",event=>{
+    if(anchor&&!popup.contains(event.target))popover.close();
+  },true);
+  window.addEventListener("resize",()=>popover.close());
+  return popover;
+}
+function findingMarker(className,symbol,label,open){
+  const marker=document.createElement("button");
+  marker.type="button";
+  marker.className=className;
+  marker.textContent=symbol;
+  marker.title=label;
+  marker.setAttribute("aria-label",label);
+  marker.setAttribute("aria-haspopup","dialog");
+  marker.setAttribute("aria-controls","finding-popover");
+  marker.setAttribute("aria-expanded","false");
+  marker.addEventListener("click",()=>open(marker));
+  return marker;
+}
+function createFindingPopover(){
+  const popup=$("#finding-popover"),title=$("#finding-popover-title");
+  const list=$("#finding-popover-list"),footer=$("#finding-popover-actions");
+  const popover=anchoredPopover(popup);
+  $("#finding-popover-close").addEventListener("click",()=>popover.close(true));
+  const buttons=actions=>actions.map(({label,run})=>{
+    const button=document.createElement("button");
+    button.type="button";
+    button.textContent=label;
+    button.addEventListener("click",()=>{popover.close();run();});
+    return button;
+  });
+  return {close:popover.close,open(marker,{heading,findings,actions}){
+    popover.open(marker,()=>{
+      title.textContent=heading;
+      list.replaceChildren(...findings.map(finding=>{
+        const item=document.createElement("li");
+        if(finding.name){
+          const name=document.createElement("strong");
+          name.textContent=finding.name;
+          item.append(name,document.createElement("br"));
+        }
+        item.append(finding.detail);
+        if(finding.actions){
+          const row=document.createElement("div");
+          row.className="comment-actions";
+          row.append(...buttons(finding.actions));
+          item.append(row);
+        }
+        return item;
+      }));
+      footer.replaceChildren(...buttons(actions));
+      return title;
+    });
+  }};
+}
+"""
+
 WINDOW_JS = r"""
 const WINDOW_THRESHOLD=300,WINDOW_OVERSCAN=15,ROW_HEIGHT_GUESS=60;
 function rowOffsets(ids,heights,guess=ROW_HEIGHT_GUESS){
@@ -2205,6 +2327,7 @@ __TRACE_SYSTEMS__
 <div id="row-drag-preview" aria-hidden="true" hidden></div>
 <div id="table-context-menu" class="popover" role="group" aria-label="Record actions" hidden></div>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>
+<section id="finding-popover" class="floating-popover" role="dialog" aria-labelledby="finding-popover-title" hidden><div class="popover-head"><h3 id="finding-popover-title" tabindex="-1"></h3><button type="button" class="popover-close" id="finding-popover-close" aria-label="Close findings">×</button></div><ul id="finding-popover-list"></ul><div id="finding-popover-actions" class="comment-actions"></div></section>
 <aside id="review-panel" class="review-panel" hidden aria-label="Comments"><div class="sidebar-resize" data-sidebar-resize role="separator" aria-orientation="vertical" aria-label="Resize comments sidebar"></div><div class="review-head"><button id="back-comments" hidden aria-label="Back to all comments">Back</button><h2 id="review-title">Comments</h2><button id="close-review" aria-label="Close comments">Close</button></div><div class="review-body"><label class="sr-only" for="comment-search">Search comments</label><input id="comment-search" class="comment-search" placeholder="Search comments…"><div class="comment-actions"><label class="sr-only" for="reviewer-filter">Reviewer</label><select id="reviewer-filter"><option value="">All reviewers</option></select><label class="sr-only" for="comment-column-filter">Column</label><select id="comment-column-filter"><option value="">All columns</option></select><label class="sr-only" for="comment-status-filter">Status</label><select id="comment-status-filter"><option value="">All statuses</option><option value="added">Added</option><option value="removed">Removed</option><option value="changed">Changed</option><option value="unchanged">Unchanged</option></select></div><div id="comment-counts" class="meta"></div><div id="comment-list"></div></div></aside>
 __TRACE_HTML__
 <aside id="quality-panel" class="review-panel" hidden aria-labelledby="quality-title">
@@ -2295,5 +2418,5 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
         .replace("__CSS__", CSS + DRAFTS_CSS + (PACKAGE_CSS if has_package else "") + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + JS + FILTER_JS + WINDOW_JS + VALUE_EDIT_JS + trace_js + (PACKAGE_JS if has_package else "const renderPackage=null;\n") + DRAFTS_JS + INITIAL_RENDER_JS)
+        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + POPOVER_JS + JS + FILTER_JS + WINDOW_JS + VALUE_EDIT_JS + trace_js + (PACKAGE_JS if has_package else "const renderPackage=null;\n") + DRAFTS_JS + INITIAL_RENDER_JS)
     )

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from reqtable.core import build_report_data, load_config, read_csv_table
-from reqtable.html_report import WINDOW_JS, render_report
+from reqtable.html_report import POPOVER_JS, WINDOW_JS, render_report
 
 
 def large_report(rows: int, **options) -> str:
@@ -103,3 +103,40 @@ assert.equal(edgeScrollSpeed(900,100,500),28);
 assert.ok(edgeScrollSpeed(120,100,500)<0&&edgeScrollSpeed(120,100,500)>-28);
 assert.ok(edgeScrollSpeed(480,100,500)>0&&edgeScrollSpeed(480,100,500)<28);
 """, text=True, check=True)
+
+
+@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+class PopoverPlacementTests(unittest.TestCase):
+    def run_js(self, assertions):
+        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + POPOVER_JS + assertions,
+                       text=True, check=True)
+
+    def test_opens_below_the_anchor_when_it_fits(self):
+        self.run_js("""
+const anchor={left:100,top:200,bottom:220};
+assert.deepEqual(popoverPlacement(anchor,{width:300,height:150},{width:1200,height:800}),{left:100,top:225,maxHeight:null});
+""")
+
+    def test_flips_above_an_anchor_near_the_bottom(self):
+        self.run_js("""
+const anchor={left:100,top:700,bottom:720};
+assert.deepEqual(popoverPlacement(anchor,{width:300,height:150},{width:1200,height:800}),{left:100,top:545,maxHeight:null});
+""")
+
+    def test_a_tall_popover_shrinks_into_the_roomier_side_without_covering_the_anchor(self):
+        self.run_js("""
+const viewport={width:1000,height:768},size={width:380,height:520};
+assert.deepEqual(popoverPlacement({left:500,top:431,bottom:455},size,viewport),{left:500,top:8,maxHeight:418});
+assert.deepEqual(popoverPlacement({left:500,top:250,bottom:274},size,viewport),{left:500,top:279,maxHeight:481});
+""")
+
+    def test_stays_inside_the_viewport_at_every_edge(self):
+        self.run_js("""
+const viewport={width:1000,height:600},size={width:380,height:200};
+assert.equal(popoverPlacement({left:900,top:100,bottom:120},size,viewport).left,1000-380-8);
+assert.equal(popoverPlacement({left:-40,top:100,bottom:120},size,viewport).left,8);
+for(const top of [-500,-10,0,250,590,900]){
+  const place=popoverPlacement({left:10,top,bottom:top+20},size,viewport),height=place.maxHeight??size.height;
+  assert.ok(place.top>=8&&place.top+height<=viewport.height-8,`anchor at ${top} gives ${JSON.stringify(place)}`);
+}
+""")

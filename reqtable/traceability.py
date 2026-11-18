@@ -719,15 +719,13 @@ const trace=(()=>{
         const column=cell.dataset.column,issues=columns.get(column);
         const wrapper=cell.querySelector(".cell-wrap");
         if(!issues||!wrapper||wrapper.querySelector(".trace-marker"))continue;
-        const id=row.dataset.rowId,marker=document.createElement("button");
-        marker.type="button";
-        marker.className="trace-marker";
-        marker.textContent="⚑";
+        const id=row.dataset.rowId;
         const label=`${issues.length} trace ${issues.length===1?"finding":"findings"} for ${id}, ${column}`;
-        marker.setAttribute("aria-label",label);
-        marker.title=`${label}\n${issues.map(issue=>issue.message).join("\n")}`;
-        marker.addEventListener("click",()=>showFindings(id,column));
-        wrapper.append(marker);
+        wrapper.append(findingMarker("trace-marker","⚑",label,marker=>findingPopover.open(marker,{
+          heading:`${id} · ${columnLabel(column)}`,
+          findings:issues.map(issue=>({detail:issue.message})),
+          actions:[{label:"Show in Links",run:()=>showFindings(id,column)}]
+        })));
       }
     }
   }

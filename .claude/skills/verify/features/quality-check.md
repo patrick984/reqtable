@@ -6,6 +6,7 @@ In Develop mode an author scans requirement wording for problems such as a missi
 
 - `scan` lists findings for all current requirements, including filtered rows.
 - `jump` focuses the flagged cell from a finding card.
+- `popover` lists a cell's findings when its amber icon is clicked, with **Dismiss…** per finding and **Show in quality panel**.
 - `edit-wording` opens the cell editor with the match selected.
 - `dismiss` accepts a finding with a reason, and `restore` brings it back.
 - `settings` changes the statement column, required fields, obligation keyword and enabled checks.
@@ -24,6 +25,7 @@ Preconditions:
 - **Create a finding.** Edit R1's Requirement to `The report opens offline.` and commit. The row has no obligation keyword.
 - **Scan.** Choose **View → Check requirement quality** (`#check-quality`). The sidebar lists a finding for R1 and `#quality-count` is non-zero.
 - **Jump.** Click the R1 finding card. R1's Requirement cell is selected.
+- **Popover.** Close the sidebar, then click R1's `.quality-marker`. `#finding-popover` lists the missing obligation finding and `#finding-popover-title` has focus. Escape hides it and focuses the marker again. **Show in quality panel** reopens the sidebar with R1's card marked `.quality-active`.
 - **Fix.** Edit R1 back to use `shall` and commit. The R1 finding disappears.
 - **Dismiss.** Recreate the finding, click **Dismiss…**, enter a reason in `#quality-dismiss-reason`, submit. The finding moves to **Show dismissed findings** with the reason.
 

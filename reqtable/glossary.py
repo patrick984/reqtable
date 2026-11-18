@@ -77,53 +77,31 @@ GLOSSARY_UI_JS = r"""
 function createGlossaryPopover(jump){
   const popup=$("#glossary-definition"),title=$("#glossary-definition-title");
   const content=$("#glossary-definition-content"),sources=$("#glossary-definition-sources");
-  let anchor=null;
-  function close(restoreFocus=false){
-    if(!anchor)return;
-    popup.hidden=true;
-    content.replaceChildren();
-    sources.replaceChildren();
-    anchor.setAttribute("aria-expanded","false");
-    if(restoreFocus)anchor.focus({preventScroll:true});
-    anchor=null;
-  }
+  const popover=anchoredPopover(popup),close=popover.close;
   function open(button,record){
-    if(anchor===button){close(true);return;}
-    close();
-    anchor=button;
-    anchor.setAttribute("aria-expanded","true");
-    title.textContent=record.row.Name.trim();
-    content.innerHTML=renderCommentMarkdown(record.row.Definition.trim());
-    const references=record.outgoing.get("Source refs")??[];
-    const jumpButton=(id,text)=>{
-      const button=document.createElement("button");
-      button.type="button";
-      button.className="glossary-jump";
-      button.textContent=text;
-      button.addEventListener("click",()=>{close();jump(id);});
-      return button;
-    };
-    if(references.length){
-      sources.append("Sources: ");
-      references.forEach(({row,id},i)=>sources.append(...(i?[", "]:[]),jumpButton(id,row.Name?.trim()||id)));
-      sources.append(document.createElement("br"));
-    }
-    sources.append(jumpButton(record.id,"Show in glossary"));
-    positionPopover(popup,button);
-    title.focus({preventScroll:true});
+    popover.open(button,()=>{
+      title.textContent=record.row.Name.trim();
+      content.innerHTML=renderCommentMarkdown(record.row.Definition.trim());
+      sources.replaceChildren();
+      const references=record.outgoing.get("Source refs")??[];
+      const jumpButton=(id,text)=>{
+        const button=document.createElement("button");
+        button.type="button";
+        button.className="glossary-jump";
+        button.textContent=text;
+        button.addEventListener("click",()=>{close();jump(id);});
+        return button;
+      };
+      if(references.length){
+        sources.append("Sources: ");
+        references.forEach(({row,id},i)=>sources.append(...(i?[", "]:[]),jumpButton(id,row.Name?.trim()||id)));
+        sources.append(document.createElement("br"));
+      }
+      sources.append(jumpButton(record.id,"Show in glossary"));
+      return title;
+    });
   }
   $("#glossary-definition-close").addEventListener("click",()=>close(true));
-  document.addEventListener("click",event=>{
-    if(anchor&&!popup.contains(event.target)&&!event.target.closest(".glossary-link"))close();
-  });
-  document.addEventListener("keydown",event=>{
-    if(event.key!=="Escape"||!anchor)return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    close(true);
-  },true);
-  $(".table-wrap").addEventListener("scroll",()=>close());
-  window.addEventListener("resize",()=>close());
   return {close,decorate(glossary,rows){
     if(!glossary.enabled)return;
     const columns=["Requirement","Acceptance Criteria","Rationale"];
@@ -165,9 +143,9 @@ function createGlossaryPopover(jump){
 
 GLOSSARY_HTML = """
 <section id="glossary-definition" class="floating-popover" role="dialog" aria-labelledby="glossary-definition-title" hidden>
-  <div class="glossary-definition-head">
+  <div class="popover-head">
     <h3 id="glossary-definition-title" tabindex="-1"></h3>
-    <button type="button" id="glossary-definition-close" aria-label="Close definition">×</button>
+    <button type="button" class="popover-close" id="glossary-definition-close" aria-label="Close definition">×</button>
   </div>
   <div class="markdown" id="glossary-definition-content"></div>
   <p id="glossary-definition-sources" class="meta"></p>
@@ -177,9 +155,6 @@ GLOSSARY_HTML = """
 GLOSSARY_CSS = """
 .glossary-link {max-width:100%;padding:0;border:0;border-radius:2px;background:transparent;color:inherit;text-align:inherit;overflow-wrap:anywhere;text-decoration:underline dotted var(--accent);text-underline-offset:.19em}
 .glossary-link:hover,.glossary-link[aria-expanded="true"] {color:var(--accent)}
-.glossary-definition-head {display:flex;align-items:start;justify-content:space-between;gap:8px;margin-bottom:6px}
-.glossary-definition-head h3 {margin:0}
-#glossary-definition-close {padding:0 6px;line-height:1.2}
 #glossary-definition-sources {margin:8px 0 0}
 .glossary-jump {display:inline;width:auto;height:auto;padding:0;border:0;background:none;color:var(--accent);font:inherit;text-decoration:underline;cursor:pointer}
 #glossary-definition-sources:empty {display:none}

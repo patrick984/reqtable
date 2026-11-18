@@ -135,17 +135,25 @@ function paintQualityMarkers(rows=renderedRows()){
         // can select the exact occurrence using its source offset.
         underlineQualityPhrases(wrapper,issues.filter(issue=>!dismissedPhrases.has(issue.phrase.toLowerCase())));
       }
-      const marker=document.createElement("button");
-      marker.type="button";
-      marker.className="quality-marker";
-      marker.textContent="⚠";
-      const label=`${issues.length} quality ${issues.length===1?"finding":"findings"} for ${row.dataset.rowId}, ${column}`;
-      marker.setAttribute("aria-label",label);
-      marker.title=label;
-      marker.addEventListener("click",()=>openQuality(row.dataset.rowId,column));
-      wrapper.append(marker);
+      const id=row.dataset.rowId;
+      const label=`${issues.length} quality ${issues.length===1?"finding":"findings"} for ${id}, ${column}`;
+      wrapper.append(findingMarker("quality-marker","⚠",label,marker=>openQualityFindings(marker,id,column)));
     }
   }
+}
+function qualityEvidence({rule,phrase}){
+  const name=qualityRules[rule][0];
+  return phrase?`${name} · “${phrase}”`:name;
+}
+function openQualityFindings(marker,id,column){
+  findingPopover.open(marker,{
+    heading:`${id} · ${columnLabel(column)}`,
+    findings:(quality.findings.get(id)?.get(column)??[]).map(issue=>({
+      name:qualityEvidence(issue),detail:qualityRules[issue.rule][1],
+      actions:[{label:"Dismiss…",run:()=>openQualityDismissal(id,column,issue,marker)}]
+    })),
+    actions:[{label:"Show in quality panel",run:()=>openQuality(id,column)}]
+  });
 }
 function qualityCardTitle(card,id,column,text,hidden){
   const title=document.createElement("h3");
@@ -176,7 +184,7 @@ function renderQualityPanel(){
       const card=document.createElement("article");
       card.className="comment-card quality-card";
       card.classList.toggle("quality-active",active);
-      const label=data.columns.find(item=>item.name===column)?.label??column;
+      const label=columnLabel(column);
       qualityCardTitle(card,id,column,`${id} · ${label}`,hidden);
       if(rowHidden){
         const note=document.createElement("p");
@@ -186,13 +194,12 @@ function renderQualityPanel(){
       }
       for(const issue of issues){
         const {rule,phrase}=issue;
-        const [name,suggestion]=qualityRules[rule];
         const section=document.createElement("div");
         section.className="quality-issue";
         const text=document.createElement("p");
         const evidence=document.createElement("strong");
-        evidence.textContent=phrase?`${name} · “${phrase}”`:name;
-        text.append(evidence,document.createElement("br"),suggestion);
+        evidence.textContent=qualityEvidence(issue);
+        text.append(evidence,document.createElement("br"),qualityRules[rule][1]);
         const actions=document.createElement("div");
         actions.className="comment-actions";
         const edit=document.createElement("button");
@@ -216,9 +223,7 @@ function renderQualityPanel(){
     for(const record of quality.dismissed??[]){
       const card=document.createElement("article");
       card.className="comment-card quality-dismissed";
-      const name=qualityRules[record.rule][0];
-      const evidence=record.phrase?`${name} · “${record.phrase}”`:name;
-      qualityCardTitle(card,record.id,record.column,`${record.id} · ${record.column} · ${evidence} (dismissed)`,
+      qualityCardTitle(card,record.id,record.column,`${record.id} · ${record.column} · ${qualityEvidence(record)} (dismissed)`,
         !displayed.has(record.id)||!columns.has(record.column));
       const reason=document.createElement("p");
       reason.textContent=record.reason;
@@ -391,7 +396,9 @@ function openQualityDismissal(id,column,issue,opener){
 $("#quality-dismiss-cancel").addEventListener("click",()=>qualityDismissDialog.close());
 qualityDismissDialog.addEventListener("close",()=>{
   pendingQualityDismissal=null;
-  (dismissalOpener?.isConnected?dismissalOpener:$("#quality-show-dismissed")).focus();
+  if(dismissalOpener?.isConnected)dismissalOpener.focus();
+  else if(qualityPanel.hidden)restoreSelectedCell();
+  else $("#quality-show-dismissed").focus();
 });
 $("#quality-dismiss-reason").addEventListener("input",event=>event.target.setCustomValidity(""));
 $("#quality-dismiss-form").addEventListener("submit",event=>{
