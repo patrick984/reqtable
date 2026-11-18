@@ -190,7 +190,7 @@ state.decisions=cloneValue(data.decisions??[]);state.savedDecisions=cloneValue(s
 {const key=data.options.initialCompareWith;if(key&&key!==state.compareWith&&(key==="old"?data.source.old:baselineByKey(key)))setCompareWith(key);if(data.package)state.statuses=new Set(["added","removed","changed","unchanged"]);}
 state.savedQualityReview=cloneValue(state.qualityReview);
 if(data.meta.mode==="diff"&&data.options.initialChangesOnly)state.statuses.delete("unchanged");
-const grid={display:[],start:0,end:0,heights:new Map(),offsets:new Float64Array(1),columns:0,canDrag:false,layouts:new Map(),layoutKey:"",stale:false,printing:false,frame:0};
+const grid={display:[],start:0,end:0,heights:new Map(),offsets:new Float64Array(1),columns:0,canDrag:false,comments:new Map(),layouts:new Map(),layoutKey:"",stale:false,printing:false,frame:0};
 const $=s=>document.querySelector(s),table=$("#requirements-table"),tableBody=$("#requirements-body"),headRow=$("#heading-row"),filterRow=$("#filter-row"),resultCount=$("#result-count"),quick=$("#quick-comment"),hover=$("#comment-hover"),valuePopover=$("#value-filter-popover"),review=$("#review-panel"),help=$("#keyboard-help");
 if(window.ResizeObserver)new ResizeObserver(()=>table.style.setProperty("--heading-height",`${headRow.getBoundingClientRect().height}px`)).observe(headRow);
 function rowElement(index){return tableBody.querySelector(`tr[data-row-index="${index}"]`);}
@@ -223,6 +223,8 @@ function availableColumns(){return trace?data.columns.filter(c=>trace.columnAvai
 function visibleColumns(){return availableColumns().filter(c=>!state.hidden.has(c.name));}
 function defaultHiddenColumns(){return trace?.defaultHidden()??new Set(data.columns.filter(c=>c.hidden).map(c=>c.name));}
 function valueFor(row,col){const cell=row.cells[col];return(cell.new===null?cell.old:cell.new)??"";}function commentsFor(rid,column){return state.comments.filter(c=>c.requirementId===rid&&c.column===column);}
+function commentKey(rid,column){return `${rid}\u0000${column}`;}
+function indexComments(){grid.comments=new Map();for(const c of state.comments){const key=commentKey(c.requirementId,c.column);grid.comments.set(key,(grid.comments.get(key)??0)+1);}}
 
 function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
 function commentCard(c,actions=""){const stamp=displayTimestamp(c.modified||c.created);return `<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(stamp)}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><div class="markdown">${renderCommentMarkdown(c.text)}</div>${actions}</article>`;}
@@ -256,14 +258,22 @@ function selectionBounds(){
     right:wholeRows?visibleColumns().length-1:Math.max(anchor.column,extent.column)
   };
 }
-function paintSelection(){
-  const {top,bottom,left,right}=selectionBounds();
-  for(const cell of gridCells()){
-    const row=+cell.dataset.rowIndex,column=+cell.dataset.columnIndex;
-    const included=!!rangeSelection&&row>=top&&row<=bottom&&column>=left&&column<=right;
-    cell.classList.toggle("range-selected",included);
-    cell.classList.toggle("whole-row-selected",included&&rangeSelection.wholeRows);
+let paintedRange=null,selectedCell=null;
+function currentRange(){return rangeSelection?{...selectionBounds(),wholeRows:rangeSelection.wholeRows}:null;}
+function paintRange(range,on){
+  for(let row=Math.max(range.top,grid.start);row<=Math.min(range.bottom,grid.end-1);row++){
+    for(const cell of rowElement(row)?.querySelectorAll("[data-grid-cell]")??[]){
+      const column=+cell.dataset.columnIndex;
+      if(column<range.left||column>range.right)continue;
+      cell.classList.toggle("range-selected",on);
+      cell.classList.toggle("whole-row-selected",on&&range.wholeRows);
+    }
   }
+}
+function paintSelection(){
+  if(paintedRange)paintRange(paintedRange,false);
+  paintedRange=currentRange();
+  if(paintedRange)paintRange(paintedRange,true);
 }
 function extendSelection(position){
   rangeSelection={anchor:rangeSelection?.anchor??{...state.focus},
@@ -272,12 +282,14 @@ function extendSelection(position){
   focusGridCell(rangeSelection.extent.row,rangeSelection.extent.column,true);
 }
 function setRovingFocus(){
-  for(const cell of tableBody.querySelectorAll('.selected-cell,[data-grid-cell][tabindex="0"]')){cell.tabIndex=-1;cell.classList.remove("selected-cell");}
+  const previous=selectedCell?.isConnected?selectedCell:tableBody.querySelector(".selected-cell");
+  if(previous){previous.tabIndex=-1;previous.classList.remove("selected-cell");}
+  selectedCell=null;
   const shown=grid.display.length>0;
   if(shown){
     state.focus={row:Math.max(0,Math.min(state.focus.row,grid.display.length-1)),column:Math.max(0,Math.min(state.focus.column,visibleColumns().length-1))};
-    const target=cellElement(state.focus.row,state.focus.column);
-    if(target){target.tabIndex=0;target.classList.add("selected-cell");}
+    selectedCell=cellElement(state.focus.row,state.focus.column);
+    if(selectedCell){selectedCell.tabIndex=0;selectedCell.classList.add("selected-cell");}
   }
   const focused=shown?grid.display[state.focus.row]:null,row=focused?.id?focused:undefined;
   const column=shown?visibleColumns()[state.focus.column]?.name:undefined;
@@ -380,7 +392,7 @@ function restoreSidebarFocus(id){requestAnimationFrame(()=>{const button=[...doc
 function goToComment(c){if(state.compareWith===null&&data.source.old&&!findCurrentRow(c.requirementId))setCompareWith("old");trace?.reveal(c.requirementId,c.column);state.hidden.delete(c.column);state.filters.clear();state.valueFilters.clear();state.commentsOnly=false;state.idFilter=null;state.statuses=new Set(["added","removed","changed","unchanged"]);render();requestAnimationFrame(()=>{const row=displayIndex(c.requirementId),column=visibleColumns().findIndex(x=>x.name===c.column);if(row>=0&&column>=0)focusGridCell(row,column);});}
 function safeJson(value){return JSON.stringify(value).replace(/</g,"\\u003c").replace(/>/g,"\\u003e").replace(/&/g,"\\u0026").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");}function filenameInitials(s){return s.replace(/[^A-Za-z0-9_-]+/g,"-").replace(/^[-_]+|[-_]+$/g,"");}
 function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());function gridCells(){return[...tableBody.querySelectorAll("[data-grid-cell]")];}
+function showHelp(){closeHeaderPopups();closeQuick();if(typeof help.showModal==="function")help.showModal();else help.setAttribute("open","");}$("#show-help").addEventListener("click",showHelp);$("#close-help").addEventListener("click",()=>help.close());
 
 function focusGridCell(row,column,keepRange=false){if(!keepRange)rangeSelection=null;if(!grid.display.length)return;row=Math.max(0,Math.min(grid.display.length-1,row));column=Math.max(0,Math.min(visibleColumns().length-1,column));revealRow(row);const cell=cellElement(row,column);if(cell){state.focus={row,column};setRovingFocus();cell.focus({preventScroll:true});ensureCellVisible(cell);}}function restoreSelectedCell(){requestAnimationFrame(()=>focusGridCell(state.focus.row,state.focus.column));}function focusSelectedFilter(){const column=visibleColumns()[state.focus.column],input=column&&[...document.querySelectorAll("[data-filter]")].find(x=>x.dataset.filter===column.name);if(input){input.focus();input.select();}}function enterTableFromFilter(input){const column=visibleColumns().findIndex(c=>c.name===input.dataset.filter);clearTimeout(filterTimer);closeValueFilter();renderBodyOnly();requestAnimationFrame(()=>focusGridCell(0,Math.max(0,column)));}
 const arrowSteps={
@@ -575,7 +587,25 @@ function markdownDiff(oldText,newText){
 }
 function browserDiff(oldText,newText){oldText=String(oldText);newText=String(newText);if(!oldText&&newText){const h=newText.split("\n").map(x=>`<div class="diff-line added-line">${escapeHtml(x)||"&nbsp;"}</div>`).join("");return{oldHtml:"",newHtml:h,unifiedHtml:h};}if(oldText&&!newText){const h=oldText.split("\n").map(x=>`<div class="diff-line removed-line">${escapeHtml(x)||"&nbsp;"}</div>`).join("");return{oldHtml:h,newHtml:"",unifiedHtml:h};}const a=oldText.split("\n"),b=newText.split("\n"),count=Math.max(a.length,b.length),oldParts=[],newParts=[],unified=[];for(let i=0;i<count;i++){if(i>=a.length){const h=`<div class="diff-line added-line">${escapeHtml(b[i])||"&nbsp;"}</div>`;newParts.push(h);unified.push(h);}else if(i>=b.length){const h=`<div class="diff-line removed-line">${escapeHtml(a[i])||"&nbsp;"}</div>`;oldParts.push(h);unified.push(h);}else if(a[i]===b[i]){const h=`<div class="diff-line context-line">${escapeHtml(a[i])||"&nbsp;"}</div>`;oldParts.push(h);newParts.push(h);unified.push(h);}else{const pair=diffWords(a[i],b[i]),oh=`<div class="diff-line removed-line">${pair[0]||"&nbsp;"}</div>`,nh=`<div class="diff-line added-line">${pair[1]||"&nbsp;"}</div>`;oldParts.push(oh);newParts.push(nh);unified.push(oh,nh);}}return{oldHtml:oldParts.join(""),newHtml:newParts.join(""),unifiedHtml:unified.join("")};}
 function renderRequirementValue(value,column){value=String(value??"");if(!value)return'<span class="empty-value">Empty</span>';return column.markdown?renderCommentMarkdown(value):escapeHtml(value).replace(/\n/g,"<br>");}function comparisonValue(value){return data.options.ignoreTrailingWhitespace?value.split("\n").map(line=>line.trimEnd()).join("\n"):value;}
-function runtimeCell(column,oldValue,newValue,source){const oldText=oldValue??"",newText=newValue??"",changed=Boolean(source)&&!source.ignoredColumns.has(column.name)&&comparisonValue(oldText)!==comparisonValue(newText),result={column:column.name,old:oldValue,new:newValue,changed,search:`${oldText}\n${newText}`.toLocaleLowerCase()};if(changed)Object.assign(result,column.markdown?markdownDiff(oldText,newText):browserDiff(oldText,newText));else{const display=newValue===null?oldText:newText,rendered=renderRequirementValue(display,column);const progress=source?.progressColumns?.has(column.name)&&oldValue!==null&&newValue!==null&&comparisonValue(oldText)!==comparisonValue(newText);Object.assign(result,{oldHtml:renderRequirementValue(oldText,column),newHtml:renderRequirementValue(newText,column),unifiedHtml:progress?`${rendered}<small class="progress-note">was ${escapeHtml(oldText||"empty")}</small>`:rendered,progress});}return result;}
+function runtimeCell(column,oldValue,newValue,source){
+  const oldText=oldValue??"",newText=newValue??"";
+  const changed=Boolean(source)&&!source.ignoredColumns.has(column.name)&&comparisonValue(oldText)!==comparisonValue(newText);
+  const progress=!changed&&!!source?.progressColumns?.has(column.name)&&oldValue!==null&&newValue!==null&&comparisonValue(oldText)!==comparisonValue(newText);
+  return {column:column.name,old:oldValue,new:newValue,changed,progress,search:`${oldText}\n${newText}`.toLocaleLowerCase(),html:null};
+}
+function cellHtml(cell,column,part){
+  cell.html??={};
+  if(cell.html[part]!==undefined)return cell.html[part];
+  const oldText=cell.old??"",newText=cell.new??"";
+  if(cell.changed)Object.assign(cell.html,column.markdown?markdownDiff(oldText,newText):browserDiff(oldText,newText));
+  else if(part==="oldHtml")cell.html.oldHtml=renderRequirementValue(oldText,column);
+  else if(part==="newHtml")cell.html.newHtml=renderRequirementValue(newText,column);
+  else{
+    const rendered=renderRequirementValue(cell.new===null?oldText:newText,column);
+    cell.html.unifiedHtml=cell.progress?`${rendered}<small class="progress-note">was ${escapeHtml(oldText||"empty")}</small>`:rendered;
+  }
+  return cell.html[part];
+}
 function requirementStatus(oldRow,newRow,ignored){
   return rowStatus(oldRow,newRow,data.columns.map(({name})=>name),ignored,comparisonValue);
 }
@@ -616,20 +646,25 @@ function diffStatuses(source,{includeMoves=false,includeUnchanged=true}={}){
   }
   return statuses;
 }
-let savedRowIndex;
+let savedRowIndex,rowModels=new Map(),rowModelSource=null;
 function rebuildRows(){
   savedRowIndex=byId(state.savedRows);
   const source=comparisonSource(),moved=source?.moves?movedRowIds(byId(source.rows),byId(state.currentRows)):new Set();
+  if((source?.rows??null)!==rowModelSource){rowModels=new Map();rowModelSource=source?.rows??null;}
+  const value=(row,name)=>row&&Object.hasOwn(row,name)?String(row[name]??""):null;
   data.rows=comparisonPairs(state.currentRows,source,data.meta.idColumn).map(({id,oldRow,newRow},index)=>{
-    const status=!source?"unchanged":moved.has(id)?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
-    const cells=Object.create(null);
-    for(const column of data.columns){
-      const oldValue=oldRow?(Object.hasOwn(oldRow,column.name)?String(oldRow[column.name]??""):null):null,
-        newValue=newRow?(Object.hasOwn(newRow,column.name)?String(newRow[column.name]??""):null):null;
-      cells[column.name]=runtimeCell(column,oldValue,newValue,source);
+    const previous=rowModels.get(id),isMoved=moved.has(id);
+    if(previous&&previous.moved===isMoved&&data.columns.every(({name})=>
+      previous.cells[name].old===value(oldRow,name)&&previous.cells[name].new===value(newRow,name))){
+      previous.sourceOrder=index;
+      return previous;
     }
-    return{id,status,moved:moved.has(id),sourceOrder:index,cells};
+    const status=!source?"unchanged":isMoved?"changed":requirementStatus(oldRow,newRow,source.ignoredColumns);
+    const cells=Object.create(null);
+    for(const column of data.columns)cells[column.name]=runtimeCell(column,value(oldRow,column.name),value(newRow,column.name),source);
+    return{id,status,moved:isMoved,sourceOrder:index,cells};
   });
+  rowModels=new Map(data.rows.map(row=>[row.id,row]));
 }
 function canRevertCell(column,cell){
   return developMode()&&diffActive()&&column!==data.meta.idColumn
@@ -695,17 +730,17 @@ function toggleBooleanCell(cell){
   return true;
 }
 function renderCell(row,column){
-  const cell=row.cells[column.name],count=commentsFor(row.id,column.name).length;
+  const cell=row.cells[column.name],count=grid.comments.get(commentKey(row.id,column.name))??0;
   const edit=state.editingCell;
   const editor=edit?.rid===row.id&&edit.column===column.name
     ?renderCellEditor(row.id,column,edit.draft??valueFor(row,column.name),edit.expanded,edit.source.defined):"";
   if(editor&&!edit.expanded)return editor;
-  let content;if(row.id!==""&&diffActive()&&state.view==="side-by-side"&&(cell.changed||cell.old===null||cell.new===null)){content=`<div class="split"><div class="pane"><span class="pane-label">Old</span>${cell.old===null?'<div class="missing">Not present</div>':cell.oldHtml}</div><div class="pane"><span class="pane-label">New</span>${cell.new===null?'<div class="missing">Not present</div>':cell.newHtml}</div></div>`;}else if(row.id===""){
+  let content;if(row.id!==""&&diffActive()&&state.view==="side-by-side"&&(cell.changed||cell.old===null||cell.new===null)){content=`<div class="split"><div class="pane"><span class="pane-label">Old</span>${cell.old===null?'<div class="missing">Not present</div>':cellHtml(cell,column,"oldHtml")}</div><div class="pane"><span class="pane-label">New</span>${cell.new===null?'<div class="missing">Not present</div>':cellHtml(cell,column,"newHtml")}</div></div>`;}else if(row.id===""){
   if(column.name===data.meta.idColumn)content='<button type="button" class="entry-add" tabindex="-1" data-add-entry aria-label="Add requirement" title="Add requirement">+</button>';
   else if(column.name.toLowerCase()==="requirement"&&data.source.new.headers.includes(column.name)){
     content='<span class="entry-hint">Type to add a requirement…</span>';
   }else content="";
-}else content=(booleanApplies(column.name,trace?.recordType(row.id))&&renderBooleanCell(row,column))||(!cell.changed&&trace?.cellDisplay(row.id,column.name))||cell.unifiedHtml;const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
+}else content=(booleanApplies(column.name,trace?.recordType(row.id))&&renderBooleanCell(row,column))||(!cell.changed&&trace?.cellDisplay(row.id,column.name))||cellHtml(cell,column,"unifiedHtml");const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}</div>${button}${editor}`;}
 function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}
 const resizedColumns=new Set();
@@ -753,7 +788,7 @@ function renderLayout(){
   useLayoutHeights([state.view,status,trace?.viewKey()??"",...columns.map((column,i)=>`${column.name}:${Math.round(widths[i])}`)].join("\u0000"));
   positionCellEditor();
 }
-function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const rows=sortedRows(),cols=visibleColumns();grid.canDrag=canDragRows();grid.display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:"",unifiedHtml:""}]))}]:rows;drawRows();resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);trace?.paintStrip();renderQualityPanel();positionCellEditor();}
+function renderBody(){trace?.refresh();scanQuality();renderActiveFilters();rangeSelection=null;const rows=sortedRows(),cols=visibleColumns();grid.canDrag=canDragRows();grid.display=developMode()&&(!trace||trace.entry())?[...rows,{id:"",status:"unchanged",cells:Object.fromEntries(data.columns.map(c=>[c.name,{old:null,new:""}]))}]:rows;indexComments();drawRows();resultCount.textContent=trace?.gridSummary(rows.length)??`${cols.length} of ${data.columns.length} columns · ${rows.length} of ${data.rows.length} requirements`;$("#comments-only-rows").setAttribute("aria-pressed",String(state.commentsOnly));setRovingFocus();trace?.syncSelection(selectedRequirementId(),true);trace?.paintStrip();renderQualityPanel();positionCellEditor();}
 const tableWrap=$(".table-wrap");
 tableWrap.tabIndex=-1;
 function windowed(){return !grid.printing&&grid.display.length>WINDOW_THRESHOLD;}
@@ -763,8 +798,8 @@ function viewportBand(){
   const top=Math.max(wrap.top,0),bottom=Math.min(wrap.bottom,innerHeight);
   return {top:top-body.top,height:Math.max(0,bottom-top)};
 }
-function cellContext(){
-  return {canDrag:grid.canDrag,focus:state.focus,bounds:rangeSelection?selectionBounds():null,wholeRows:!!rangeSelection?.wholeRows};
+function cellContext(range){
+  return {canDrag:grid.canDrag,focus:state.focus,bounds:range,wholeRows:!!range?.wholeRows};
 }
 function rowsHtml(from,to,cols,context){
   let html="";
@@ -808,7 +843,8 @@ function parkFocus(active){
   if(active&&active!==document.body&&!active.isConnected)tableWrap.focus({preventScroll:true});
 }
 function drawRows(){
-  const cols=visibleColumns(),count=grid.display.length,context=cellContext(),active=document.activeElement;
+  paintedRange=currentRange();
+  const cols=visibleColumns(),count=grid.display.length,context=cellContext(paintedRange),active=document.activeElement;
   grid.columns=cols.length+(diffActive()?1:0);
   if(!windowed()){
     grid.start=0;
@@ -843,7 +879,7 @@ function updateWindow(){
   const {start,end}=windowRange(grid.offsets,band.top,band.height,WINDOW_OVERSCAN,-1);
   const keptStart=Math.max(start,grid.start),keptEnd=Math.min(end,grid.end);
   if(keptStart>=keptEnd){drawRows();return;}
-  const active=document.activeElement,cols=visibleColumns(),context=cellContext();
+  const active=document.activeElement,cols=visibleColumns(),context=cellContext(paintedRange);
   const anchor=rowElement(keptStart),before=anchor.getBoundingClientRect().top;
   for(const row of renderedRows()){
     const index=+row.dataset.rowIndex;
@@ -1106,6 +1142,7 @@ function moveRenderedRows(index,target,count,selection,ids){
     rangeSelection.anchor.row+=delta;
     rangeSelection.extent.row+=delta;
   }
+  if(paintedRange){paintedRange.top+=delta;paintedRange.bottom+=delta;}
   state.focus.row+=delta;
   if(!drawn){
     drawRows();

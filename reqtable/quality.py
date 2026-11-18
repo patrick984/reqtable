@@ -116,6 +116,12 @@ function underlineQualityPhrases(wrapper,issues){
 }
 function paintQualityMarkers(rows=renderedRows()){
   if(!quality.checked)return;
+  const dismissed=new Map();
+  for(const record of quality.dismissed??[]){
+    const key=`${record.id}\u0000${record.column}`;
+    if(!dismissed.has(key))dismissed.set(key,new Set());
+    dismissed.get(key).add(record.phrase.toLowerCase());
+  }
   for(const row of rows){
     const fields=quality.findings.get(row.dataset.rowId);
     if(!fields)continue;
@@ -124,9 +130,7 @@ function paintQualityMarkers(rows=renderedRows()){
       const wrapper=cell.querySelector(".cell-wrap");
       if(!issues||!wrapper||wrapper.querySelector(".quality-marker"))continue;
       if(!diffActive()){
-        const dismissedPhrases=new Set(quality.dismissed
-          .filter(record=>record.id===row.dataset.rowId&&record.column===column)
-          .map(record=>record.phrase.toLowerCase()));
+        const dismissedPhrases=dismissed.get(`${row.dataset.rowId}\u0000${column}`)??new Set();
         // When identical phrases have different review outcomes, the editor
         // can select the exact occurrence using its source offset.
         underlineQualityPhrases(wrapper,issues.filter(issue=>!dismissedPhrases.has(issue.phrase.toLowerCase())));
