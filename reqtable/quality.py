@@ -269,7 +269,7 @@ function openQuality(id,column){
 }
 function jumpToQualityCell(id,column,hidden,issue){
   if(state.editingCell){
-    $("#quality-count").textContent="Apply or cancel the current edit before jumping to a finding.";
+    $("#quality-count").textContent="Apply or cancel the cell edit before jumping to a finding.";
     return;
   }
   quality.activeCell={id,column};
@@ -303,7 +303,7 @@ $("#close-quality").addEventListener("click",()=>{
 $("#quality-only").addEventListener("change",event=>{
   if(state.editingCell){
     event.target.checked=quality.only;
-    $("#quality-count").textContent="Apply or cancel the current edit before filtering findings.";
+    $("#quality-count").textContent="Apply or cancel the cell edit before filtering findings.";
     return;
   }
   quality.only=event.target.checked;
@@ -311,7 +311,7 @@ $("#quality-only").addEventListener("change",event=>{
 });
 function qualityCanChange(){
   if(!state.editingCell)return true;
-  $("#quality-count").textContent="Apply or cancel the current edit before changing quality settings or dismissals.";
+  $("#quality-count").textContent="Apply or cancel the cell edit before changing quality settings or dismissals.";
   return false;
 }
 const qualitySettings=$("#quality-settings-dialog");

@@ -21,7 +21,7 @@ In a Develop report, an author edits cells, adds, deletes and reorders requireme
 - Open `<URL>develop.html` (small fixture) or `<URL>uat-develop.html` (traceability).
 - Edit a cell with `Return`, `F2` or a double-click, or by typing over it in Spreadsheet mode.
 - Use the **Edit** menu, its keyboard shortcuts, or right-click a cell for actions.
-- Use **File → Save CSV** or **Save CSV As…**.
+- Use **File → Save CSV** or **Save CSV as…**.
 
 ## Driving it with the browser pane
 
@@ -33,7 +33,7 @@ Preconditions:
 - **Add a row.** Double-click the entry row's Requirement cell, type text, press `Return`. A row with the next ID (R5) appears.
 - **Delete a row.** Select a cell in R3, choose **Edit → Delete requirement**. `window.__dialogs` records `Delete requirement R3?` and the row is gone.
 - **Move a row.** Select R1, choose **Edit → Move down**. The DOM order changes and the selection follows R1.
-- **Rename.** Set `window.__promptAnswer="R9"`, select R4, choose **Edit → Rename ID**. `window.__dialogs` records `Rename requirement R4:` and the row's ID reads R9.
+- **Rename.** Set `window.__promptAnswer="R9"`, select R4, choose **Edit → Rename ID…**. `window.__dialogs` records `Rename requirement R4:` and the row's ID reads R9.
 - **Undo.** Select a grid cell and press `cmd+z`. The last change reverts. Read the DOM order to confirm.
 - **Compare.** Choose **View → Compare with → Last save**. Changed rows carry `row-changed`, `row-added` or `row-removed`, and unchanged rows are hidden.
 - **Clear cells.** Select R2's Requirement cell, press `shift+Down`, press `Delete`. R2 and R3 read `Empty` and `Unsaved changes` shows. `cmd+z` restores both.

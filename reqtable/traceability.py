@@ -1369,7 +1369,7 @@ TRACE_WORKSPACE = """
 <section id="trace-workspace" aria-label="Traceability workspace">
   <nav id="trace-views" aria-label="Record views">
     <div role="group" aria-label="Define">
-      <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; Sources</button>
+      <button type="button" data-trace-view="sources" aria-pressed="false">Needs &amp; sources</button>
       <button type="button" data-trace-view="requirements" aria-pressed="true">Requirements</button>
       <button type="button" data-trace-view="systems" aria-pressed="false">Systems</button>
     </div>
@@ -1440,7 +1440,7 @@ TRACE_SYSTEMS = """
     <h2 id="trace-system-name" tabindex="-1"></h2>
     <p class="meta" id="trace-system-parent"></p>
     <div class="trace-actions">
-      <button type="button" id="trace-system-requirements">View allocated requirements</button>
+      <button type="button" id="trace-system-requirements">Allocated requirements</button>
       <button type="button" id="trace-system-links" aria-controls="trace-panel">Links</button>
     </div>
     <div class="trace-actions" id="trace-system-edit" hidden>
