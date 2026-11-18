@@ -237,13 +237,14 @@ function indexComments(){grid.comments=new Map();for(const c of state.comments){
 function sortedRows(){const rows=data.rows.filter(matches);if(!state.sort)return rows.sort((a,b)=>a.sourceOrder-b.sourceOrder);const{column,direction}=state.sort;return rows.sort((a,b)=>{const av=valueFor(a,column),bv=valueFor(b,column);if(!av&&!bv)return a.sourceOrder-b.sourceOrder;if(!av)return 1;if(!bv)return-1;const cmp=av.localeCompare(bv,undefined,{numeric:true,sensitivity:"base"});return(cmp||a.sourceOrder-b.sourceOrder)*direction;});}
 function commentCard(c,actions=""){const stamp=displayTimestamp(c.modified||c.created);return `<article class="comment-card" style="--reviewer-color:${reviewerColor(c.initials)}"><div class="comment-meta"><strong class="reviewer-chip">${escapeHtml(c.initials)}</strong> · ${escapeHtml(stamp)}${c.modified?' (edited)':''}<br>${escapeHtml(c.requirementId)} · ${escapeHtml(c.column)}</div><div class="markdown">${renderCommentMarkdown(c.text)}</div>${actions}</article>`;}
 
-function dataCell(row,column,ri,ci,{canDrag,focus,bounds,wholeRows}){
+function dataCell(row,column,ri,ci,{canDrag,focus,bounds,wholeRows,firstColumn}){
   const isId=column.name===data.meta.idColumn,tag=isId?"th":"td";
   const grip=isId&&row.id&&developMode();
   const focused=focus.row===ri&&focus.column===ci;
   const ranged=!!bounds&&ri>=bounds.top&&ri<=bounds.bottom&&ci>=bounds.left&&ci<=bounds.right;
   const classes=[isId&&row.id&&"row-id",grip&&"row-with-grip",focused&&"selected-cell",ranged&&"range-selected",ranged&&wholeRows&&"whole-row-selected"].filter(Boolean).join(" ");
-  const attributes=(isId?' scope="row"':"")+(classes?` class="${classes}"`:"");
+  const attributes=(isId?' scope="row" role="rowheader"':' role="gridcell"')+(classes?` class="${classes}"`:"")
+    +` aria-colindex="${firstColumn+ci}" aria-selected="${focused||ranged}"`;
   const marker=isId?trace?.rowMarker(row.id)??"":"";
   return `<${tag}${attributes} tabindex="${focused?0:-1}" data-grid-cell data-row-index="${ri}" data-column-index="${ci}" data-column="${escapeHtml(column.name)}">${grip?rowGrip(canDrag):""}${renderCell(row,column)}${marker}</${tag}>`;
 }
@@ -256,7 +257,7 @@ function canDragRows(){
   return developMode()&&!diffActive()&&!state.sort&&!state.commentsOnly&&!state.idFilter
     &&!quality.only&&!trace?.scoped()&&state.statuses.has("unchanged")&&!data.columns.some(column=>filterActive(column.name));
 }
-function renderHead(){const cols=visibleColumns();headRow.innerHTML=statusHead()+cols.map(c=>`<th scope="col" class="heading-cell" data-header-column="${escapeHtml(c.name)}"><button class="sort-button" data-sort="${escapeHtml(c.name)}">${escapeHtml(c.label)} <span aria-hidden="true">${state.sort&&state.sort.column===c.name?(state.sort.direction===1?'▲':'▼'):''}</span></button><span class="resize-handle" data-resize="${escapeHtml(c.name)}" role="separator" aria-orientation="vertical" aria-label="Resize ${escapeHtml(c.label)} column" title="Drag to resize; double-click to auto-size"></span></th>`).join("");filterRow.innerHTML=statusFilterHead()+cols.map(c=>{const value=state.filters.get(c.name)||'',selected=state.valueFilters.get(c.name),active=value||selected?.size;return `<th><label class="sr-only" for="filter-${escapeHtml(c.name)}">Filter ${escapeHtml(c.label)}</label><div class="filter-control"><input id="filter-${escapeHtml(c.name)}" data-filter="${escapeHtml(c.name)}" value="${escapeHtml(value)}" placeholder="${selected?.size?`${selected.size} selected`:'Filter…'}"><button class="clear-filter" data-clear-filter="${escapeHtml(c.name)}" aria-label="Clear ${escapeHtml(c.label)} filter" ${active?'':'hidden'}>×</button></div></th>`;}).join("");}
+function renderHead(){const cols=visibleColumns();headRow.innerHTML=statusHead()+cols.map((c,i)=>`<th scope="col" role="columnheader" aria-colindex="${firstDataColumn()+i}" class="heading-cell" data-header-column="${escapeHtml(c.name)}"><button class="sort-button" data-sort="${escapeHtml(c.name)}">${escapeHtml(c.label)} <span aria-hidden="true">${state.sort&&state.sort.column===c.name?(state.sort.direction===1?'▲':'▼'):''}</span></button><span class="resize-handle" data-resize="${escapeHtml(c.name)}" role="separator" aria-orientation="vertical" aria-label="Resize ${escapeHtml(c.label)} column" title="Drag to resize; double-click to auto-size"></span></th>`).join("");filterRow.innerHTML=statusFilterHead()+cols.map((c,i)=>{const value=state.filters.get(c.name)||'',selected=state.valueFilters.get(c.name),active=value||selected?.size;return `<th role="gridcell" aria-colindex="${firstDataColumn()+i}"><label class="sr-only" for="filter-${escapeHtml(c.name)}">Filter ${escapeHtml(c.label)}</label><div class="filter-control"><input id="filter-${escapeHtml(c.name)}" data-filter="${escapeHtml(c.name)}" value="${escapeHtml(value)}" placeholder="${selected?.size?`${selected.size} selected`:'Filter…'}"><button class="clear-filter" data-clear-filter="${escapeHtml(c.name)}" aria-label="Clear ${escapeHtml(c.label)} filter" ${active?'':'hidden'}>×</button></div></th>`;}).join("");}
 let rangeSelection=null;
 function selectionBounds(){
   const {anchor,extent,wholeRows}=rangeSelection??{anchor:state.focus,extent:state.focus,wholeRows:false};
@@ -275,8 +276,12 @@ function paintRange(range,on){
       if(column<range.left||column>range.right)continue;
       cell.classList.toggle("range-selected",on);
       cell.classList.toggle("whole-row-selected",on&&range.wholeRows);
+      syncAriaSelected(cell);
     }
   }
+}
+function syncAriaSelected(cell){
+  cell.setAttribute("aria-selected",cell.classList.contains("selected-cell")||cell.classList.contains("range-selected"));
 }
 function paintSelection(){
   if(paintedRange)paintRange(paintedRange,false);
@@ -291,13 +296,13 @@ function extendSelection(position){
 }
 function setRovingFocus(){
   const previous=selectedCell?.isConnected?selectedCell:tableBody.querySelector(".selected-cell");
-  if(previous){previous.tabIndex=-1;previous.classList.remove("selected-cell");}
+  if(previous){previous.tabIndex=-1;previous.classList.remove("selected-cell");syncAriaSelected(previous);}
   selectedCell=null;
   const shown=grid.display.length>0;
   if(shown){
     state.focus={row:Math.max(0,Math.min(state.focus.row,grid.display.length-1)),column:Math.max(0,Math.min(state.focus.column,visibleColumns().length-1))};
     selectedCell=cellElement(state.focus.row,state.focus.column);
-    if(selectedCell){selectedCell.tabIndex=0;selectedCell.classList.add("selected-cell");}
+    if(selectedCell){selectedCell.tabIndex=0;selectedCell.classList.add("selected-cell");syncAriaSelected(selectedCell);}
   }
   const focused=shown?grid.display[state.focus.row]:null,row=focused?.id?focused:undefined;
   const column=shown?visibleColumns()[state.focus.column]?.name:undefined;
@@ -755,7 +760,7 @@ function renderCell(row,column){
   }else content="";
 }else content=(booleanApplies(column.name,trace?.recordType(row.id))&&renderBooleanCell(row,column))||(!cell.changed&&trace?.cellDisplay(row.id,column.name))||cellHtml(cell,column,"unifiedHtml");const allowed=row.id!==""&&data.options.commentsEnabled&&column.name!==data.meta.idColumn,button=allowed?`<button class="comment-button ${count?'has-comments':''}" data-comment-row="${escapeHtml(row.id)}" data-comment-column="${escapeHtml(column.name)}" aria-label="${count?`${count} comments`:'Add comment'} for ${escapeHtml(row.id)}, ${escapeHtml(column.label)}">${count||'+'}</button>`:"",saved=savedRowIndex.get(row.id),edited=developMode()&&cell.new!==null&&String(saved?.[column.name]??"")!==cell.new;
 return `<div class="cell-wrap markdown ${edited?'edited-cell':''}">${content}</div>${button}${editor}`;}
-function statusHead(){return diffActive()?'<th scope="col" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td class="status-cell"></td>':`<td class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}
+function firstDataColumn(){return diffActive()?2:1;}function statusHead(){return diffActive()?'<th scope="col" role="columnheader" aria-colindex="1" class="heading-cell">Status</th>':"";}function statusFilterHead(){return diffActive()?'<th role="gridcell" aria-colindex="1"><span class="sr-only">Status filters</span></th>':"";}function statusCell(row){return diffActive()?(row.id===""?'<td role="gridcell" aria-colindex="1" class="status-cell"></td>':`<td role="gridcell" aria-colindex="1" class="status-cell"><span class="badge ${row.status}">${row.status}</span>${row.moved?'<small class="order-change">Order changed</small>':""}</td>`):"";}
 const resizedColumns=new Set();
 function setColumnWidth(column,width){
   const widths=trace?.columnLayout()?.overrides??state.widths;
@@ -812,23 +817,23 @@ function viewportBand(){
   return {top:top-body.top,height:Math.max(0,bottom-top)};
 }
 function cellContext(range){
-  return {canDrag:grid.canDrag,focus:state.focus,bounds:range,wholeRows:!!range?.wholeRows};
+  return {canDrag:grid.canDrag,focus:state.focus,bounds:range,wholeRows:!!range?.wholeRows,firstColumn:firstDataColumn()};
 }
 function rowsHtml(from,to,cols,context){
   let html="";
   for(let index=from;index<to;index++){
     const row=grid.display[index];
     const drag=rowDrag?.shown&&rowDrag.ids.includes(row.id)?" row-drag-source":"",drop=rowDrag?.target===index?" drop-before":"";
-    html+=`<tr class="${row.id===""?"entry-row":`row-${row.status}`}${drag}${drop}" data-row-id="${escapeHtml(row.id)}" data-row-index="${index}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,index,ci,context)).join("")}</tr>`;
+    html+=`<tr class="${row.id===""?"entry-row":`row-${row.status}`}${drag}${drop}" data-row-id="${escapeHtml(row.id)}" data-row-index="${index}" aria-rowindex="${ariaRowIndex(index,+grid.filteredEmpty)}">${statusCell(row)}${cols.map((c,ci)=>dataCell(row,c,index,ci,context)).join("")}</tr>`;
   }
   return html;
 }
 function filteredEmptyRow(){
   if(!grid.filteredEmpty)return "";
   const noun=trace&&trace.recordNoun?trace.recordNoun():"requirements";
-  return `<tr class="filtered-empty"><td colspan="${grid.columns}"><strong>No ${noun} match the current filters.</strong> <button type="button" data-clear-filters>Clear filters</button></td></tr>`;
+  return `<tr class="filtered-empty" aria-rowindex="${GRID_HEAD_ROWS+1}"><td role="gridcell" aria-colindex="1" colspan="${grid.columns}"><strong>No ${noun} match the current filters.</strong> <button type="button" data-clear-filters>Clear filters</button></td></tr>`;
 }
-function spacerRow(height){return `<tr class="window-spacer" aria-hidden="true"><td colspan="${grid.columns}" style="height:${height}px"></td></tr>`;}
+function spacerRow(height){return `<tr class="window-spacer" role="presentation" aria-hidden="true"><td colspan="${grid.columns}" style="height:${height}px"></td></tr>`;}
 function renderedRows(){return tableBody.querySelectorAll("tr[data-row-index]");}
 function decorateRows(rows){paintQualityMarkers(rows);trace?.paintMarkers(rows);trace?.linkGlossary(rows);}
 function useLayoutHeights(key){
@@ -864,6 +869,8 @@ function drawRows(){
   paintedRange=currentRange();
   const cols=visibleColumns(),count=grid.display.length,context=cellContext(paintedRange),active=document.activeElement;
   grid.columns=cols.length+(diffActive()?1:0);
+  table.setAttribute("aria-rowcount",ariaRowIndex(count-1,+grid.filteredEmpty));
+  table.setAttribute("aria-colcount",grid.columns);
   if(!windowed()){
     grid.start=0;
     grid.end=count;
@@ -2247,7 +2254,8 @@ function createFindingPopover(){
 """
 
 WINDOW_JS = r"""
-const WINDOW_THRESHOLD=300,WINDOW_OVERSCAN=15,ROW_HEIGHT_GUESS=60;
+const WINDOW_THRESHOLD=300,WINDOW_OVERSCAN=15,ROW_HEIGHT_GUESS=60,GRID_HEAD_ROWS=2;
+function ariaRowIndex(index,leadingRows=0){return GRID_HEAD_ROWS+leadingRows+index+1;}
 function rowOffsets(ids,heights,guess=ROW_HEIGHT_GUESS){
   let sum=0;
   for(const height of heights.values())sum+=height;
@@ -2323,7 +2331,7 @@ __PACKAGE_HTML__
 </details></section>
 __TRACE_WORKSPACE__
 __TRACE_SYSTEMS__
-<div class="table-wrap"><table id="requirements-table"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row"></tr><tr id="filter-row" class="filter-row"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
+<div class="table-wrap"><table id="requirements-table" role="grid" aria-multiselectable="true"><caption>Requirements report</caption><colgroup id="column-widths"></colgroup><thead><tr id="heading-row" aria-rowindex="1"></tr><tr id="filter-row" class="filter-row" aria-rowindex="2"></tr></thead><tbody id="requirements-body"></tbody></table></div></main>
 <div id="row-drag-preview" aria-hidden="true" hidden></div>
 <div id="table-context-menu" class="popover" role="group" aria-label="Record actions" hidden></div>
 <div id="comment-hover" class="floating-popover comment-tooltip" role="tooltip" hidden></div><div id="quick-comment" class="floating-popover" role="dialog" aria-label="Add comment" hidden></div><div id="value-filter-popover" class="floating-popover value-filter" role="group" aria-label="Filter values" hidden></div>

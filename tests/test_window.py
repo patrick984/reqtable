@@ -30,6 +30,12 @@ class LargeReportTests(unittest.TestCase):
         self.assertEqual(len(embedded_data(report)["source"]["new"]["rows"]), 450)
         self.assertIn('<tbody id="requirements-body"></tbody>', report)
 
+    def test_requirements_table_is_an_aria_grid_with_numbered_header_rows(self):
+        report = large_report(10)
+        self.assertIn('<table id="requirements-table" role="grid" aria-multiselectable="true">', report)
+        self.assertIn('<tr id="heading-row" aria-rowindex="1">', report)
+        self.assertIn('<tr id="filter-row" class="filter-row" aria-rowindex="2">', report)
+
     @unittest.skipUnless(shutil.which("node"), "Node is needed to parse the report's JavaScript")
     def test_report_script_parses(self):
         for options in ({}, {"document_mode": "develop"}, {"document_mode": "develop", "traceability": True}):
@@ -69,6 +75,16 @@ const last=windowRange(offsets,10**7,400,15);
 assert.equal(last.end,1000);
 assert.equal(last.bottom,0);
 assert.equal(last.start,1000-1-15);
+""")
+
+    def test_drawn_rows_announce_their_position_in_the_whole_table(self):
+        self.run_js("""
+const offsets=rowOffsets(Array.from({length:5000},(_,i)=>i),new Map(),50);
+const {start,end}=windowRange(offsets,10000,500,15);
+assert.equal(ariaRowIndex(start),2+185+1);
+assert.equal(ariaRowIndex(end-1),2+226);
+assert.equal(ariaRowIndex(4999),5002);
+assert.equal(ariaRowIndex(0,1),4);
 """)
 
     def test_unmeasured_rows_use_the_average_of_measured_rows(self):
