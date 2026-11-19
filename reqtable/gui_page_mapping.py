@@ -8,7 +8,7 @@ PANELS.mapping = renderMappingPanel;
 const mappingRoles = () => state.mapping.roles;
 const roleOf = (s) => mappingRoles().find((r) => r.id === s.role);
 let sourceUid = 0;
-const newSource = (kind, name, where) => ({ uid: ++sourceUid, dup: false, kind, name, where, role: "", header_row: "", field: "", id_prefix: "", columns: [], extra: {}, raw: null, missing: false, error: "" });
+const newSource = (kind, name, where) => ({ uid: ++sourceUid, dup: false, kind, name, where, role: "", header_row: "", field: "", id_prefix: "", columns: [], extra: {}, headings: null, raw: null, missing: false, error: "" });
 const hasTarget = (s, column) => s.columns.some((c) => c.action === "map" && c.to === column);
 const mpKey = (s) => s.kind + ":" + s.name;
 
@@ -72,7 +72,7 @@ async function loadSaved() {
   mp.idColumn = form.id_column; mp.extra = form.extra; mp.xlsxExtra = form.xlsx_extra;
   const wanted = new Set(form.sources.map((fs) => fs.kind + ":" + fs.name));
   mp.sources = mp.sources.filter((s) => !s.dup);
-  for (const s of mp.sources) if (!wanted.has(mpKey(s))) { s.role = ""; s.columns = []; s.raw = null; }
+  for (const s of mp.sources) if (!wanted.has(mpKey(s))) { s.role = ""; s.columns = []; s.raw = null; s.headings = null; }
   const used = new Set();
   for (const fs of form.sources) {
     let s = mp.sources.find((x) => x.kind === fs.kind && x.name === fs.name && !used.has(x));
@@ -84,7 +84,8 @@ async function loadSaved() {
     }
     used.add(s);
     if (fs.raw) { s.raw = fs.raw; s.role = ""; continue; }
-    Object.assign(s, { raw: null, role: fs.role, header_row: fs.header_row == null ? "" : String(fs.header_row), field: fs.field, id_prefix: fs.id_prefix, columns: fs.columns.map((c) => ({ ...c })), extra: fs.extra });
+    Object.assign(s, { raw: null, role: fs.role, header_row: fs.header_row == null ? "" : String(fs.header_row), field: fs.field, id_prefix: fs.id_prefix, columns: fs.columns.map((c) => ({ ...c })), extra: fs.extra,
+      headings: fs.headings ? { column: fs.headings.column, values: fs.headings.values.join(", "), text: fs.headings.text || "", into: fs.headings.into, auto: "" } : null });
   }
   drawBookMessage(); drawSources(); schedulePreview();
   for (const s of mp.sources) if (s.role && !s.missing) fetchColumns(s, false);
@@ -111,10 +112,79 @@ async function fetchColumns(s, fresh) {
 }
 
 function setRole(s, roleId) {
-  s.role = roleId; s.columns = []; s.field = ""; s.id_prefix = ""; s.error = "";
+  s.role = roleId; s.columns = []; s.field = ""; s.id_prefix = ""; s.error = ""; s.headings = null;
   if (!roleId) { drawSources(); schedulePreview(); return; }
   drawSources();
   fetchColumns(s, true);
+}
+
+const MARKER_GUESS = /^(requirement type|req\.? type|type)$/i;
+const markerChoices = (s) => s.columns.map((c) => c.header);
+const columnNamed = (s, header) => s.columns.find((c) => c.header === header);
+
+function restoreMarker(s) {
+  const h = s.headings; if (!h || !h.auto) return;
+  const c = columnNamed(s, h.auto);
+  if (c && c.action === "exclude") { c.action = "keep"; c.to = ""; c.separator = ""; }
+  h.auto = "";
+}
+
+function leaveMarkerOut(s) {
+  const h = s.headings; const c = h.column && columnNamed(s, h.column);
+  if (c && c.action === "keep") { c.action = "exclude"; h.auto = c.header; }
+}
+
+function enableHeadings(s) {
+  const headers = markerChoices(s);
+  const text = s.columns.find((c) => c.action === "map" && c.to === "Requirement");
+  s.headings = { column: headers.find((x) => MARKER_GUESS.test(x.trim())) || "", values: "Heading", text: text ? text.header : "", into: "Category", auto: "" };
+  leaveMarkerOut(s);
+}
+
+function setMarker(s, header) {
+  restoreMarker(s); s.headings.column = header; leaveMarkerOut(s);
+  drawSources(); schedulePreview();
+}
+
+function toggleHeadings(s, on) {
+  if (on) enableHeadings(s); else { restoreMarker(s); s.headings = null; }
+  drawSources(); schedulePreview();
+}
+
+function headerSelect(s, id, label, value, empty, onpick) {
+  const headers = markerChoices(s);
+  const options = [h("option", { value: "" }, empty), ...headers.map((x) => h("option", { value: x }, x))];
+  if (value && !headers.includes(value)) options.push(h("option", { value }, value + " (not in this table)"));
+  const select = h("select", { id, "aria-label": label, onchange: (e) => onpick(e.target.value) }, options);
+  select.value = value;
+  return select;
+}
+
+function headingsSection(s, i) {
+  const hd = s.headings;
+  const on = h("input", { type: "checkbox", id: "hd-on-" + i, checked: !!hd, onchange: (e) => toggleHeadings(s, e.target.checked) });
+  const box = h("div", { class: "headings", style: "margin-top:12px" },
+    h("label", { for: on.id, style: "display:flex;gap:8px;align-items:center;font-weight:600" }, on, "This table has heading rows that group requirements into categories"));
+  if (!hd) return box;
+  const values = h("input", { type: "text", id: "hd-values-" + i, spellcheck: "false", style: "max-width:240px", oninput: (e) => { hd.values = e.target.value; schedulePreview(); } });
+  values.value = hd.values;
+  const into = h("input", { type: "text", id: "hd-into-" + i, spellcheck: "false", style: "max-width:240px", oninput: (e) => { hd.into = e.target.value; schedulePreview(); } });
+  into.value = hd.into;
+  const field = (label, id, control, help) => h("div", { class: "field", style: "margin-top:10px" }, h("label", { class: "mini", for: id }, label), control, help ? h("p", { class: "help" }, help) : null);
+  box.append(
+    h("p", { class: "help" }, "Rows whose marker column says Heading become category names. Every requirement below a heading, up to the next one, gets that category."),
+    field("Which column marks a heading row?", "hd-col-" + i, headerSelect(s, "hd-col-" + i, "Which column marks a heading row?", hd.column, "Choose a column…", (v) => setMarker(s, v)),
+      "The marker column is left out of the table by default, because every row that stays is a requirement. Change it back in the table above to keep it."),
+    field("Marker value(s)", "hd-values-" + i, values, "The words that mark a heading row. Separate several with commas. Capital letters and spaces do not matter."),
+    field("Which column holds the heading text?", "hd-text-" + i, headerSelect(s, "hd-text-" + i, "Which column holds the heading text?", hd.text, "First non-empty cell", (v) => { hd.text = v; schedulePreview(); })),
+    field("Put the category in", "hd-into-" + i, into, "A column of this name is added to the table when it is missing. A row that already has a value there keeps it."));
+  return box;
+}
+
+function headingsForm(s) {
+  const hd = s.headings;
+  if (!hd) return null;
+  return { column: hd.column, values: hd.values.split(",").map((v) => v.trim()).filter(Boolean), text: hd.text, into: hd.into.trim() };
 }
 
 function targetValue(c) { return c.action === "map" ? "map:" + c.to : c.action; }
@@ -183,6 +253,7 @@ function drawSource(s, i) {
   if (role.needs_field && !hasTarget(s, "Field")) row.append(fieldPicker(s));
   else if (role.needs_field) row.append(h("p", { class: "note" }, "The column you sent to Field says which column each value is for."));
   if (s.columns.length) row.append(columnTable(s));
+  if (role.headings && s.columns.length) row.append(headingsSection(s, i));
   if (!role.merge && !hasTarget(s, "ID") && (role.id_prefix || s.id_prefix)) {
     const prefix = h("input", { type: "text", id: "prefix-" + i, spellcheck: "false", style: "max-width:160px", onchange: (e) => { s.id_prefix = e.target.value.trim(); schedulePreview(); } });
     prefix.value = s.id_prefix;
@@ -204,7 +275,7 @@ function buildForm() {
   return {
     id_column: mp.idColumn, extra: mp.extra, xlsx_extra: mp.xlsxExtra,
     sources: mp.sources.filter((s) => s.raw || s.role).map((s) => s.raw ? { kind: s.kind, name: s.name, raw: s.raw } : {
-      kind: s.kind, name: s.name, role: s.role, header_row: s.header_row === "" ? null : Number(s.header_row), field: s.field, id_prefix: s.id_prefix, extra: s.extra,
+      kind: s.kind, name: s.name, role: s.role, header_row: s.header_row === "" ? null : Number(s.header_row), field: s.field, id_prefix: s.id_prefix, extra: s.extra, headings: headingsForm(s),
       columns: s.columns.map((c) => ({ header: c.header, action: c.action, to: c.to, separator: c.separator })),
     }),
   };
@@ -255,6 +326,16 @@ function reportWithMapping() {
   choose("report");
 }
 
+function headingSummary(src) {
+  const hd = src.headings;
+  if (hd.warning) return h("div", { class: "banner warn", style: "margin-top:8px", role: "status" }, src.name + ": " + hd.warning);
+  const named = hd.categories.map((c) => c.name + " (" + c.count + ")");
+  if (hd.uncategorised) named.push("No category (" + hd.uncategorised + ")");
+  return h("div", { style: "margin-top:6px" }, h("strong", {}, "Categories" + (mp.sources.filter((x) => x.headings).length > 1 ? " in " + src.name : "") + ": "),
+    named.length ? named.join(", ") : "none yet",
+    ". " + hd.removed + " heading row" + (hd.removed === 1 ? " is" : "s are") + " removed.");
+}
+
 function drawOut() {
   const box = $("mp-out"); if (!box) return;
   const p = mp.preview;
@@ -266,7 +347,8 @@ function drawOut() {
     : h("div", { class: "banner ok", role: "status" }, h("strong", {}, p.total + " row" + (p.total === 1 ? "" : "s") + " would be imported."),
         h("table", { class: "grid", style: "margin-top:8px;background:var(--surface)" }, h("thead", {}, h("tr", {}, h("th", {}, "Table"), h("th", {}, "Rows"))),
           h("tbody", {}, p.sources.map((s) => h("tr", {}, h("td", {}, s.name), h("td", {}, s.rows == null ? "fills in existing rows" : String(s.rows)))))),
-        h("div", { style: "margin-top:6px" }, "Record types: " + Object.entries(p.types).map(([k, v]) => k + " " + v).join(", ")));
+        h("div", { style: "margin-top:6px" }, "Record types: " + Object.entries(p.types).map(([k, v]) => k + " " + v).join(", ")),
+        p.sources.filter((x) => x.headings).map(headingSummary));
   const warnings = p && p.warnings && p.warnings.length ? h("div", { class: "banner warn" }, h("strong", {}, "Worth a look"), p.warnings.map((x) => h("div", {}, x))) : null;
   const json = p && p.mapping ? JSON.stringify(p.mapping, null, 2) : "";
   const f = mp.follow;

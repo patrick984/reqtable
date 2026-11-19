@@ -182,7 +182,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
     Workflow(
         "report", "Make a report from a spreadsheet",
         "Turn a CSV or Excel file into a report you can open in any browser.",
-        "Use this when you have a requirements spreadsheet and want to read, filter, review or edit it as a report.",
+        "Use this when you have a requirements spreadsheet and want to read, filter, review or edit it as a report. If your Excel table has heading rows that name categories, use “Import several tables from one workbook” instead. One table is fine there.",
         _report_fields(mode=True), group=MAKE,
     ),
     Workflow(
@@ -269,7 +269,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
     Workflow(
         "mapping", "Import several tables from one workbook (requirements, glossary, tests…)",
         "Choose which tables of a workbook are requirements, glossary terms, allowed values, tests or test plans, and save the mapping.",
-        "Use this when one workbook holds your requirements and also your glossary, lookup lists or tests on other sheets.",
+        "Use this when one workbook holds your requirements and also your glossary, lookup lists or tests on other sheets. It also handles a single requirements table whose heading rows name the category of the rows below them.",
         (
             Field("input", "Excel workbook", "open", None, "The .xlsx file that holds the tables.", required=True, extensions=(".xlsx",)),
         ),
