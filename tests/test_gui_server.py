@@ -165,6 +165,15 @@ class LookupTests(ServerTestCase):
         self.assertEqual(result["tables"], [])
         self.assertIn("error", self.call("GET", "/api/tables?path=reqs.csv")[1])
 
+    def test_only_a_settings_file_with_xlsx_sources_decides_the_tables(self) -> None:
+        (self.root / "gates.json").write_text(json.dumps({"gates": []}), encoding="utf-8")
+        (self.root / "mapping.json").write_text(json.dumps({"id_column": "Req ID", "xlsx": {"sources": [{"sheet": "Reqs"}]}}), encoding="utf-8")
+        for config, maps in (("", False), ("gates.json", False), ("mapping.json", True), ("missing.json", False)):
+            with self.subTest(config=config):
+                status, result = self.call("GET", f"/api/tables?path=book.xlsx&config={config}")
+                self.assertEqual((status, result["config_maps_workbook"]), (200, maps))
+                self.assertEqual(result["sheets"], [{"name": "Reqs", "state": "visible"}])
+
     def test_page_needs_the_token_in_the_address(self) -> None:
         self.assertEqual(self.call("GET", "/")[0], 403)
         status, result = self.call("GET", f"/?token={self.token}")

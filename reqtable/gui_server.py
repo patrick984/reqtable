@@ -196,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
                 query.get("path", ""), tuple(e for e in query.get("ext", "").lower().split(",") if e)
             ),
             "/api/columns": lambda: gui_lookups.columns(self.session.workdir, query),
-            "/api/tables": lambda: gui_lookups.tables(self.session.workdir, query.get("path", "")),
+            "/api/tables": lambda: gui_lookups.tables(self.session.workdir, query),
             "/api/gates": lambda: gui_lookups.gates(self.session.workdir, query),
             "/api/baselines": lambda: gui_lookups.baselines(self.session.workdir, query),
             "/api/systems": lambda: gui_lookups.systems(self.session.workdir, query),

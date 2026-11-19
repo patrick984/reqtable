@@ -61,15 +61,27 @@ def columns(workdir: Path, query: Mapping[str, str]) -> dict[str, Any]:
         return {"columns": [], "row_count": 0, "rows": [], "id_guess": "", "error": str(exc)}
 
 
-def tables(workdir: Path, path: str) -> dict[str, Any]:
+def config_maps_workbook(workdir: Path, config: str) -> bool:
+    """Whether the settings file decides which tables are read, through xlsx.sources. A broken file decides nothing."""
+    if not config:
+        return False
     try:
-        with Workbook.open(resolve(workdir, path)) as workbook:
+        return bool(load_config(str(resolve(workdir, config)))["xlsx"]["sources"])
+    except ReqtableError:
+        return False
+
+
+def tables(workdir: Path, query: Mapping[str, str]) -> dict[str, Any]:
+    maps = config_maps_workbook(workdir, query.get("config", ""))
+    try:
+        with Workbook.open(resolve(workdir, query.get("path", ""))) as workbook:
             return {
                 "tables": [{"name": t.name, "sheet": t.sheet} for t in workbook.tables],
                 "sheets": [{"name": s.name, "state": s.state} for s in workbook.sheets],
+                "config_maps_workbook": maps,
             }
     except ReqtableError as exc:
-        return {"tables": [], "sheets": [], "error": str(exc)}
+        return {"tables": [], "sheets": [], "config_maps_workbook": maps, "error": str(exc)}
 
 
 def gates(workdir: Path, query: Mapping[str, str]) -> dict[str, Any]:

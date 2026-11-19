@@ -149,7 +149,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 const TOKEN = __TOKEN__;
 const $ = (id) => document.getElementById(id);
 const freshLookups = () => ({
-  columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", tablesError: "", tablesLoaded: false,
+  columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", tablesError: "", tablesLoaded: false, configMaps: false,
   gates: [], gatesError: "", store: "", baselines: [], baselinesError: "", systems: [],
 });
 const state = { workflows: [], mapping: null, workdir: "", current: null, values: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
@@ -390,7 +390,7 @@ function tableState() {
   const values = state.values[state.current] || {};
   const L = state.lookups;
   if (!workbookPath() || values.table || values.sheet) return { kind: "chosen" };
-  if (values.config) return { kind: "config" };
+  if (L.configMaps) return { kind: "config" };
   if (L.tablesError) return { kind: "unknown" };
   if (!L.tablesLoaded) return { kind: "loading" };
   if (L.tables.length === 1) return { kind: "single", table: L.tables[0].name };
@@ -435,16 +435,19 @@ function renderTableChoices() {
   }
 }
 
+let tablesSeq = 0;
 async function lookupTables() {
   const path = workbookPath();
   const id = state.current;
   const L = state.lookups;
-  if (!path) { L.tables = []; L.sheets = []; L.tablesError = ""; L.tablesLoaded = false; renderTableChoices(); renderColumns(); return; }
+  const seq = ++tablesSeq;
+  if (!path) { L.tables = []; L.sheets = []; L.tablesError = ""; L.tablesLoaded = false; L.configMaps = false; renderTableChoices(); renderColumns(); return; }
   try {
-    const data = await api("/api/tables?path=" + encodeURIComponent(path));
-    if (id !== state.current) return;
-    L.tables = data.tables; L.sheets = data.sheets; L.tablesError = data.error || ""; L.tablesLoaded = !data.error;
-  } catch (e) { L.tablesError = e.message; L.tables = []; L.sheets = []; L.tablesLoaded = false; }
+    const query = new URLSearchParams({ path, config: state.values[id].config || "" });
+    const data = await api("/api/tables?" + query);
+    if (id !== state.current || seq !== tablesSeq) return;
+    L.tables = data.tables; L.sheets = data.sheets; L.tablesError = data.error || ""; L.tablesLoaded = !data.error; L.configMaps = data.config_maps_workbook;
+  } catch (e) { if (seq !== tablesSeq) return; L.tablesError = e.message; L.tables = []; L.sheets = []; L.tablesLoaded = false; L.configMaps = false; }
   renderTableChoices(); renderColumns(); lookupColumns();
 }
 
