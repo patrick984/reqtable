@@ -16,7 +16,7 @@ from urllib.parse import quote, urlsplit
 
 from reqtable.gui_server import TOKEN_HEADER, make_server
 from test_xlsx_import import write_workbook
-from test_xlsx_mapping import FIXTURE
+from test_xlsx_mapping import FIXTURE, lookup_workbook
 
 
 class ServerTestCase(unittest.TestCase):
@@ -168,6 +168,73 @@ class LookupTests(ServerTestCase):
         status, result = self.call("GET", f"/?token={self.token}")
         self.assertEqual(status, 200)
         self.assertIn(self.token, str(result["text"]))
+
+
+class MappingEndpointTests(ServerTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        lookup_workbook(self.root / "lookup.xlsx")
+
+    def form(self) -> dict[str, object]:
+        columns = self.call("GET", "/api/mapping/suggest?path=lookup.xlsx&table=TestCases&role=tests")[1]["columns"]
+        return {"sources": [{"kind": "table", "name": "TestCases", "role": "tests", "columns": columns, "id_prefix": ""}]}
+
+    def test_workflows_serve_the_roles_the_builder_uses(self) -> None:
+        found = self.call("GET", "/api/workflows")[1]["mapping"]  # type: ignore[index]
+        self.assertEqual([r["id"] for r in found["roles"]][:3], ["requirements", "glossary", "values"])
+        self.assertEqual([f["value"] for f in found["fields"]][:3], ["Priority", "Verification Method", "Verification Level"])
+        self.assertEqual([s["value"] for s in found["separators"]], [",", ";", "newline"])
+
+    def test_suggest_reads_the_headers_of_the_chosen_source(self) -> None:
+        found = self.call("GET", "/api/mapping/suggest?path=lookup.xlsx&table=TestCases&role=tests")[1]
+        self.assertEqual([(c["header"], c["to"]) for c in found["columns"]], [("Test ID", "ID"), ("Title", "Name"), ("Plan", "Test plan"), ("Method", "Verification Method")])  # type: ignore[index]
+        self.assertEqual(found["id_prefix"], "")
+        sheet = self.call("GET", "/api/mapping/suggest?path=lookup.xlsx&sheet=Priorities&role=values")[1]
+        self.assertEqual(sheet["id_prefix"], "VAL-")
+        self.assertIn("error", self.call("GET", "/api/mapping/suggest?path=lookup.xlsx&table=Nope&role=tests")[1])
+        self.assertEqual(self.call("GET", "/api/mapping/suggest?path=lookup.xlsx&table=Plans&role=nope")[0], 400)
+
+    def test_preview_returns_the_mapping_and_what_the_import_would_give(self) -> None:
+        status, found = self.post("/api/mapping/preview", {"path": "lookup.xlsx", "form": self.form()})
+        self.assertEqual(status, 200)
+        self.assertEqual(found["sources"], [{"name": "TestCases", "rows": 3}])
+        self.assertEqual(found["types"], {"Test": 3})
+        self.assertEqual(found["mapping"]["xlsx"]["sources"][0]["type"], "Test")  # type: ignore[index]
+
+    def test_preview_explains_a_form_or_workbook_problem_in_words(self) -> None:
+        self.assertIn("at least one", str(self.post("/api/mapping/preview", {"path": "lookup.xlsx", "form": {"sources": []}})[1]["error"]))
+        form = self.form()
+        form["sources"][0]["name"] = "Nope"  # type: ignore[index]
+        self.assertIn("Nope", str(self.post("/api/mapping/preview", {"path": "lookup.xlsx", "form": form})[1]["error"]))
+        self.assertEqual(self.post("/api/mapping/preview", {"path": "lookup.xlsx", "form": 5})[0], 400)
+        self.assertEqual(self.post("/api/mapping/preview", [])[0], 400)
+
+    def test_save_refuses_to_overwrite_until_told_to_and_the_follow_up_report_runs(self) -> None:
+        body = {"path": "mapping.json", "form": self.form()}
+        status, saved = self.post("/api/mapping/save", body)
+        self.assertEqual((status, saved["saved"]), (200, str(self.root / "mapping.json")))
+        again = self.post("/api/mapping/save", body)[1]
+        self.assertEqual(again["exists"], True)
+        self.assertNotIn("saved", again)
+        (self.root / "mapping.json").write_text("{}", encoding="utf-8")
+        self.assertEqual(self.post("/api/mapping/save", {**body, "overwrite": "yes"})[1].get("exists"), True)
+        self.assertIn("saved", self.post("/api/mapping/save", {**body, "overwrite": True})[1])
+        job = {"workflow": "report", "values": {"input": "lookup.xlsx", "config": "mapping.json", "traceability": "on", "output": "r.html"}}
+        self.assertEqual(self.post("/api/run", job)[1]["exit_code"], 0)
+        self.assertIn('"Type":"Test"', (self.root / "r.html").read_text(encoding="utf-8"))
+
+    def test_load_returns_the_form_and_what_it_could_not_show(self) -> None:
+        self.post("/api/mapping/save", {"path": "m.json", "form": self.form()})
+        found = self.call("GET", "/api/mapping/load?path=m.json")[1]
+        self.assertEqual(found["notes"], [])
+        self.assertEqual(found["form"]["sources"][0]["role"], "tests")  # type: ignore[index]
+        self.assertIn("error", self.call("GET", "/api/mapping/load?path=missing.json")[1])
+
+    def test_a_step_note_becomes_part_of_the_script_comment(self) -> None:
+        steps = [{"workflow": "report", "values": {"input": "lookup.xlsx", "config": "mapping.json", "output": "r.html"}, "note": "needs mapping.json"}]
+        script = self.post("/api/script", {"steps": steps, "shell": "sh"})[1]["script"]
+        self.assertIn("# Make a report from a spreadsheet (needs mapping.json)", str(script))
+        self.assertEqual(self.post("/api/script", {"steps": [{**steps[0], "note": 3}], "shell": "sh"})[0], 400)
 
 
 TRACE_CSV = (

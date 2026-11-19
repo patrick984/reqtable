@@ -16,6 +16,7 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from . import gui_lookups
+from .gui_mapping import build_mapping, load_mapping, mapping_json, preview_mapping, role_named, save_mapping, suggest_columns
 from .gui import (
     WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, blocked_checks, build_argv, column_source, launcher, lookup_source,
     posix_command, powershell_command, script, workflow_named,
@@ -108,6 +109,20 @@ class Session:
             ],
         }
 
+    def mapping_preview(self, body: dict[str, Any]) -> dict[str, Any]:
+        mapping = build_mapping(body.get("form"))  # type: ignore[arg-type]
+        return {"mapping": mapping, **preview_mapping(self.workdir / str(body.get("path", "")), mapping)}
+
+    def mapping_save(self, body: dict[str, Any]) -> dict[str, Any]:
+        mapping = build_mapping(body.get("form"))  # type: ignore[arg-type]
+        return {"mapping": mapping, **save_mapping(self.workdir, str(body.get("path", "")), mapping, body.get("overwrite") is True)}
+
+    def mapping_suggest(self, query: dict[str, str]) -> dict[str, Any]:
+        found = gui_lookups.columns(self.workdir, query)
+        if "error" in found:
+            return {"columns": [], "id_prefix": "", "error": found["error"]}
+        return suggest_columns(role_named(query.get("role", "")), found["columns"])
+
     def script(self, steps: object, shell: object) -> dict[str, Any]:
         if shell not in SCRIPT_NAMES:
             raise BadRequest("shell must be 'sh' or 'powershell'")
@@ -176,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.token_ok(self.headers.get(TOKEN_HEADER)):
             return self.refuse(HTTPStatus.FORBIDDEN, "missing or wrong token")
         routes: dict[str, Callable[[], dict[str, Any]]] = {
-            "/api/workflows": lambda: {"workflows": workflows_json(), "workdir": str(self.session.workdir)},
+            "/api/workflows": lambda: {"workflows": workflows_json(), "workdir": str(self.session.workdir), "mapping": mapping_json()},
             "/api/browse": lambda: self.session.browse(
                 query.get("path", ""), tuple(e for e in query.get("ext", "").lower().split(",") if e)
             ),
@@ -185,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
             "/api/gates": lambda: gui_lookups.gates(self.session.workdir, query),
             "/api/baselines": lambda: gui_lookups.baselines(self.session.workdir, query),
             "/api/systems": lambda: gui_lookups.systems(self.session.workdir, query),
+            "/api/mapping/suggest": lambda: self.session.mapping_suggest(query),
+            "/api/mapping/load": lambda: load_mapping(self.session.workdir, query.get("path", "")),
         }
         self.dispatch(routes.get(url.path))
 
@@ -224,7 +241,19 @@ class Handler(BaseHTTPRequestHandler):
                 raise BadRequest("expected {steps, shell}")
             return session.script(body.get("steps"), body.get("shell"))
 
-        self.dispatch({"/api/command": command, "/api/run": run, "/api/open": open_file, "/api/script": make_script}.get(path))
+        def mapping(action: Callable[[dict[str, Any]], dict[str, Any]]) -> Callable[[], dict[str, Any]]:
+            def handler() -> dict[str, Any]:
+                if not isinstance(body, dict):
+                    raise BadRequest("expected {path, form}")
+                return action(body)
+
+            return handler
+
+        routes = {
+            "/api/command": command, "/api/run": run, "/api/open": open_file, "/api/script": make_script,
+            "/api/mapping/preview": mapping(session.mapping_preview), "/api/mapping/save": mapping(session.mapping_save),
+        }
+        self.dispatch(routes.get(path))
 
     def dispatch(self, route: Callable[[], dict[str, Any]] | None) -> None:
         if route is None:
