@@ -4,6 +4,7 @@ import json
 import re
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from reqtable.core import RECORD_TYPES
@@ -329,6 +330,21 @@ class HeadingPreviewTests(unittest.TestCase):
         found = self.preview({**HEADING_FORM, "values": ["Section"]})["sources"][0]["headings"]  # type: ignore[index]
         self.assertEqual(found["removed"], 0)
         self.assertEqual(found["warning"], "No row in 'Req Type' says Section.")
+
+    def test_counts_and_categories_come_from_one_import(self) -> None:
+        opened = []
+        real = Workbook.open.__func__  # type: ignore[attr-defined]
+
+        def counting(cls: type[Workbook], path: object) -> Workbook:
+            opened.append(path)
+            return real(cls, path)
+
+        form = {"sources": [heading_source(), heading_source(None), source("sheet", "Reqs", "merge", [("Req ID", "map", "ID", "")])]}
+        with mock.patch.object(Workbook, "open", classmethod(counting)):
+            found = preview_mapping(self.book, build_mapping(form))
+        self.assertEqual(len(opened), 1)
+        self.assertEqual([s["rows"] for s in found["sources"]], [5, 7, None])  # type: ignore[index]
+        self.assertEqual(found["sources"][0]["headings"]["removed"], 2)  # type: ignore[index]
 
     def test_sources_without_headings_have_none(self) -> None:
         self.assertNotIn("headings", self.preview(None)["sources"][0])  # type: ignore[index]

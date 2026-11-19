@@ -84,12 +84,25 @@ class Block:
 
 
 @dataclass(frozen=True)
+class SourceStats:
+    """What one configured source gave: the rows it kept (None for a merge source, which adds no rows), the heading
+    rows it removed, and, when it has heading rows, each kept row's category in order."""
+
+    name: str
+    rows: int | None
+    headings_removed: int = 0
+    categories: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Imported:
-    """What an .xlsx input yields: the combined table as a block, repair warnings, and Excel comments as review comments."""
+    """What an .xlsx input yields: the combined table as a block, repair warnings, Excel comments as review comments,
+    and what each configured source contributed."""
 
     block: Block
     warnings: tuple[str, ...] = ()
     comments: tuple[dict[str, Any], ...] = ()
+    sources: tuple[SourceStats, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -114,6 +127,8 @@ class Part:
     # A merge source's rows add no records: keys[i] are the IDs of the records row i fills in.
     keys: list[list[str]] | None = None
     lists: frozenset[str] = frozenset()
+    headings_removed: int = 0
+    categories: tuple[str, ...] = ()
 
 
 def is_xlsx(path: str) -> bool:
@@ -473,6 +488,7 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
         (block.first_row + 1 + i, row) for i, row in enumerate(block.rows[1:]) if any(cell.strip() for cell in row)
     ]
     under: list[str] = [""] * len(live)
+    removed = 0
     if headings:
         type_at = headers.index(headings["column"])
         text_at = headers.index(headings["text"]) if "text" in headings else None
@@ -487,6 +503,7 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
             else:
                 kept.append((number, row))
                 under.append(current)
+        removed = len(live) - len(kept)
         live = kept
     keep = [i for i, h in enumerate(headers) if h not in exclude]
     out_headers = [columns.get(headers[i], headers[i]) for i in keep]
@@ -519,11 +536,13 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
         at = column(name)
         for row in rows:
             row[at] = constant
+    categories: tuple[str, ...] = ()
     if headings:
         at = column(headings["into"])
         for row, heading in zip(rows, under):
             if heading and not row[at].strip():
                 row[at] = heading
+        categories = tuple(row[at].strip() for row in rows)
     for name, separator in source.get("lists", {}).items():
         at = need(name, "lists")
         pattern = r"\r?\n" if separator == "newline" else re.escape(separator)
@@ -568,7 +587,7 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
     if source.get("merge"):
         at = out_headers.index(id_column)
         keys = [_split(row[at]) if id_column in lists else [row[at].strip()] if row[at].strip() else [] for row in rows]
-    return Part(block.name, block.sheet, out_headers, rows, numbers, sheet_columns, keys, lists)
+    return Part(block.name, block.sheet, out_headers, rows, numbers, sheet_columns, keys, lists, removed, categories)
 
 
 def _plain_part(block: Block) -> Part:
@@ -781,7 +800,11 @@ def import_workbook(
             ids = {row[at].strip() for row in block.rows[1:]} if at is not None else set()
             found, extra = _review_comments(wb, parts, id_column, ids, label)
             warnings += extra
-        return Imported(block, tuple(warnings), tuple(found))
+        stats = tuple(
+            SourceStats(_source_name(s), None if part.keys is not None else len(part.rows), part.headings_removed, part.categories)
+            for s, part in zip(sources, parts)
+        )
+        return Imported(block, tuple(warnings), tuple(found), stats)
 
 
 def mapping_template(path: str | Path) -> dict[str, Any]:

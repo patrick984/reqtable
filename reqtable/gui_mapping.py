@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 from .core import ConfigError, ReqtableError, atomic_write_text, validate_headings, validate_xlsx_sources
 from .gui import BadRequest, GuiError, guess_id_column
-from .xlsx import XlsxSelection, import_workbook
+from .xlsx import SourceStats, XlsxSelection, import_workbook
 
 ID_COLUMN = "ID"
 FIELD_COLUMN = "Field"
@@ -489,39 +489,29 @@ def _source_form(source: object, index: int, notes: list[str], id_column: str) -
     }
 
 
-def _heading_summary(headings: Mapping[str, Any], rows: list[list[str]], removed: int) -> dict[str, Any]:
-    at = rows[0].index(headings["into"])
-    found = Counter(row[at].strip() for row in rows[1:])
+def _heading_summary(headings: Mapping[str, Any], stats: SourceStats) -> dict[str, Any]:
+    found = Counter(stats.categories)
     return {
-        "removed": removed,
+        "removed": stats.headings_removed,
         "categories": [{"name": name, "count": count} for name, count in found.items() if name],
         "uncategorised": found.get("", 0),
-        "warning": None if removed else f"No row in {headings['column']!r} says {' or '.join(headings['values'])}.",
+        "warning": None if stats.headings_removed else f"No row in {headings['column']!r} says {' or '.join(headings['values'])}.",
     }
 
 
 def preview_mapping(workbook: Path, mapping: Mapping[str, Any]) -> dict[str, Any]:
-    """Run the importer on the draft: rows per source, record types and warnings, or the error the CLI would give."""
+    """Run the importer on the draft once: rows per source, record types and warnings, or the error the CLI would give."""
     sources = mapping["xlsx"]["sources"]
-    id_column = mapping["id_column"]
     try:
-        imported = import_workbook(workbook, XlsxSelection(), sources, id_column, True, False)
-        counts = []
-        for source in sources:
-            name = source.get("table") or source["sheet"]
-            if source.get("merge"):
-                counts.append({"name": name, "rows": None})
-                continue
-            alone = import_workbook(workbook, XlsxSelection(), [source], id_column, True, False)
-            entry: dict[str, Any] = {"name": name, "rows": len(alone.block.rows) - 1}
-            if "headings" in source:
-                plain = import_workbook(
-                    workbook, XlsxSelection(), [{k: v for k, v in source.items() if k != "headings"}], id_column, True, False
-                )
-                entry["headings"] = _heading_summary(source["headings"], alone.block.rows, len(plain.block.rows) - len(alone.block.rows))
-            counts.append(entry)
+        imported = import_workbook(workbook, XlsxSelection(), sources, mapping["id_column"], True, False)
     except (ReqtableError, OSError) as exc:
         return {"error": str(exc)}
+    counts = []
+    for source, stats in zip(sources, imported.sources):
+        entry: dict[str, Any] = {"name": stats.name, "rows": stats.rows}
+        if "headings" in source:
+            entry["headings"] = _heading_summary(source["headings"], stats)
+        counts.append(entry)
     rows = imported.block.rows
     type_at = rows[0].index("Type") if "Type" in rows[0] else None
     types = Counter((row[type_at].strip() if type_at is not None else "") or "Requirement" for row in rows[1:])
