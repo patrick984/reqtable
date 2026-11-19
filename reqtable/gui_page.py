@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import json
 
+from .gui_page_gates import GATES_JS
+from .gui_page_mapping import MAPPING_JS
+
 PAGE = r"""<!doctype html>
 <html lang="en">
 <head>
@@ -41,7 +44,44 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: v
 #nav button.task[aria-current="true"] { border-color: var(--accent); background: var(--accent-soft); }
 #nav .title { display: block; font-weight: 600; }
 #nav .when { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+#nav h3.group { margin: 12px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#nav h3.group:first-child { margin-top: 0; }
 .intro ol { margin: 8px 0 0; padding-left: 20px; } .intro li { margin: 4px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+.cards .opt { position: relative; display: block; margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); cursor: pointer; font-weight: 400; }
+.cards .opt:hover { border-color: var(--accent); }
+.cards .opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.cards .opt:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 1px; }
+.cards .opt input { position: absolute; opacity: 0; pointer-events: none; }
+.cards .opt .opt-title { display: block; font-weight: 700; }
+.cards .opt .opt-desc { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.preview { margin-top: 8px; font-size: 13px; }
+.preview table, table.grid { border-collapse: collapse; width: 100%; font-size: 13px; }
+.preview { overflow-x: auto; }
+.preview th, .preview td, table.grid th, table.grid td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.preview th, table.grid th { background: var(--surface-2); font-weight: 600; }
+.preview .count { color: var(--muted); margin: 0 0 4px; } .preview .count strong { color: var(--text); }
+.check { display: flex; gap: 8px; align-items: baseline; margin: 2px 0; font-weight: 400; }
+.check input { width: auto; }
+.badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 99px; background: var(--surface-2); color: var(--muted); margin-left: 6px; }
+.badge.strict { background: var(--warn-soft); color: var(--text); }
+.waiver { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr) auto; gap: 6px; margin: 0 0 6px; }
+ul.plain { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.banner.soft { background: var(--warn-soft); }
+.banner.fail { background: var(--bad-soft); white-space: pre-wrap; }
+.waiveoffer { margin-top: 10px; }
+.waiveoffer .actions { margin-top: 6px; }
+.srcrow { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; background: var(--surface); }
+.srcrow .top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, 220px) 120px; gap: 10px; align-items: end; }
+@media (max-width: 760px) { .srcrow .top { grid-template-columns: minmax(0, 1fr); } }
+.srcrow .nm { font-weight: 600; word-break: break-word; } .srcrow .sub { color: var(--muted); font-size: 12px; }
+.srcrow label.mini { font-size: 12px; margin: 0 0 2px; color: var(--muted); font-weight: 500; }
+table.cols { width: 100%; margin-top: 10px; border-collapse: collapse; font-size: 14px; }
+table.cols th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 2px 6px; }
+table.cols td { padding: 3px 6px; vertical-align: middle; border-top: 1px solid var(--line); }
+table.cols td.src { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-word; }
+table.cols select, table.cols input { padding: 4px 6px; }
+pre.json { margin: 0; padding: 12px 14px; background: var(--code-bg); color: var(--code-text); border-radius: 8px; overflow: auto; max-height: 340px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select: all; }
 .field { margin: 0 0 16px; } .field[hidden] { display: none; }
 .field label { display: block; font-weight: 600; margin-bottom: 4px; }
 .req { font-weight: 500; font-size: 12px; color: var(--accent); margin-left: 6px; }
@@ -108,7 +148,11 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 <script>
 const TOKEN = __TOKEN__;
 const $ = (id) => document.getElementById(id);
-const state = { workflows: [], workdir: "", current: null, values: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: { columns: [], tables: [], sheets: [], columnsError: "", tablesError: "" } };
+const freshLookups = () => ({
+  columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", tablesError: "", tablesLoaded: false,
+  gates: [], gatesError: "", store: "", baselines: [], baselinesError: "", systems: [],
+});
+const state = { workflows: [], mapping: null, workdir: "", current: null, values: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -121,6 +165,8 @@ function h(tag, attrs, ...kids) {
   for (const kid of kids.flat()) if (kid != null) el.append(kid);
   return el;
 }
+
+function fill(box, ...kids) { box.replaceChildren(...kids.flat().filter((k) => k != null)); }
 
 async function api(path, body) {
   const options = { headers: { "X-Reqtable-Token": TOKEN } };
@@ -168,7 +214,9 @@ function shellTabs(onChange) {
 
 function renderNav() {
   const nav = $("nav"); nav.replaceChildren();
+  let group = null;
   for (const w of state.workflows) {
+    if (w.group !== group) { group = w.group; nav.append(h("h3", { class: "group" }, group)); }
     nav.append(h("button", { class: "task", type: "button", "aria-current": String(w.id === state.current), onclick: () => choose(w.id) },
       h("span", { class: "title" }, w.title), h("span", { class: "when" }, w.when)));
   }
@@ -181,7 +229,8 @@ function renderIntro() {
     h("ol", {},
       h("li", {}, "Choose your spreadsheet, and where to save the result."),
       h("li", {}, "Check the command shown under the form. It is exactly what runs, and you can copy it."),
-      h("li", {}, "Add steps to your workflow and save them as a script to repeat them later."))));
+      h("li", {}, "Add steps to your workflow and save them as a script to repeat them later.")),
+    h("p", { class: "note" }, "To edit requirements in the browser, choose “Edit requirements (Develop report)”. To keep a frozen record of a review, look under “Gates and sign-off”.")));
 }
 
 function isWorkbook(v) { return /\.xlsx$/i.test(v || ""); }
@@ -191,24 +240,34 @@ function workbookPath() {
   return "";
 }
 
+const PANELS = {};
+let panelRefresh = null;
+
 async function choose(id) {
   state.current = id;
   const w = workflow();
+  renderNav();
+  state.rows = {}; state.preview = null; panelRefresh = null;
+  if (w.panel !== "form") {
+    PANELS[w.panel](w); renderPanel();
+    if (window.innerWidth < 760) $("main").scrollIntoView({ behavior: "smooth" });
+    return;
+  }
   if (!state.values[id]) {
     state.values[id] = {};
     for (const f of w.fields) if (f.default) state.values[id][f.name] = f.default;
   }
-  state.rows = {};
-  state.lookups = { columns: [], tables: [], sheets: [], columnsError: "", tablesError: "" };
-  renderNav(); renderForm();
+  state.lookups = freshLookups();
+  renderForm();
   if (window.innerWidth < 760) $("main").scrollIntoView({ behavior: "smooth" });
-  lookupTables(); lookupColumns(); refreshPreview();
+  lookupTables(); lookupColumns(); lookupGateData(); refreshPreview();
 }
 
 function renderForm() {
   const w = workflow();
   const main = h("div", {});
   const form = h("div", { class: "card" }, h("h2", {}, w.title), h("p", { class: "hint" }, w.summary));
+  if (w.fixed.length) form.append(h("p", { class: "note", style: "margin:6px 0 14px" }, "This card always runs with ", h("code", {}, w.fixed.join(" ")), "."));
   const more = h("details", { class: "more" }, h("summary", {}, "More options"));
   let advanced = 0;
   for (const f of w.fields) {
@@ -220,15 +279,29 @@ function renderForm() {
   const commandBox = h("div", { class: "card", id: "commandcard" });
   main.append(form, commandBox, h("div", { id: "result" }));
   $("main").replaceChildren(main);
-  syncVisibility(); renderColumns(); renderTableChoices(); renderPreview();
+  syncVisibility(); renderColumns(); renderTableChoices(); renderLookups(); renderPreview();
+}
+
+function setValue(f, value) { state.values[state.current][f.name] = value; onChange(f); }
+
+function radioCards(f, id, value, set) {
+  const group = h("div", { class: "cards", role: "radiogroup", "aria-labelledby": id + "-label" });
+  for (const [v, text] of f.choices) {
+    const [title, ...rest] = text.split(": ");
+    const input = h("input", { type: "radio", name: id, value: v, onchange: () => set(v) });
+    input.checked = value === v;
+    group.append(h("label", { class: "opt" }, input, h("span", { class: "opt-title" }, title), rest.length ? h("span", { class: "opt-desc" }, rest.join(": ")) : null));
+  }
+  return group;
 }
 
 function buildField(f) {
   const id = "f-" + f.name;
   const wrap = h("div", { class: "field" });
-  const label = h("label", { for: id }, f.label, f.required ? h("span", { class: "req" }, "required") : null);
-  const row = { field: f, wrap, control: null, extra: null };
-  const set = (value) => { state.values[state.current][f.name] = value; onChange(f); };
+  const required = f.required ? h("span", { class: "req" }, "required") : null;
+  const label = f.kind === "radio" ? h("div", { class: "lab", id: id + "-label", style: "font-weight:600;margin-bottom:6px" }, f.label, required) : h("label", { for: id }, f.label, required);
+  const row = { field: f, wrap, control: null, extra: null, preview: null };
+  const set = (value) => setValue(f, value);
   const value = state.values[state.current][f.name] || "";
   if (f.kind === "open" || f.kind === "save") {
     const input = h("input", { type: "text", id, value, spellcheck: "false", oninput: (e) => set(e.target.value), placeholder: f.kind === "open" ? "Choose a file…" : "Choose where to save…" });
@@ -236,6 +309,8 @@ function buildField(f) {
     row.control = input;
     wrap.append(label, h("div", { class: "pathrow" }, input,
       h("button", { type: "button", onclick: () => pickPath(f, input, set) }, f.kind === "open" ? "Browse…" : "Choose location…")));
+  } else if (f.kind === "radio") {
+    wrap.append(label, radioCards(f, id, value, set));
   } else if (f.kind === "choice" || f.kind === "flag") {
     const select = h("select", { id, onchange: (e) => set(e.target.value) });
     const options = f.choices.slice();
@@ -244,7 +319,10 @@ function buildField(f) {
     select.value = value;
     row.control = select;
     wrap.append(label, select);
-  } else if (f.kind === "column" || f.kind === "table" || f.kind === "sheet") {
+  } else if (f.kind === "column") {
+    row.extra = h("div", {}); row.preview = h("div", { class: "preview" });
+    wrap.append(label, row.extra);
+  } else if (f.kind === "table" || f.kind === "sheet" || LOOKUP_KINDS.has(f.kind)) {
     row.extra = h("div", {});
     wrap.append(label, row.extra);
   } else {
@@ -255,25 +333,36 @@ function buildField(f) {
   }
   wrap.append(h("p", { class: "help" }, f.help));
   row.note = h("p", { class: "note" }); wrap.append(row.note);
+  if (row.preview) wrap.append(row.preview);
   return row;
 }
 
 function syncVisibility() {
   const workbook = !!workbookPath();
-  for (const row of Object.values(state.rows)) row.wrap.hidden = row.field.xlsx_only && !workbook;
+  const values = state.values[state.current] || {};
+  for (const row of Object.values(state.rows)) {
+    const f = row.field;
+    row.wrap.hidden = (f.xlsx_only && !workbook) || (!!f.requires && !values[f.requires]) || (f.kind === "system" && !systemNeeded());
+  }
 }
 
 let timers = {};
 function later(name, fn, ms) { clearTimeout(timers[name]); timers[name] = setTimeout(fn, ms); }
 
+const LOOKUP_FIELDS = ["input", "new", "table", "sheet", "header_row", "id_column", "config", "traceability", "encoding", "delimiter"];
+
 function onChange(f) {
   const values = state.values[state.current];
   if (f.name === "table" && values.table) { values.sheet = ""; values.header_row = ""; }
   if (f.name === "sheet" && values.sheet) values.table = "";
+  if (f.name === "sheet" && !values.sheet) values.header_row = "";
+  if (f.kind === "gate" && !systemNeeded()) values.system = "";
   syncVisibility();
   if (f.kind === "open") { later("tables", lookupTables, 200); }
   if (f.kind === "open" || ["table", "sheet", "header_row", "encoding", "delimiter", "config"].includes(f.name)) later("columns", lookupColumns, 250);
-  if (f.name === "table" || f.name === "sheet") renderTableChoices();
+  if (["table", "sheet", "config"].includes(f.name)) { renderTableChoices(); renderColumns(); }
+  if (LOOKUP_FIELDS.includes(f.name)) later("lookups", lookupGateData, 300);
+  if (LOOKUP_KINDS.has(f.kind)) renderLookups();
   refreshPreview();
 }
 
@@ -281,7 +370,7 @@ function textOrSelect(row, name, items, placeholder, blankLabel, emptyLabel) {
   const values = state.values[state.current];
   const holder = row.extra; holder.replaceChildren();
   const id = "f-" + name;
-  const set = (v) => { values[name] = v; onChange(row.field); };
+  const set = (v) => setValue(row.field, v);
   if (!items.length && emptyLabel) {
     holder.append(h("select", { id, disabled: true }, h("option", {}, emptyLabel)));
   } else if (items.length) {
@@ -297,12 +386,47 @@ function textOrSelect(row, name, items, placeholder, blankLabel, emptyLabel) {
   }
 }
 
+function tableState() {
+  const values = state.values[state.current] || {};
+  const L = state.lookups;
+  if (!workbookPath() || values.table || values.sheet) return { kind: "chosen" };
+  if (values.config) return { kind: "config" };
+  if (L.tablesError) return { kind: "unknown" };
+  if (!L.tablesLoaded) return { kind: "loading" };
+  if (L.tables.length === 1) return { kind: "single", table: L.tables[0].name };
+  return { kind: "choose" };
+}
+
 function renderColumns() {
+  const L = state.lookups; const t = tableState();
   for (const row of Object.values(state.rows)) if (row.field.kind === "column") {
-    textOrSelect(row, row.field.name, state.lookups.columns.map((c) => [c, c]), "Type the column name, for example ID", "Choose a column…");
-    row.note.textContent = state.lookups.columnsError;
+    const holder = row.extra;
+    if (t.kind === "choose" || t.kind === "loading") {
+      holder.replaceChildren(h("select", { id: "f-" + row.field.name, disabled: true }, h("option", {}, t.kind === "choose" ? "Choose a table or sheet first" : "Looking inside the workbook…")));
+      row.note.textContent = t.kind === "choose" ? "This workbook has " + (L.tables.length === 0 ? "no tables" : L.tables.length + " tables") + ". Pick one of its tables or sheets above, then the columns appear here." : "";
+      row.preview.replaceChildren();
+      continue;
+    }
+    if (t.kind === "config") {
+      textOrSelect(row, row.field.name, [], "Leave empty to use the ID column named in your settings file", "");
+      row.note.textContent = "Your settings file decides which tables are read, so there is no table to choose here."; row.preview.replaceChildren();
+      continue;
+    }
+    textOrSelect(row, row.field.name, L.columns.map((c) => [c, c]), "Type the column name, for example ID", "Choose a column…");
+    row.note.textContent = L.columnsError || (t.kind === "single" ? "Reading table “" + t.table + "”, the only table in this workbook." : "");
+    renderPreviewTable(row);
   }
 }
+
+function renderPreviewTable(row) {
+  const L = state.lookups; const box = row.preview; box.replaceChildren();
+  if (!L.columns.length) return;
+  const rows = L.previewRows || [];
+  const table = h("table", {}, h("thead", {}, h("tr", {}, L.columns.map((c) => h("th", {}, c)))),
+    h("tbody", {}, rows.map((r) => h("tr", {}, L.columns.map((_, i) => h("td", { title: r[i] || "" }, r[i] || ""))))));
+  box.append(h("p", { class: "count" }, h("strong", {}, "Preview: " + L.rowCount + " row" + (L.rowCount === 1 ? "" : "s")), rows.length < L.rowCount ? " (first " + rows.length + " shown)" : ""), table);
+}
+
 function renderTableChoices() {
   for (const row of Object.values(state.rows)) {
     if (row.field.kind === "table") textOrSelect(row, row.field.name, state.lookups.tables.map((t) => [t.name, t.name + "  (sheet " + t.sheet + ")"]), "Table name", "Automatic", state.lookups.tablesLoaded ? "This workbook has no tables" : "");
@@ -314,26 +438,33 @@ function renderTableChoices() {
 async function lookupTables() {
   const path = workbookPath();
   const id = state.current;
-  if (!path) { state.lookups.tables = []; state.lookups.sheets = []; state.lookups.tablesError = ""; state.lookups.tablesLoaded = false; renderTableChoices(); return; }
+  const L = state.lookups;
+  if (!path) { L.tables = []; L.sheets = []; L.tablesError = ""; L.tablesLoaded = false; renderTableChoices(); renderColumns(); return; }
   try {
     const data = await api("/api/tables?path=" + encodeURIComponent(path));
     if (id !== state.current) return;
-    state.lookups.tables = data.tables; state.lookups.sheets = data.sheets; state.lookups.tablesError = data.error || ""; state.lookups.tablesLoaded = !data.error;
-  } catch (e) { state.lookups.tablesError = e.message; state.lookups.tables = []; state.lookups.sheets = []; state.lookups.tablesLoaded = false; }
-  renderTableChoices();
+    L.tables = data.tables; L.sheets = data.sheets; L.tablesError = data.error || ""; L.tablesLoaded = !data.error;
+  } catch (e) { L.tablesError = e.message; L.tables = []; L.sheets = []; L.tablesLoaded = false; }
+  renderTableChoices(); renderColumns(); lookupColumns();
 }
 
+let columnsSeq = 0;
 async function lookupColumns() {
-  const w = workflow(); const id = state.current; const values = state.values[id];
+  const w = workflow(); const id = state.current; const values = state.values[id]; const L = state.lookups;
   const path = values[w.column_source];
-  if (!path) { state.lookups.columns = []; state.lookups.columnsError = ""; renderColumns(); return; }
+  const clear = () => { L.columns = []; L.columnsError = ""; L.rowCount = 0; L.previewRows = []; renderColumns(); };
+  if (!path || ["choose", "loading", "config"].includes(tableState().kind)) { clear(); return; }
   const query = new URLSearchParams({ path });
   for (const name of ["table", "sheet", "header_row", "encoding", "delimiter", "config"]) if (values[name]) query.set(name, values[name]);
+  const seq = ++columnsSeq;
   try {
     const data = await api("/api/columns?" + query);
-    if (id !== state.current) return;
-    state.lookups.columns = data.columns; state.lookups.columnsError = data.error ? "Could not list the columns yet: " + data.error : "";
-  } catch (e) { state.lookups.columns = []; state.lookups.columnsError = e.message; }
+    if (id !== state.current || seq !== columnsSeq) return;
+    L.columns = data.columns; L.rowCount = data.row_count; L.previewRows = data.rows;
+    L.columnsError = data.error ? "Could not list the columns yet: " + data.error : "";
+    const idField = w.fields.find((f) => f.kind === "column");
+    if (idField && !values[idField.name] && data.id_guess) { values[idField.name] = data.id_guess; refreshPreview(); lookupGateData(); }
+  } catch (e) { if (seq !== columnsSeq) return; L.columns = []; L.columnsError = e.message; }
   renderColumns();
 }
 
@@ -341,6 +472,7 @@ let previewSeq = 0;
 function refreshPreview() { later("preview", fetchPreview, 120); }
 async function fetchPreview() {
   const seq = ++previewSeq; const id = state.current;
+  if (!id || workflow().panel !== "form") return;
   try {
     const data = await api("/api/command", { workflow: id, values: state.values[id] });
     if (seq !== previewSeq) return;
@@ -359,7 +491,7 @@ function renderPreview() {
   const replaces = ready && p.replaces.length
     ? h("div", { class: "banner warn" }, "Run will replace " + p.replaces.map(shownPath).join(", ") + ", which already exists. Choose another name to keep it.")
     : null;
-  box.replaceChildren(
+  fill(box,
     h("h2", {}, "The command behind this"),
     h("div", { class: "commandbar" }, shellTabs(renderPreview),
       h("button", { class: "small", type: "button", disabled: !ready, onclick: (e) => copyText(text, e.target) }, "Copy command")),
@@ -372,17 +504,17 @@ function renderPreview() {
 function stepFromForm() {
   const w = workflow();
   return { id: String(Date.now()) + Math.random().toString(16).slice(2), workflow: w.id, title: w.title,
-    values: { ...state.values[w.id] }, sh: state.preview.sh, powershell: state.preview.powershell, argv: state.preview.argv };
+    values: JSON.parse(JSON.stringify(state.values[w.id])), sh: state.preview.sh, powershell: state.preview.powershell, argv: state.preview.argv };
 }
 
-function addStep(announceIt) {
-  const step = stepFromForm();
+function pushStep(step, announceIt) {
   const last = state.steps[state.steps.length - 1];
   if (last && last.workflow === step.workflow && JSON.stringify(last.argv) === JSON.stringify(step.argv)) return false;
   state.steps.push(step); remember(); renderPanel();
   if (announceIt) announce("Added to your workflow: " + step.title);
   return true;
 }
+function addStep(announceIt) { return pushStep(stepFromForm(), announceIt); }
 
 async function runNow() {
   const id = state.current; const w = workflow();
@@ -398,19 +530,30 @@ async function runNow() {
 
 const EXIT_WORDS = { 2: "reqtable could not use these settings.", 3: "reqtable could not read an input file.", 4: "reqtable could not write the result file." };
 
+function outputTable(w, text) {
+  const lines = text.split("\n").filter((l) => l.trim());
+  if (!lines.length || !lines.every((l) => l.includes("\t"))) return h("pre", { class: "output" }, text);
+  return h("table", { class: "grid" }, h("thead", {}, h("tr", {}, w.table.map((c) => h("th", {}, c)))),
+    h("tbody", {}, lines.map((l) => h("tr", {}, l.split("\t").map((c) => h("td", { title: c }, c))))));
+}
+
 function renderResult(w, data) {
   const box = $("result");
   if (data.error) { box.replaceChildren(h("div", { class: "card" }, h("div", { class: "banner bad" }, h("strong", {}, "That did not run."), h("span", { class: "cli-error" }, data.error)))); return; }
   const stderr = data.stderr || "";
   const errors = stderr.split("\n").filter((l) => /^error:/.test(l));
   const warnings = stderr.split("\n").filter((l) => /^warning:/.test(l));
+  const outcome = Object.fromEntries(w.outcomes)[data.exit_code];
   const ok = data.exit_code === 0;
+  const answer = !ok && outcome;
   const card = h("div", { class: "card" });
   if (ok) {
     const saved = data.outputs.length ? "Saved: " + data.outputs.map(shownPath).join(", ") : "";
-    card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, "Done."), saved));
+    card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, outcome || "Done."), saved, w.recorded ? h("div", {}, w.recorded) : null));
     const added = addStep(false);
     if (added) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
+  } else if (answer) {
+    card.append(h("div", { class: "banner soft", role: "status" }, h("strong", {}, outcome + "."), h("span", {}, "That is an answer, not a failure. Nothing was recorded and nothing was added to your workflow.")));
   } else {
     const words = data.exit_code === null ? "reqtable stopped because this took too long." : (EXIT_WORDS[data.exit_code] || "Something went wrong.");
     card.append(h("div", { class: "banner bad", role: "alert" }, h("strong", {}, words + " Nothing was added to your workflow."),
@@ -418,14 +561,18 @@ function renderResult(w, data) {
   }
   if (warnings.length) card.append(h("div", { class: "banner warn" }, h("strong", {}, "Worth a look"), warnings.map((l) => h("div", {}, l.replace(/^warning:\s*/, "")))));
   const html = data.outputs.find((p) => /\.html$/i.test(p));
-  if (ok && html) card.append(h("div", { class: "actions" }, h("button", { class: "primary", type: "button", onclick: (e) => openReport(html, e.target) }, "Open report")));
-  if (data.stdout.trim()) card.append(h("h2", { style: "margin-top:14px" }, "Result"), h("pre", { class: "output" }, data.stdout));
+  if (ok && html && w.id !== "gate_package") card.append(h("div", { class: "actions" }, h("button", { class: "primary", type: "button", onclick: (e) => openReport(html, e.target) }, "Open report")));
+  if (ok && html && w.id === "gate_package") card.append(h("div", { class: "actions" }, h("button", { class: "primary", type: "button", onclick: (e) => openReport(html, e.target) }, "Open package")));
+  if (data.stdout.trim()) card.append(h("h2", { style: "margin-top:14px" }, "Result"), w.table.length && ok ? outputTable(w, data.stdout) : h("pre", { class: "output" }, data.stdout));
   const rest = stderr.split("\n").filter((l) => l && !/^(error|warning):/.test(l)).join("\n");
-  if (!ok && rest) card.append(h("details", {}, h("summary", {}, "Technical details"), h("pre", { class: "output" }, rest)));
+  if (answer && rest) card.append(h("h2", { style: "margin-top:14px" }, "Why"), h("pre", { class: "output" }, rest));
+  if (!ok && !answer && rest) card.append(h("details", {}, h("summary", {}, "Technical details"), h("pre", { class: "output" }, rest)));
+  if (data.blocked && data.blocked.length) card.append(waiveOffer(w, data.blocked));
   box.replaceChildren(card);
   renderPanel();
-  announce(ok ? "Done" : "Failed");
+  announce(ok ? "Done" : (answer ? outcome : "Failed"));
   refreshPreview();
+  if (ok && (w.recorded || w.id === "create_baseline")) lookupGateData();
 }
 
 async function openReport(path, button) {
@@ -445,10 +592,10 @@ function renderPanel() {
         h("button", { class: "small", type: "button", "aria-label": "Remove step " + (i + 1), onclick: () => { steps.splice(i, 1); remember(); renderPanel(); } }, "✕")),
       h("pre", {}, s[state.shell])));
   });
-  panel.replaceChildren(
+  fill(panel,
     h("h2", {}, "Your workflow"),
     steps.length ? list : h("p", { class: "empty" }, "Steps you run or add show up here. Put them in order, then save them as a script to repeat them any time."),
-    h("div", { class: "commandbar" }, shellTabs(() => { renderPreview(); })),
+    h("div", { class: "commandbar" }, shellTabs(() => { renderPreview(); if (panelRefresh) panelRefresh(); })),
     h("div", { class: "actions", style: "margin-top:0" },
       h("button", { type: "button", disabled: !steps.length, onclick: (e) => withScript((s) => copyText(s.script, e.target)) }, "Copy script"),
       h("button", { type: "button", disabled: !steps.length, onclick: () => withScript(saveScript) }, "Save script"),
@@ -506,13 +653,14 @@ async function start() {
   restore();
   try {
     const data = await api("/api/workflows");
-    state.workflows = data.workflows; state.workdir = data.workdir;
+    state.workflows = data.workflows; state.workdir = data.workdir; state.mapping = data.mapping;
   } catch (e) {
     $("main").replaceChildren(h("div", { class: "card" }, h("div", { class: "banner bad" }, h("strong", {}, "Could not reach reqtable."), "Close this tab and start it again with --gui.")));
     return;
   }
   renderNav(); renderIntro(); renderPanel();
 }
+__MODULES__
 start();
 </script>
 </body>
@@ -521,4 +669,4 @@ start();
 
 
 def render_page(token: str) -> str:
-    return PAGE.replace("__TOKEN__", json.dumps(token))
+    return PAGE.replace("__MODULES__", GATES_JS + MAPPING_JS).replace("__TOKEN__", json.dumps(token))

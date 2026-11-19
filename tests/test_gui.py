@@ -271,7 +271,7 @@ class RegistryMatchesParserTests(unittest.TestCase):
     def test_outcomes_and_result_tables_are_plain_data(self) -> None:
         for workflow in WORKFLOWS:
             for code, words in workflow.outcomes:
-                self.assertIn(code, (1,), workflow.id)
+                self.assertIn(code, (0, 1), workflow.id)
                 self.assertTrue(words and not words.endswith("."), workflow.id)
         self.assertEqual(len(workflow_named("list_baselines").table), 6)
 

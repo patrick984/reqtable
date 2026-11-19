@@ -35,11 +35,12 @@ class RoleTests(unittest.TestCase):
     def test_every_role_type_is_a_record_type(self) -> None:
         for role in ROLES:
             self.assertTrue(role.type is None or role.type in RECORD_TYPES, role.id)
-        self.assertEqual([r.id for r in ROLES if r.type is None], ["requirements"])
+        self.assertEqual([r.id for r in ROLES if r.type is None], ["requirements", "merge"])
+        self.assertEqual([r.id for r in ROLES if r.merge], ["merge"])
 
     def test_roles_are_distinct_and_every_role_can_carry_an_id_and_a_name(self) -> None:
         self.assertEqual(len({r.id for r in ROLES}), len(ROLES))
-        self.assertEqual(len({r.type for r in ROLES}), len(ROLES))
+        self.assertEqual(len({r.type for r in ROLES}), len(ROLES) - 1)
         for role in ROLES:
             columns = [t.column for t in role.targets]
             self.assertEqual(len(columns), len(set(columns)), role.id)
@@ -49,7 +50,7 @@ class RoleTests(unittest.TestCase):
             self.assertEqual(bool(role.id_prefix), role.type is not None, role.id)
         self.assertEqual([r.id for r in ROLES if r.needs_field], ["values"])
         for role in ROLES:
-            if role.id != "values" and role.id != "requirements":
+            if role.id not in ("values", "requirements", "merge"):
                 self.assertIn("Name", [t.column for t in role.targets], role.id)
 
     def test_tests_describe_into_requirement_and_plans_and_terms_use_their_own_columns(self) -> None:
@@ -159,6 +160,49 @@ class BuildMappingTests(unittest.TestCase):
     def test_the_result_is_checked_the_way_the_importer_checks_it(self) -> None:
         with self.assertRaisesRegex(GuiError, "header_row"):
             build_mapping({"sources": [source("sheet", "S", "systems", [], header_row=0)]})
+
+
+class MergeRoleTests(unittest.TestCase):
+    def test_a_merge_source_emits_merge_and_a_list_of_ids(self) -> None:
+        form = {"sources": [
+            source("table", "TestCases", "tests", [("Test ID", "map", "ID", ""), ("Title", "map", "Name", "")]),
+            source("table", "TestCases", "merge", [
+                ("Verifies", "map", "ID", ","), ("Test ID", "map", "Verified by", ""), ("Level", "map", "Verification Level", ";"),
+                ("Notes", "keep", "", ""),
+            ], id_prefix="IGNORED-"),
+        ]}
+        built = build_mapping(form)["xlsx"]["sources"]  # type: ignore[index]
+        self.assertEqual(built[1], {
+            "table": "TestCases", "merge": True,
+            "columns": {"Verifies": "ID", "Test ID": "Verified by", "Level": "Verification Level"},
+            "lists": {"ID": ",", "Verification Level": ";"},
+        })
+        self.assertNotIn("merge", built[0])
+
+    def test_the_id_column_name_is_used_for_the_merge_key(self) -> None:
+        form = {"id_column": "Req ID", "sources": [source("sheet", "Matrix", "merge", [("Requirement", "map", "ID", ""), ("Level", "map", "Verification Level", "")])]}
+        built = build_mapping(form)["xlsx"]["sources"][0]  # type: ignore[index]
+        self.assertEqual(built["columns"], {"Requirement": "Req ID", "Level": "Verification Level"})
+
+    def test_a_merge_source_must_say_which_column_holds_the_id(self) -> None:
+        with self.assertRaisesRegex(GuiError, "which column holds the requirement ID"):
+            build_mapping({"sources": [source("sheet", "Matrix", "merge", [("Level", "map", "Verification Level", "")])]})
+
+    def test_a_merge_source_round_trips_through_the_form(self) -> None:
+        mapping = {"id_column": "ID", "traceability": True, "xlsx": {"sources": [
+            {"table": "Reqs", "columns": {"Req ID": "ID"}},
+            {"sheet": "Matrix", "merge": True, "columns": {"Reqs": "ID", "Stage": "Verification Level"}, "lists": {"ID": ","}},
+        ]}}
+        form, notes = form_from_mapping(mapping)
+        self.assertEqual((notes, form["sources"][1]["role"]), ([], "merge"))
+        self.assertEqual(build_mapping(form), mapping)
+
+    def test_the_same_table_can_be_added_twice_with_different_roles(self) -> None:
+        both = {"sources": [
+            source("table", "T", "tests", [("ID", "keep", "", "")]),
+            source("table", "T", "merge", [("Verifies", "map", "ID", ",")]),
+        ]}
+        self.assertEqual(len(build_mapping(both)["xlsx"]["sources"]), 2)  # type: ignore[index]
 
 
 class LoadMappingTests(unittest.TestCase):

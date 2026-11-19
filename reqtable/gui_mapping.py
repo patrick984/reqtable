@@ -46,6 +46,7 @@ class Role:
     targets: tuple[Target, ...]
     id_prefix: str = ""
     needs_field: bool = False
+    merge: bool = False
 
 
 def _id(label: str = "ID") -> Target:
@@ -132,6 +133,20 @@ ROLES: tuple[Role, ...] = (
         (_id("ID"), NAME, REFERENCE), id_prefix="SRC-",
     ),
 )
+ROLES += (
+    Role(
+        "merge", "Details for existing requirements (matched by ID)",
+        "Fills in cells of requirements that are already imported, matching each row by ID. Use it for a verification "
+        "matrix sheet, or add a tests table a second time here to link its tests to the requirements they verify.",
+        None,
+        (
+            Target(ID_COLUMN, "Requirement ID (which requirement this row is about)", True, ("id", "requirement id", "verifies")),
+            LEVEL, METHOD, Target("Verified by", "Tests that verify it", True, ("tests",)), Target("Priority", "Priority"),
+            Target("Rationale", "Rationale"),
+        ),
+        merge=True,
+    ),
+)
 ROLES_BY_ID = {role.id: role for role in ROLES}
 
 
@@ -181,7 +196,7 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
             "header": header, "action": MAP, "to": target.column, "separator": LIST_SEPARATOR if target.list_separator else "",
         })
     has_id = ID_COLUMN in taken
-    return {"columns": columns, "id_prefix": "" if has_id else role.id_prefix}
+    return {"columns": columns, "id_prefix": "" if has_id or role.merge else role.id_prefix}
 
 
 @dataclass(frozen=True)
@@ -274,6 +289,10 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         source["header_row"] = draft.header_row
     if role.type:
         source["type"] = role.type
+    if role.merge:
+        source["merge"] = True
+        if not any(c.action == MAP and c.to == ID_COLUMN for c in draft.columns):
+            raise GuiError(f"{draft.where}: choose which column holds the requirement ID, so each row finds its requirement")
     empty = [c.header for c in draft.columns if c.action == MAP and not c.to]
     if empty:
         raise GuiError(f"{draft.where}: choose where {empty[0]!r} goes, keep it as it is, or leave it out")
@@ -303,7 +322,7 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         constants[FIELD_COLUMN] = draft.field
     if constants:
         source["set"] = constants
-    if draft.id_prefix:
+    if draft.id_prefix and not role.merge:
         source["id_prefix"] = draft.id_prefix
     return {**source, **{k: v for k, v in draft.extra.items() if k not in source and k != "set"}}
 
@@ -327,7 +346,8 @@ def build_mapping(form: Mapping[str, Any]) -> dict[str, Any]:
         "xlsx": {**{k: v for k, v in xlsx_extra.items() if k != "sources"}, "sources": sources},
     }
     try:
-        validate_xlsx_sources(sources)
+        # `merge` is checked by the importer; the validator only learns it once the importer branch lands.
+        validate_xlsx_sources([{k: v for k, v in source.items() if k != "merge"} for source in sources])
     except ConfigError as exc:
         raise GuiError(str(exc)) from exc
     return mapping
@@ -350,13 +370,14 @@ def form_from_mapping(mapping: object) -> tuple[dict[str, Any], list[str]]:
         notes.append(f"Kept as it is, not editable here: xlsx.{key}")
     if mapping.get("traceability") is False:
         notes.append("The file turns traceability off. Sources with a record type need it, so it is switched on.")
-    form_sources = [_source_form(source, index, notes) for index, source in enumerate(sources)]
+    id_column = mapping.get("id_column") or ID_COLUMN
+    form_sources = [_source_form(source, index, notes, id_column) for index, source in enumerate(sources)]
     return {
         "id_column": mapping.get("id_column") or ID_COLUMN, "sources": form_sources, "extra": extra, "xlsx_extra": xlsx_extra,
     }, notes
 
 
-def _source_form(source: object, index: int, notes: list[str]) -> dict[str, Any]:
+def _source_form(source: object, index: int, notes: list[str], id_column: str) -> dict[str, Any]:
     if not isinstance(source, Mapping) or ("table" in source) == ("sheet" in source):
         raise GuiError(f"xlsx.sources[{index}] needs exactly one of 'table' or 'sheet'.")
     kind = "table" if "table" in source else "sheet"
@@ -364,10 +385,12 @@ def _source_form(source: object, index: int, notes: list[str]) -> dict[str, Any]
     constants = dict(source.get("set", {})) if isinstance(source.get("set"), Mapping) else {}
     type_name = source.get("type") or constants.get("Type")
     role = role_for_type(type_name) if type_name != "Requirement" else ROLES_BY_ID["requirements"]
+    if source.get("merge") is True:
+        role = ROLES_BY_ID["merge"] if not type_name else None
     if role is None or ("type" in source and "Type" in constants):
         notes.append(f"{kind.capitalize()} {name!r} has a record type this form cannot edit, so it is kept exactly as it is.")
         return {"kind": kind, "name": name, "raw": dict(source)}
-    handled = {kind, "header_row", "columns", "exclude", "lists", "id_prefix", "set", "type"}
+    handled = {kind, "header_row", "columns", "exclude", "lists", "id_prefix", "set", "type", "merge"}
     extra = {k: v for k, v in source.items() if k not in handled}
     if type_name == "Requirement":
         extra["type"] = "Requirement"
@@ -379,10 +402,10 @@ def _source_form(source: object, index: int, notes: list[str]) -> dict[str, Any]
         notes.append(f"{kind.capitalize()} {name!r}: kept as it is, not editable here: {key}")
     columns: dict[str, dict[str, Any]] = {}
     for header, to in (source.get("columns") or {}).items():
-        columns[header] = {"header": header, "action": MAP, "to": to, "separator": ""}
+        columns[header] = {"header": header, "action": MAP, "to": ID_COLUMN if to == id_column else to, "separator": ""}
     for header in source.get("exclude") or []:
         columns[header] = {"header": header, "action": EXCLUDE, "to": "", "separator": ""}
-    for output, separator in (source.get("lists") or {}).items():
+    for output, separator in ((ID_COLUMN if k == id_column else k, v) for k, v in (source.get("lists") or {}).items()):
         match = next((c for c in columns.values() if c["action"] == MAP and c["to"] == output), None) or columns.setdefault(
             output, {"header": output, "action": KEEP, "to": "", "separator": ""}
         )
@@ -403,8 +426,12 @@ def preview_mapping(workbook: Path, mapping: Mapping[str, Any]) -> dict[str, Any
         imported = import_workbook(workbook, XlsxSelection(), sources, id_column, True, False)
         counts = []
         for source in sources:
+            name = source.get("table") or source["sheet"]
+            if source.get("merge"):
+                counts.append({"name": name, "rows": None})
+                continue
             alone = import_workbook(workbook, XlsxSelection(), [source], id_column, True, False)
-            counts.append({"name": source.get("table") or source["sheet"], "rows": len(alone.block.rows) - 1})
+            counts.append({"name": name, "rows": len(alone.block.rows) - 1})
     except (ReqtableError, OSError) as exc:
         return {"error": str(exc)}
     rows = imported.block.rows

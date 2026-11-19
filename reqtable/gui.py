@@ -41,8 +41,9 @@ class Field:
 
 @dataclass(frozen=True)
 class Workflow:
-    """One task card. `fixed` argv is always emitted, `outcomes` are exit codes that answer the question rather than fail,
-    `table` names the tab-separated columns of stdout, and `recorded` says what a successful run leaves behind."""
+    """One task card. `fixed` argv is always emitted. `outcomes` give exit codes a plain label, and a code other than 0
+    answers the question rather than failing. `table` names the tab-separated columns of stdout, and `recorded` says what
+    a successful run leaves behind."""
 
     id: str
     title: str
@@ -282,7 +283,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             _table_input("The CSV or Excel (.xlsx) file to check."), *WHICH_BLOCK, GATE_CONFIG,
             _gate("--check-gate", "The review gate to check, such as SRR or PDR."), SYSTEM, *GATE_TAIL,
         ),
-        group=GATES, outcomes=((1, "Not ready yet"),),
+        group=GATES, outcomes=((0, "This gate is ready"), (1, "Not ready yet")),
     ),
     Workflow(
         "create_baseline", "Freeze a baseline at a gate",
@@ -299,7 +300,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             replace(USER, advanced=True), *GATE_TAIL,
         ),
         group=GATES, outcomes=((1, "Blocked by a required check"),),
-        recorded="A permanent baseline was recorded where the line above says. Freezing this gate again makes a new numbered baseline and never changes this one.",
+        recorded="A permanent baseline was recorded where the result below says. Freezing this gate again makes a new numbered baseline and never changes this one.",
     ),
     Workflow(
         "list_baselines", "List baselines",
@@ -326,7 +327,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             *GATE_TAIL,
         ),
         group=GATES,
-        recorded="Your decision was recorded where the line above says. Use Verify a baseline to see where the sign-offs stand.",
+        recorded="Your decision was recorded where the result below says. Use Verify a baseline to see where the sign-offs stand.",
     ),
     Workflow(
         "verify_baseline", "Verify a baseline",
@@ -336,7 +337,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             _table_input("The CSV or Excel (.xlsx) file the baseline was frozen from."), *WHICH_BLOCK, GATE_CONFIG,
             _baseline("--verify-baseline", "The baseline to check."), *GATE_TAIL,
         ),
-        group=GATES, outcomes=((1, "Not approved yet, or the content changed"),),
+        group=GATES, outcomes=((0, "Approved and unchanged"), (1, "Not approved yet, or the content changed")),
     ),
     Workflow(
         "gate_package", "Make a gate review package",
@@ -363,7 +364,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             *GATE_TAIL,
         ),
         group=GATES,
-        recorded="Each decision in the package was recorded as a sign-off, as the lines above say.",
+        recorded="Each decision in the package was recorded as a sign-off, as the result below says.",
     ),
 )
 

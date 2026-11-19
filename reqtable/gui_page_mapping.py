@@ -1,0 +1,293 @@
+"""Page script for the "Import several tables" card: pick a workbook, say what each table holds, preview, save."""
+
+MAPPING_JS = r"""
+const mp = { workbook: "", sources: [], idColumn: "ID", extra: {}, xlsxExtra: {}, notes: [], loadPath: "", savePath: "mapping.json",
+  preview: null, saved: "", exists: false, follow: null, bookError: "", busy: false };
+PANELS.mapping = renderMappingPanel;
+
+const mappingRoles = () => state.mapping.roles;
+const roleOf = (s) => mappingRoles().find((r) => r.id === s.role);
+let sourceUid = 0;
+const newSource = (kind, name, where) => ({ uid: ++sourceUid, dup: false, kind, name, where, role: "", header_row: "", field: "", id_prefix: "", columns: [], extra: {}, raw: null, missing: false, error: "" });
+const hasTarget = (s, column) => s.columns.some((c) => c.action === "map" && c.to === column);
+const mpKey = (s) => s.kind + ":" + s.name;
+
+function renderMappingPanel(w) {
+  panelRefresh = drawOut;
+  $("main").replaceChildren(h("div", {}, h("div", { class: "card", id: "mp-book" }), h("div", { id: "mp-sources" }), h("div", { class: "card", id: "mp-out" })));
+  drawBook(); drawSources(); drawOut(); fetchFollow();
+}
+
+function drawBook() {
+  const w = workflow();
+  const book = h("input", { type: "text", id: "mp-workbook", spellcheck: "false", placeholder: "Choose a workbook…", oninput: (e) => { mp.workbook = e.target.value; later("mp-book", loadBook, 300); } });
+  book.value = mp.workbook;
+  const loadInput = h("input", { type: "text", id: "mp-load", spellcheck: "false", placeholder: "Choose a mapping file…", oninput: (e) => { mp.loadPath = e.target.value; } });
+  loadInput.value = mp.loadPath;
+  $("mp-book").replaceChildren(
+    h("h2", {}, w.title), h("p", { class: "hint" }, w.summary),
+    h("div", { class: "field" }, h("label", { for: "mp-workbook" }, "Excel workbook", h("span", { class: "req" }, "required")),
+      h("div", { class: "pathrow" }, book, h("button", { type: "button", onclick: () => pickPath({ kind: "open", label: "Excel workbook", extensions: [".xlsx"], default: "" }, book, (v) => { mp.workbook = v; loadBook(); }) }, "Browse…")),
+      h("p", { class: "help" }, "The .xlsx file that holds your requirements and the other tables.")),
+    h("details", { class: "more" }, h("summary", {}, "Edit a mapping you saved earlier"),
+      h("div", { class: "field" }, h("label", { for: "mp-load" }, "Mapping file"),
+        h("div", { class: "pathrow" }, loadInput,
+          h("button", { type: "button", onclick: () => pickPath({ kind: "open", label: "mapping file", extensions: [".json"], default: "" }, loadInput, (v) => { mp.loadPath = v; }) }, "Browse…"),
+          h("button", { type: "button", onclick: loadSaved }, "Load")),
+        h("p", { class: "help" }, "Loads the tables and columns from a mapping.json. Settings this form cannot show are kept untouched."))),
+    h("div", { id: "mp-bookmsg" }));
+  drawBookMessage();
+}
+
+function drawBookMessage() {
+  const box = $("mp-bookmsg"); if (!box) return;
+  fill(box,
+    mp.bookError ? h("div", { class: "banner bad", role: "alert" }, h("strong", {}, "Could not read the workbook."), h("span", { class: "cli-error" }, mp.bookError)) : null,
+    mp.notes.length ? h("div", { class: "banner warn" }, h("strong", {}, "About the loaded mapping"), h("ul", { class: "plain" }, mp.notes.map((n) => h("li", {}, n)))) : null);
+}
+
+async function loadBook() {
+  mp.bookError = "";
+  if (!mp.workbook.trim()) { mp.sources = []; drawBookMessage(); drawSources(); schedulePreview(); return; }
+  let data;
+  try { data = await api("/api/tables?path=" + encodeURIComponent(mp.workbook)); } catch (e) { data = { error: e.message }; }
+  if (data.error) { mp.bookError = data.error; mp.sources = []; drawBookMessage(); drawSources(); schedulePreview(); return; }
+  const onTable = new Set(data.tables.map((t) => t.sheet));
+  const found = [
+    ...data.tables.map((t) => newSource("table", t.name, "table on sheet " + t.sheet)),
+    ...data.sheets.filter((s) => !onTable.has(s.name)).map((s) => newSource("sheet", s.name, s.state === "visible" ? "sheet" : s.state + " sheet")),
+  ];
+  const before = new Map();
+  for (const s of mp.sources) before.set(mpKey(s), [...(before.get(mpKey(s)) || []), s]);
+  mp.sources = found.flatMap((s) => before.get(mpKey(s)) || [s]);
+  drawBookMessage(); drawSources(); schedulePreview(); fetchFollow();
+}
+
+async function loadSaved() {
+  let data;
+  try { data = await api("/api/mapping/load?path=" + encodeURIComponent(mp.loadPath)); } catch (e) { data = { error: e.message }; }
+  if (data.error) { mp.bookError = data.error; mp.notes = []; drawBookMessage(); return; }
+  mp.bookError = ""; mp.notes = data.notes;
+  const form = data.form;
+  mp.idColumn = form.id_column; mp.extra = form.extra; mp.xlsxExtra = form.xlsx_extra;
+  const wanted = new Set(form.sources.map((fs) => fs.kind + ":" + fs.name));
+  mp.sources = mp.sources.filter((s) => !s.dup);
+  for (const s of mp.sources) if (!wanted.has(mpKey(s))) { s.role = ""; s.columns = []; s.raw = null; }
+  const used = new Set();
+  for (const fs of form.sources) {
+    let s = mp.sources.find((x) => x.kind === fs.kind && x.name === fs.name && !used.has(x));
+    if (!s) {
+      const siblings = mp.sources.filter((x) => x.kind === fs.kind && x.name === fs.name);
+      s = newSource(fs.kind, fs.name, siblings.length ? siblings[0].where : "not in this workbook");
+      s.missing = !siblings.length; s.dup = siblings.length > 0;
+      mp.sources.splice(siblings.length ? mp.sources.indexOf(siblings[siblings.length - 1]) + 1 : mp.sources.length, 0, s);
+    }
+    used.add(s);
+    if (fs.raw) { s.raw = fs.raw; s.role = ""; continue; }
+    Object.assign(s, { raw: null, role: fs.role, header_row: fs.header_row == null ? "" : String(fs.header_row), field: fs.field, id_prefix: fs.id_prefix, columns: fs.columns.map((c) => ({ ...c })), extra: fs.extra });
+  }
+  drawBookMessage(); drawSources(); schedulePreview();
+  for (const s of mp.sources) if (s.role && !s.missing) fetchColumns(s, false);
+}
+
+async function fetchColumns(s, fresh) {
+  const query = new URLSearchParams({ path: mp.workbook });
+  query.set(s.kind, s.name);
+  if (s.kind === "sheet" && s.header_row) query.set("header_row", s.header_row);
+  let data;
+  try {
+    if (fresh) query.set("role", s.role);
+    data = await api((fresh ? "/api/mapping/suggest?" : "/api/columns?") + query);
+  } catch (e) { data = { error: e.message }; }
+  if (data.error) { s.error = data.error; if (fresh) s.columns = []; drawSources(); schedulePreview(); return; }
+  s.error = "";
+  if (fresh) { s.columns = data.columns; s.id_prefix = data.id_prefix; }
+  else {
+    const have = new Map(s.columns.map((c) => [c.header, c]));
+    s.columns = data.columns.map((header) => have.get(header) || { header, action: "keep", to: "", separator: "" });
+    for (const c of have.values()) if (!data.columns.includes(c.header)) s.columns.push({ ...c, missing: true });
+  }
+  drawSources(); schedulePreview();
+}
+
+function setRole(s, roleId) {
+  s.role = roleId; s.columns = []; s.field = ""; s.id_prefix = ""; s.error = "";
+  if (!roleId) { drawSources(); schedulePreview(); return; }
+  drawSources();
+  fetchColumns(s, true);
+}
+
+function targetValue(c) { return c.action === "map" ? "map:" + c.to : c.action; }
+
+function setTarget(s, c, value) {
+  const role = roleOf(s); const hadId = hasTarget(s, "ID");
+  if (value.startsWith("map:")) { c.action = "map"; c.to = value.slice(4); } else { c.action = value; c.to = ""; }
+  const target = role.targets.find((t) => t.column === c.to);
+  c.separator = c.action !== "exclude" && target && target.list_separator ? (c.separator || ",") : "";
+  const hasId = hasTarget(s, "ID");
+  if (hasId && !hadId && s.id_prefix === role.id_prefix) s.id_prefix = "";
+  if (!hasId && hadId && !s.id_prefix) s.id_prefix = role.id_prefix;
+  if (hasTarget(s, "Field")) s.field = "";
+  drawSources(); schedulePreview();
+}
+
+function columnTable(s) {
+  const role = roleOf(s);
+  const rows = s.columns.map((c) => {
+    const options = [h("option", { value: "keep" }, "Keep as is"),
+      ...role.targets.map((t) => h("option", { value: "map:" + t.column }, t.label + (t.label === t.column ? "" : "  (" + t.column + ")"))),
+      h("option", { value: "exclude" }, "Leave out")];
+    if (c.action === "map" && !role.targets.some((t) => t.column === c.to)) options.push(h("option", { value: "map:" + c.to }, c.to));
+    const pick = h("select", { "aria-label": "Where " + c.header + " goes", onchange: (e) => setTarget(s, c, e.target.value) }, options);
+    pick.value = targetValue(c);
+    const sep = c.separator || (c.action === "map" && (role.targets.find((t) => t.column === c.to) || {}).list_separator);
+    const separator = sep ? h("select", { "aria-label": "Separator in " + c.header, onchange: (e) => { c.separator = e.target.value; schedulePreview(); } },
+      state.mapping.separators.map((x) => h("option", { value: x.value }, x.label))) : null;
+    if (separator) separator.value = c.separator || ",";
+    return h("tr", {}, h("td", { class: "src" }, c.header, c.missing ? h("span", { class: "badge" }, "not in this table") : null), h("td", {}, pick), h("td", {}, separator ? ["Split on ", separator] : null));
+  });
+  return h("table", { class: "cols" }, h("thead", {}, h("tr", {}, h("th", {}, "Column in the workbook"), h("th", {}, "Goes into"), h("th", {}, "If it holds a list"))), h("tbody", {}, rows));
+}
+
+function fieldPicker(s) {
+  const fields = state.mapping.fields;
+  const custom = !!s.field && !fields.some((f) => f.value === s.field);
+  const select = h("select", { id: "field-" + s.uid, "aria-label": "Which column are these values for?", onchange: (e) => { s.field = e.target.value === "__other" ? " " : e.target.value; drawSources(); schedulePreview(); } },
+    h("option", { value: "" }, "Choose a column…"), fields.map((f) => h("option", { value: f.value }, f.label)), h("option", { value: "__other" }, "Another column…"));
+  select.value = custom ? "__other" : s.field;
+  const other = custom ? h("input", { type: "text", "aria-label": "Column name", placeholder: "Column name", spellcheck: "false", style: "margin-top:6px", onchange: (e) => { s.field = e.target.value.trim(); schedulePreview(); } }) : null;
+  if (other) other.value = s.field.trim();
+  return h("div", { style: "margin-top:10px;max-width:340px" }, h("label", { class: "mini", for: select.id }, "Which column are these values for?"), select, other);
+}
+
+function drawSource(s, i) {
+  const role = roleOf(s);
+  const title = h("div", {}, h("div", { class: "nm" }, s.name), h("div", { class: "sub" }, s.where));
+  if (s.raw) {
+    return h("div", { class: "srcrow" }, h("div", { class: "top" }, title, h("p", { class: "note", style: "grid-column: span 2" }, "Kept exactly as it is in the file, because this form cannot edit it."),
+      ), h("div", { class: "actions" }, h("button", { class: "small", type: "button", onclick: () => { s.raw = null; drawSources(); schedulePreview(); } }, "Stop importing this")));
+  }
+  const pick = h("select", { id: "role-" + i, "aria-label": "What does " + s.name + " hold?", onchange: (e) => setRole(s, e.target.value) },
+    h("option", { value: "" }, "Don't import"), mappingRoles().map((r) => h("option", { value: r.id }, r.label)));
+  pick.value = s.role;
+  const row = h("div", { class: "srcrow" }, h("div", { class: "top" }, title,
+    h("div", {}, h("label", { class: "mini", for: pick.id }, "What is it?"), pick),
+    s.kind === "sheet" ? h("div", {}, h("label", { class: "mini", for: "hr-" + i }, "Header row"),
+      h("input", { type: "number", id: "hr-" + i, min: "1", placeholder: "first", value: s.header_row, onchange: (e) => { s.header_row = e.target.value; if (s.role) fetchColumns(s, true); } })) : h("div", {})));
+  const again = h("div", { class: "actions", style: "margin-top:8px" },
+    h("button", { class: "small", type: "button", onclick: () => { const c = newSource(s.kind, s.name, s.where); c.dup = true; mp.sources.splice(i + 1, 0, c); drawSources(); } }, "Add this table again with another role"),
+    s.dup ? h("button", { class: "small", type: "button", onclick: () => { mp.sources.splice(i, 1); drawSources(); schedulePreview(); } }, "Remove this extra row") : null);
+  if (!role) { row.append(again); return row; }
+  row.append(h("p", { class: "note" }, role.help));
+  if (s.error) row.append(h("div", { class: "banner bad" }, s.error));
+  if (role.needs_field && !hasTarget(s, "Field")) row.append(fieldPicker(s));
+  else if (role.needs_field) row.append(h("p", { class: "note" }, "The column you sent to Field says which column each value is for."));
+  if (s.columns.length) row.append(columnTable(s));
+  if (!role.merge && !hasTarget(s, "ID") && (role.id_prefix || s.id_prefix)) {
+    const prefix = h("input", { type: "text", id: "prefix-" + i, spellcheck: "false", style: "max-width:160px", onchange: (e) => { s.id_prefix = e.target.value.trim(); schedulePreview(); } });
+    prefix.value = s.id_prefix;
+    row.append(h("div", { style: "margin-top:10px" }, h("label", { class: "mini", for: prefix.id }, "No ID column here, so reqtable makes IDs that start with"), prefix));
+  }
+  row.append(again);
+  return row;
+}
+
+function drawSources() {
+  const box = $("mp-sources"); if (!box) return;
+  if (!mp.workbook.trim() || mp.bookError) { box.replaceChildren(); return; }
+  box.replaceChildren(h("div", { class: "card" }, h("h2", {}, "What is in each table?"),
+    h("p", { class: "hint" }, "Say what each table or sheet holds. Leave the ones you do not need on “Don't import”. reqtable fills in the column choices from the headers; change any that are wrong."),
+    mp.sources.length ? mp.sources.map(drawSource) : h("p", { class: "empty" }, "Nothing found in this workbook.")));
+}
+
+function buildForm() {
+  return {
+    id_column: mp.idColumn, extra: mp.extra, xlsx_extra: mp.xlsxExtra,
+    sources: mp.sources.filter((s) => s.raw || s.role).map((s) => s.raw ? { kind: s.kind, name: s.name, raw: s.raw } : {
+      kind: s.kind, name: s.name, role: s.role, header_row: s.header_row === "" ? null : Number(s.header_row), field: s.field, id_prefix: s.id_prefix, extra: s.extra,
+      columns: s.columns.map((c) => ({ header: c.header, action: c.action, to: c.to, separator: c.separator })),
+    }),
+  };
+}
+
+let mapPreviewSeq = 0;
+function schedulePreview() { mp.saved = ""; mp.exists = false; later("mp-preview", fetchMapPreview, 300); }
+async function fetchMapPreview() {
+  const seq = ++mapPreviewSeq;
+  if (!mp.workbook.trim() || mp.bookError) { mp.preview = null; drawOut(); return; }
+  let data;
+  try { data = await api("/api/mapping/preview", { path: mp.workbook, form: buildForm() }); } catch (e) { data = { error: e.message }; }
+  if (seq !== mapPreviewSeq) return;
+  mp.preview = data; drawOut();
+}
+
+const followValues = () => ({ input: mp.workbook, config: mp.savePath, traceability: "on", output: "requirements-report.html", document_mode: "review" });
+async function fetchFollow() {
+  if (!mp.workbook.trim() || !mp.savePath.trim()) { mp.follow = null; drawOut(); return; }
+  try { mp.follow = await api("/api/command", { workflow: "report", values: followValues() }); } catch (e) { mp.follow = { error: e.message }; }
+  drawOut();
+}
+
+async function saveMapping(overwrite) {
+  let data;
+  try { data = await api("/api/mapping/save", { path: mp.savePath, form: buildForm(), overwrite }); } catch (e) { data = { error: e.message }; }
+  if (data.error) { mp.preview = { ...(mp.preview || {}), error: data.error }; mp.saved = ""; drawOut(); return; }
+  mp.exists = !!data.exists;
+  mp.saved = data.saved ? mp.savePath : "";
+  if (data.saved) {
+    await fetchFollow();
+    if (mp.follow && !mp.follow.error) {
+      const base = baseName(mp.savePath);
+      const added = pushStep({ id: String(Date.now()), workflow: "report", title: "Make a report with " + base, note: "needs " + base + ", saved by “Import several tables”",
+        values: followValues(), sh: mp.follow.sh, powershell: mp.follow.powershell, argv: mp.follow.argv }, true);
+      mp.stepAdded = added;
+    }
+    announce("Saved " + mp.savePath);
+  }
+  drawOut();
+}
+
+function reportWithMapping() {
+  const report = state.workflows.find((w) => w.id === "report");
+  const values = {};
+  for (const f of report.fields) if (f.default) values[f.name] = f.default;
+  state.values.report = { ...values, ...followValues() };
+  choose("report");
+}
+
+function drawOut() {
+  const box = $("mp-out"); if (!box) return;
+  const p = mp.preview;
+  const pathInput = h("input", { type: "text", id: "mp-save", spellcheck: "false", onchange: (e) => { mp.savePath = e.target.value.trim(); mp.saved = ""; mp.exists = false; fetchFollow(); } });
+  pathInput.value = mp.savePath;
+  const ready = p && p.mapping && !p.error;
+  const status = !p ? h("p", { class: "hint" }, "Choose a workbook and say what each table holds. A preview of the import appears here.")
+    : p.error ? h("div", { class: p.mapping ? "banner fail" : "banner soft", role: "status" }, h("strong", {}, p.mapping ? "This mapping does not import yet." : "Not ready yet."), h("span", { class: p.mapping ? "cli-error" : "" }, p.error))
+    : h("div", { class: "banner ok", role: "status" }, h("strong", {}, p.total + " row" + (p.total === 1 ? "" : "s") + " would be imported."),
+        h("table", { class: "grid", style: "margin-top:8px;background:var(--surface)" }, h("thead", {}, h("tr", {}, h("th", {}, "Table"), h("th", {}, "Rows"))),
+          h("tbody", {}, p.sources.map((s) => h("tr", {}, h("td", {}, s.name), h("td", {}, s.rows == null ? "fills in existing rows" : String(s.rows)))))),
+        h("div", { style: "margin-top:6px" }, "Record types: " + Object.entries(p.types).map(([k, v]) => k + " " + v).join(", ")));
+  const warnings = p && p.warnings && p.warnings.length ? h("div", { class: "banner warn" }, h("strong", {}, "Worth a look"), p.warnings.map((x) => h("div", {}, x))) : null;
+  const json = p && p.mapping ? JSON.stringify(p.mapping, null, 2) : "";
+  const f = mp.follow;
+  const confirm = mp.exists ? h("div", { class: "banner warn", role: "alert" }, h("strong", {}, baseName(mp.savePath) + " already exists."), "Replacing it throws away what is in it now.",
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: () => saveMapping(true) }, "Replace it"), h("button", { type: "button", onclick: () => { mp.exists = false; drawOut(); $("mp-save").focus(); } }, "Choose another name"))) : null;
+  const saved = mp.saved ? h("div", { class: "banner ok", role: "status" }, h("strong", {}, "Saved " + mp.saved + "."),
+    mp.stepAdded ? "The report command below was added to your workflow, with a note that it needs " + baseName(mp.saved) + "." : "",
+    h("div", { class: "actions" }, h("button", { class: "primary", type: "button", onclick: reportWithMapping }, "Make a report with this mapping"))) : null;
+  fill(box,
+    h("h2", {}, "The mapping"), status, warnings,
+    json ? h("div", {}, h("div", { class: "commandbar" }, h("strong", {}, "mapping.json"), h("button", { class: "small", type: "button", onclick: (e) => copyText(json, e.target) }, "Copy JSON")),
+      h("pre", { class: "json", tabindex: "0", "aria-label": "Mapping JSON" }, json)) : null,
+    h("div", { class: "field", style: "margin-top:14px" }, h("label", { for: "mp-save" }, "Save the mapping as"),
+      h("div", { class: "pathrow" }, pathInput, h("button", { type: "button", onclick: () => pickPath({ kind: "save", label: "mapping", extensions: [".json"], default: "mapping.json" }, pathInput, (v) => { mp.savePath = v; mp.saved = ""; mp.exists = false; fetchFollow(); }) }, "Choose location…")),
+      h("p", { class: "help" }, "Saving never replaces an existing file without asking.")),
+    confirm, saved,
+    h("div", { class: "actions" }, h("button", { class: "primary", id: "mp-savebtn", type: "button", disabled: !ready, onclick: () => saveMapping(false) }, "Save mapping")),
+    h("h2", { style: "margin-top:18px" }, "Then make the report"),
+    h("div", { class: "commandbar" }, shellTabs(drawOut), f && !f.error ? h("button", { class: "small", type: "button", onclick: (e) => copyText(f[state.shell], e.target) }, "Copy command") : null),
+    f && !f.error ? h("pre", { class: "command", tabindex: "0", "aria-label": "Command for " + shellName() }, f[state.shell]) : h("p", { class: "hint" }, f && f.error ? f.error : "Choose a workbook to see the command."),
+    h("p", { class: "note" }, "Run this after the mapping is saved. It needs " + baseName(mp.savePath || "mapping.json") + " in the same folder."));
+  renderPanel();
+}
+"""
