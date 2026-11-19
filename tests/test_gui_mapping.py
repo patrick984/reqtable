@@ -12,8 +12,9 @@ from reqtable.gui_mapping import (
     FIELD_CHOICES, ROLES, HeadingRows, build_mapping, form_from_mapping, load_mapping, preview_mapping, role_named, save_mapping,
     suggest_columns,
 )
-from reqtable.xlsx import Workbook
+from reqtable.xlsx import Workbook, XlsxSelection, import_workbook
 from test_xlsx_import import GRID, HEADERS, SOURCES, write_workbook
+from test_xlsx_merge import merge_workbook
 from test_xlsx_mapping import lookup_workbook, report_data, run_cli
 
 README = Path(__file__).resolve().parent.parent / "README.md"
@@ -173,6 +174,19 @@ class MergeRoleTests(unittest.TestCase):
         self.assertEqual(targets(["Test ID", "Title", "Verifies"]), {"Test ID": "Verified by", "Title": "", "Verifies": "ID"})
         self.assertEqual(targets(["Req ID", "Stage"]), {"Req ID": "ID", "Stage": "Verification Level"})
         self.assertEqual(targets(["ID", "Stage"])["ID"], "ID")
+
+    def test_a_merge_prefill_leaves_out_columns_that_match_nothing(self) -> None:
+        found = suggest_columns(role_named("merge"), ["Test ID", "Title", "Verifies"])["columns"]
+        self.assertEqual({c["header"]: c["action"] for c in found}, {"Test ID": "map", "Title": "exclude", "Verifies": "map"})
+        with tempfile.TemporaryDirectory() as directory:
+            book = merge_workbook(Path(directory) / "merge.xlsx")
+            form = {"sources": [
+                source("table", "Reqs", "requirements", [("Req ID", "map", "ID", ""), ("Text", "map", "Requirement", "")]),
+                {"kind": "table", "name": "Tests", "role": "merge", "columns": found},
+            ]}
+            mapping = build_mapping(form)
+            imported = import_workbook(book, XlsxSelection(), mapping["xlsx"]["sources"], "ID", True, False)  # type: ignore[index]
+        self.assertEqual(imported.block.rows[0], ["ID", "Requirement", "Verified by"])
 
     def test_a_merge_source_emits_merge_and_a_list_of_ids(self) -> None:
         form = {"sources": [

@@ -177,7 +177,8 @@ def mapping_json() -> dict[str, Any]:
 
 
 def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
-    """Prefill: each header goes to the role target it is named after, else it is kept as it is."""
+    """Prefill: each header goes to the role target it is named after. Any other header is kept as it is, except in a
+    merge source, where a kept column would be added to every requirement."""
     guessed_id = guess_id_column(headers)
     taken: set[str] = set()
     columns = []
@@ -195,7 +196,7 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
                 target = candidate
                 break
         if target is None:
-            columns.append({"header": header, "action": KEEP, "to": "", "separator": ""})
+            columns.append({"header": header, "action": EXCLUDE if role.merge else KEEP, "to": "", "separator": ""})
             continue
         taken.add(target.column)
         columns.append({
@@ -204,7 +205,7 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
     if role.merge and ID_COLUMN not in taken and guessed_id:
         # A merge key is the requirement a row points to; a header that only looks like an ID is the fallback.
         fallback = next(c for c in columns if c["header"] == guessed_id)
-        if fallback["action"] == KEEP:
+        if fallback["action"] != MAP:
             fallback.update(action=MAP, to=ID_COLUMN, separator=LIST_SEPARATOR)
             taken.add(ID_COLUMN)
     has_id = ID_COLUMN in taken
