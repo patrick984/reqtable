@@ -149,10 +149,10 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 const TOKEN = __TOKEN__;
 const $ = (id) => document.getElementById(id);
 const freshLookups = () => ({
-  columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", tablesError: "", tablesLoaded: false, configMaps: false,
+  columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", idNote: "", tablesError: "", tablesLoaded: false, configMaps: false,
   gates: [], gatesError: "", store: "", baselines: [], baselinesError: "", systems: [],
 });
-const state = { workflows: [], mapping: null, workdir: "", current: null, values: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
+const state = { workflows: [], mapping: null, workdir: "", current: null, values: {}, autoId: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -414,7 +414,7 @@ function renderColumns() {
       continue;
     }
     textOrSelect(row, row.field.name, L.columns.map((c) => [c, c]), "Type the column name, for example ID", "Choose a column…");
-    row.note.textContent = L.columnsError || (t.kind === "single" ? "Reading table “" + t.table + "”, the only table in this workbook." : "");
+    row.note.textContent = L.columnsError || [L.idNote, t.kind === "single" ? "Reading table “" + t.table + "”, the only table in this workbook." : ""].filter(Boolean).join(" ");
     renderPreviewTable(row);
   }
 }
@@ -466,8 +466,18 @@ async function lookupColumns() {
     if (id !== state.current || seq !== columnsSeq) return;
     L.columns = data.columns; L.rowCount = data.row_count; L.previewRows = data.rows;
     L.columnsError = data.error ? "Could not list the columns yet: " + data.error : "";
+    L.idNote = "";
     const idField = w.fields.find((f) => f.kind === "column");
-    if (idField && !values[idField.name] && data.id_guess) { values[idField.name] = data.id_guess; refreshPreview(); lookupGateData(); }
+    if (idField && data.columns.length) {
+      const current = values[idField.name] || "";
+      const guessed = !current || state.autoId[id] === current;
+      if (guessed || !data.columns.includes(current)) {
+        const next = data.id_guess || "";
+        if (!guessed) L.idNote = "“" + current + "” is not a column of this table, so the ID column was " + (next ? "set to “" + next + "”." : "cleared.");
+        values[idField.name] = next; state.autoId[id] = next;
+        if (next !== current) { refreshPreview(); lookupGateData(); }
+      }
+    }
   } catch (e) { if (seq !== columnsSeq) return; L.columns = []; L.columnsError = e.message; }
   renderColumns();
 }
