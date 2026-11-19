@@ -163,6 +163,16 @@ class BuildMappingTests(unittest.TestCase):
 
 
 class MergeRoleTests(unittest.TestCase):
+    def test_prefill_keys_on_the_requirement_a_row_points_to(self) -> None:
+        def targets(headers: list[str]) -> dict[str, str]:
+            return {c["header"]: c["to"] for c in suggest_columns(role_named("merge"), headers)["columns"]}
+
+        self.assertEqual(targets(["Requirement", "Level", "Test"]),
+                         {"Requirement": "ID", "Level": "Verification Level", "Test": "Verified by"})
+        self.assertEqual(targets(["Test ID", "Title", "Verifies"]), {"Test ID": "Verified by", "Title": "", "Verifies": "ID"})
+        self.assertEqual(targets(["Req ID", "Stage"]), {"Req ID": "ID", "Stage": "Verification Level"})
+        self.assertEqual(targets(["ID", "Stage"])["ID"], "ID")
+
     def test_a_merge_source_emits_merge_and_a_list_of_ids(self) -> None:
         form = {"sources": [
             source("table", "TestCases", "tests", [("Test ID", "map", "ID", ""), ("Title", "map", "Name", "")]),

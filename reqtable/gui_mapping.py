@@ -140,8 +140,11 @@ ROLES += (
         "matrix sheet, or add a tests table a second time here to link its tests to the requirements they verify.",
         None,
         (
-            Target(ID_COLUMN, "Requirement ID (which requirement this row is about)", True, ("id", "requirement id", "verifies")),
-            LEVEL, METHOD, Target("Verified by", "Tests that verify it", True, ("tests",)), Target("Priority", "Priority"),
+            Target(
+                ID_COLUMN, "Requirement ID (which requirement this row is about)", True,
+                ("requirement", "requirements", "requirement id", "req", "req id", "verifies"),
+            ),
+            LEVEL, METHOD, Target("Verified by", "Tests that verify it", True, ("test", "tests", "test id")), Target("Priority", "Priority"),
             Target("Rationale", "Rationale"),
         ),
         merge=True,
@@ -181,7 +184,7 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
         for candidate in role.targets:
             if candidate.column in taken:
                 continue
-            if candidate.column == ID_COLUMN:
+            if candidate.column == ID_COLUMN and not role.merge:
                 hit = header == guessed_id and bool(guessed_id)
             else:
                 hit = name in {candidate.column.casefold(), candidate.label.casefold(), *candidate.hints}
@@ -195,6 +198,12 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
         columns.append({
             "header": header, "action": MAP, "to": target.column, "separator": LIST_SEPARATOR if target.list_separator else "",
         })
+    if role.merge and ID_COLUMN not in taken and guessed_id:
+        # A merge key is the requirement a row points to; a header that only looks like an ID is the fallback.
+        fallback = next(c for c in columns if c["header"] == guessed_id)
+        if fallback["action"] == KEEP:
+            fallback.update(action=MAP, to=ID_COLUMN, separator=LIST_SEPARATOR)
+            taken.add(ID_COLUMN)
     has_id = ID_COLUMN in taken
     return {"columns": columns, "id_prefix": "" if has_id or role.merge else role.id_prefix}
 
