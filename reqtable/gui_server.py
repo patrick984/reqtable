@@ -1,7 +1,6 @@
 """Local web server for the GUI: a thin, token-guarded shell over reqtable.gui."""
 from __future__ import annotations
 
-import csv
 import hmac
 import json
 import os
@@ -16,13 +15,12 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
-from .core import ReqtableError, load_config
+from . import gui_lookups
 from .gui import (
-    WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, build_argv, column_source, is_workbook_path, launcher, posix_command,
-    powershell_command, script, workflow_named,
+    WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, blocked_checks, build_argv, column_source, launcher, lookup_source,
+    posix_command, powershell_command, script, workflow_named,
 )
 from .gui_page import render_page
-from .xlsx import Workbook, XlsxSelection, read_selection
 
 TOKEN_HEADER = "X-Reqtable-Token"
 RUN_TIMEOUT_SECONDS = 300
@@ -65,11 +63,14 @@ class Session:
                 encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=RUN_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired:
-            return {"exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds", "outputs": []}
+            return {"exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds", "outputs": [], "blocked": []}
         written = [self.workdir / value for value in self.saved_values(workflow, values) if done.returncode == 0 and (self.workdir / value).is_file()]
         with self.lock:
             self.openable.update(path.resolve() for path in written if path.suffix.lower() == ".html")
-        return {"exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written]}
+        return {
+            "exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written],
+            "blocked": blocked_checks(done.stderr) if done.returncode == 1 else [],
+        }
 
     def open_report(self, path: str) -> None:
         target = Path(path).resolve()
@@ -93,7 +94,7 @@ class Session:
                 is_dir = child.is_dir()
             except OSError:
                 continue
-            if is_dir or (extensions and child.suffix.lower() in extensions):
+            if is_dir or "*" in extensions or (extensions and child.suffix.lower() in extensions):
                 entries.append({"name": child.name, "path": str(child), "dir": is_dir})
         entries.sort(key=lambda e: not e["dir"])
         parent = folder.parent
@@ -107,37 +108,6 @@ class Session:
             ],
         }
 
-    def columns(self, query: dict[str, str]) -> dict[str, Any]:
-        path = self.resolve(query.get("path", ""))
-        try:
-            if is_workbook_path(str(path)):
-                header_row = query.get("header_row", "")
-                selection = XlsxSelection(
-                    query.get("table") or None, query.get("sheet") or None, int(header_row) if header_row else None
-                )
-                return {"columns": read_selection(path, selection).rows[0]}
-            config = load_config(
-                query.get("config") or None,
-                {"csv.encoding": query.get("encoding") or None, "csv.delimiter": query.get("delimiter") or None},
-            )
-            with path.open("r", encoding=config["csv"]["encoding"], newline="") as handle:
-                return {"columns": next(csv.reader(handle, delimiter=config["csv"]["delimiter"]), [])}
-        except (ReqtableError, OSError, UnicodeError, LookupError, csv.Error, ValueError) as exc:
-            return {"columns": [], "error": str(exc)}
-
-    def tables(self, path: str) -> dict[str, Any]:
-        try:
-            with Workbook.open(self.resolve(path)) as workbook:
-                return {
-                    "tables": [{"name": t.name, "sheet": t.sheet} for t in workbook.tables],
-                    "sheets": [{"name": s.name, "state": s.state} for s in workbook.sheets],
-                }
-        except ReqtableError as exc:
-            return {"tables": [], "sheets": [], "error": str(exc)}
-
-    def resolve(self, path: str) -> Path:
-        return self.workdir / path if path else self.workdir
-
     def script(self, steps: object, shell: object) -> dict[str, Any]:
         if shell not in SCRIPT_NAMES:
             raise BadRequest("shell must be 'sh' or 'powershell'")
@@ -146,7 +116,10 @@ class Session:
         built = []
         for step in steps:
             workflow, values = parse_job(step)
-            built.append((workflow.title, build_argv(workflow, values, self.workdir)))
+            note = step.get("note", "") if isinstance(step, dict) else ""
+            if not isinstance(note, str):
+                raise BadRequest("note must be text")
+            built.append((f"{workflow.title} ({note})" if note else workflow.title, build_argv(workflow, values, self.workdir)))
         return {"script": script(built, shell, self.workdir, self.launcher.shown), "filename": SCRIPT_NAMES[shell]}
 
 
@@ -207,8 +180,11 @@ class Handler(BaseHTTPRequestHandler):
             "/api/browse": lambda: self.session.browse(
                 query.get("path", ""), tuple(e for e in query.get("ext", "").lower().split(",") if e)
             ),
-            "/api/columns": lambda: self.session.columns(query),
-            "/api/tables": lambda: self.session.tables(query.get("path", "")),
+            "/api/columns": lambda: gui_lookups.columns(self.session.workdir, query),
+            "/api/tables": lambda: gui_lookups.tables(self.session.workdir, query.get("path", "")),
+            "/api/gates": lambda: gui_lookups.gates(self.session.workdir, query),
+            "/api/baselines": lambda: gui_lookups.baselines(self.session.workdir, query),
+            "/api/systems": lambda: gui_lookups.systems(self.session.workdir, query),
         }
         self.dispatch(routes.get(url.path))
 
@@ -279,7 +255,10 @@ def workflows_json() -> list[dict[str, Any]]:
     result = []
     for workflow in WORKFLOWS:
         source = column_source(workflow)
-        result.append({**asdict(workflow), "column_source": source.name if source else ""})
+        lookup = lookup_source(workflow)
+        result.append({
+            **asdict(workflow), "column_source": source.name if source else "", "lookup_input": lookup.name if lookup else "",
+        })
     return result
 
 

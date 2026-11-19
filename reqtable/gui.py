@@ -8,11 +8,17 @@ from __future__ import annotations
 import re
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, Mapping, Sequence
 
-FieldKind = Literal["open", "save", "choice", "text", "number", "flag", "column", "table", "sheet"]
+from .signoff import DECISIONS
+
+FieldKind = Literal[
+    "open", "save", "choice", "radio", "text", "number", "flag", "column", "table", "sheet",
+    "gate", "baseline", "baselines", "role", "system", "waivers",
+]
+Panel = Literal["form", "mapping"]
 Shell = Literal["sh", "powershell"]
 
 
@@ -29,15 +35,26 @@ class Field:
     extensions: tuple[str, ...] = ()
     advanced: bool = False
     xlsx_only: bool = False
+    requires: str = ""
+    pair_flag: str | None = None
 
 
 @dataclass(frozen=True)
 class Workflow:
+    """One task card. `fixed` argv is always emitted, `outcomes` are exit codes that answer the question rather than fail,
+    `table` names the tab-separated columns of stdout, and `recorded` says what a successful run leaves behind."""
+
     id: str
     title: str
     summary: str
     when: str
     fields: tuple[Field, ...]
+    group: str = ""
+    fixed: tuple[str, ...] = ()
+    panel: Panel = "form"
+    outcomes: tuple[tuple[int, str], ...] = ()
+    table: tuple[str, ...] = ()
+    recorded: str = ""
 
 
 class GuiError(Exception):
@@ -49,8 +66,11 @@ class BadRequest(GuiError):
 
 
 TABLE_EXTENSIONS = (".csv", ".xlsx")
+ANY_FILE = ("*",)
 ON_OFF = (("", "Automatic"), ("on", "Yes"), ("off", "No"))
 YES = (("", "No"), ("on", "Yes"))
+MAKE, COMPARE, EXCEL, GATES = "Make reports", "Compare and review", "Excel workbooks", "Gates and sign-off"
+GROUPS = (MAKE, COMPARE, EXCEL, GATES)
 
 
 def _toggle(name: str, label: str, flag: str, help: str, *, both: bool = False) -> Field:
@@ -61,6 +81,10 @@ CONFIG = Field(
     "config", "Settings file", "open", "--config",
     "A JSON file of saved reqtable settings. Leave empty to use the defaults.",
     extensions=(".json",), advanced=True,
+)
+GATE_CONFIG = replace(
+    CONFIG, advanced=False,
+    help="A JSON file of saved reqtable settings. It can list your own review gates and choose where baselines are stored. Leave empty to use the defaults.",
 )
 ENCODING = Field(
     "encoding", "Text encoding", "text", "--encoding",
@@ -91,8 +115,20 @@ SHEET = Field(
 )
 HEADER_ROW = Field(
     "header_row", "Header row number", "number", "--header-row",
-    "The row of the sheet that holds the column names. Only works together with a sheet; the default is the first non-empty row.",
-    xlsx_only=True, advanced=True,
+    "The row of the sheet that holds the column names. The default is the first non-empty row.",
+    xlsx_only=True, requires="sheet",
+)
+WHICH_BLOCK = (TABLE, SHEET, HEADER_ROW, ID_COLUMN)
+DOCUMENT_MODE = Field(
+    "document_mode", "What is the report for?", "radio", "--document-mode",
+    "Review reports are for collecting comments. Develop reports let you edit the requirements themselves.",
+    choices=(("review", "Review: read it and leave comments"), ("develop", "Develop: edit the requirements")),
+    default="review",
+)
+BASELINES = Field(
+    "baselines", "Compare against baselines", "baselines", "--baselines",
+    "Embed frozen gate baselines so the report can show what changed since each one. Needs baselines to exist already.",
+    advanced=True,
 )
 
 
@@ -104,28 +140,55 @@ def _html_output(name: str, help: str) -> Field:
     return Field("output", "Save the report as", "save", "-o", help, required=True, extensions=(".html",), default=name)
 
 
+def _report_fields(*, mode: bool) -> tuple[Field, ...]:
+    return (
+        _source("input", "Spreadsheet to read", None, "A CSV or Excel (.xlsx) file."),
+        *WHICH_BLOCK,
+        _html_output("requirements-report.html", "Where the finished report goes. It is one self-contained file you can email."),
+        *((DOCUMENT_MODE,) if mode else ()),
+        TITLE, TRACEABILITY,
+        Field(
+            "reviewer_initials", "Reviewer initials", "text", "--reviewer-initials",
+            "Initials stamped on comments made in the report.", advanced=True,
+        ),
+        BASELINES, CONFIG, ENCODING, DELIMITER,
+    )
+
+
+def _table_input(help: str) -> Field:
+    return _source("input", "Requirements file", None, help)
+
+
+def _gate(flag: str, help: str) -> Field:
+    return Field("gate", "Review gate", "gate", flag, help, required=True)
+
+
+def _baseline(flag: str, help: str) -> Field:
+    return Field("baseline", "Baseline", "baseline", flag, help, required=True)
+
+
+SYSTEM = Field(
+    "system", "System", "system", "--system",
+    "Which system the gate covers. Only gates that cover one system and its subsystems ask for this.",
+)
+USER = Field(
+    "user", "Who is doing this", "text", "--user",
+    "Recorded with the entry. Leave empty to use your git user name or your login name.",
+)
+GATE_TAIL = (TRACEABILITY, ENCODING, DELIMITER)
+
 WORKFLOWS: tuple[Workflow, ...] = (
     Workflow(
         "report", "Make a report from a spreadsheet",
         "Turn a CSV or Excel file into a report you can open in any browser.",
         "Use this when you have a requirements spreadsheet and want to read, filter, review or edit it as a report.",
-        (
-            _source("input", "Spreadsheet to read", None, "A CSV or Excel (.xlsx) file."),
-            _html_output("requirements-report.html", "Where the finished report goes. It is one self-contained file you can email."),
-            ID_COLUMN,
-            Field(
-                "document_mode", "What is the report for?", "choice", "--document-mode",
-                "Review reports are for collecting comments. Develop reports let you edit the requirements themselves.",
-                choices=(("review", "Review: read it and leave comments"), ("develop", "Develop: edit the requirements")),
-                default="review",
-            ),
-            TABLE, SHEET, HEADER_ROW, TITLE, TRACEABILITY,
-            Field(
-                "reviewer_initials", "Reviewer initials", "text", "--reviewer-initials",
-                "Initials stamped on comments made in the report.", advanced=True,
-            ),
-            CONFIG, ENCODING, DELIMITER,
-        ),
+        _report_fields(mode=True), group=MAKE,
+    ),
+    Workflow(
+        "develop", "Edit requirements (Develop report)",
+        "Turn a CSV or Excel file into a Develop report, where you add, edit and delete requirements right in the browser.",
+        "Use this when you want to change the requirements themselves, not only comment on them. Save the edited table back as a CSV from the report.",
+        _report_fields(mode=False), group=MAKE, fixed=("--document-mode", "develop"),
     ),
     Workflow(
         "diff", "Compare two versions",
@@ -134,8 +197,9 @@ WORKFLOWS: tuple[Workflow, ...] = (
         (
             _source("old", "Older version", "--old", "The file to compare against."),
             _source("new", "Newer version", "--new", "The file with the latest changes."),
+            *WHICH_BLOCK,
             _html_output("requirements-diff.html", "Where the comparison report goes."),
-            ID_COLUMN,
+            DOCUMENT_MODE,
             Field(
                 "initial_diff_view", "How to show changes", "choice", "--initial-diff-view",
                 "Unified shows changes in one column. Side by side shows old and new next to each other.",
@@ -146,8 +210,9 @@ WORKFLOWS: tuple[Workflow, ...] = (
                 "include_unchanged", "Include unchanged rows", "--include-unchanged",
                 "Keep rows that did not change in the report. Automatic uses your settings.", both=True,
             ),
-            TABLE, SHEET, HEADER_ROW, TITLE, TRACEABILITY, CONFIG, ENCODING, DELIMITER,
+            TITLE, TRACEABILITY, BASELINES, CONFIG, ENCODING, DELIMITER,
         ),
+        group=COMPARE,
     ),
     Workflow(
         "comments", "Collect review comments from a reviewed report",
@@ -177,6 +242,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             ),
             CONFIG, DELIMITER,
         ),
+        group=COMPARE,
     ),
     Workflow(
         "list_tables", "See what's inside an Excel workbook",
@@ -185,6 +251,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         (
             Field("workbook", "Excel workbook", "open", "--list-tables", "The .xlsx file to look inside.", required=True, extensions=(".xlsx",)),
         ),
+        group=EXCEL,
     ),
     Workflow(
         "to_csv", "Convert an Excel table to CSV",
@@ -192,9 +259,111 @@ WORKFLOWS: tuple[Workflow, ...] = (
         "Use this when you need a plain CSV, for example to keep in version control or compare with an older version.",
         (
             Field("input", "Excel workbook", "open", None, "The .xlsx file to read.", required=True, extensions=(".xlsx",)),
+            *WHICH_BLOCK,
             Field("output", "Save the CSV as", "save", "-o", "Where the CSV file goes. The name must end in .csv.", required=True, extensions=(".csv",), default="workbook-table.csv"),
-            ID_COLUMN, TABLE, SHEET, HEADER_ROW, CONFIG, DELIMITER,
+            CONFIG, DELIMITER,
         ),
+        group=EXCEL,
+    ),
+    Workflow(
+        "mapping", "Import several tables from one workbook (requirements, glossary, tests…)",
+        "Choose which tables of a workbook are requirements, glossary terms, allowed values, tests or test plans, and save the mapping.",
+        "Use this when one workbook holds your requirements and also your glossary, lookup lists or tests on other sheets.",
+        (
+            Field("input", "Excel workbook", "open", None, "The .xlsx file that holds the tables.", required=True, extensions=(".xlsx",)),
+        ),
+        group=EXCEL, panel="mapping",
+    ),
+    Workflow(
+        "check_gate", "Check whether a gate is ready",
+        "Run a review gate's readiness checks on your requirements and see which pass.",
+        "Use this before a review such as SRR or PDR, to see what still needs fixing. It changes nothing.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file to check."), *WHICH_BLOCK, GATE_CONFIG,
+            _gate("--check-gate", "The review gate to check, such as SRR or PDR."), SYSTEM, *GATE_TAIL,
+        ),
+        group=GATES, outcomes=((1, "Not ready yet"),),
+    ),
+    Workflow(
+        "create_baseline", "Freeze a baseline at a gate",
+        "Freeze the requirements as approved at a review gate, so later reports can compare against them.",
+        "Use this when a gate review is held and you want a permanent record of exactly what was reviewed.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file to freeze."), *WHICH_BLOCK, GATE_CONFIG,
+            _gate("--create-baseline", "The review gate you are holding."), SYSTEM,
+            Field(
+                "waivers", "Waive a failing check", "waivers", "--waive",
+                "A strict gate refuses to freeze while a required check fails. Waive a check with a reason, and the waiver is recorded in the baseline.",
+                pair_flag="--reason",
+            ),
+            replace(USER, advanced=True), *GATE_TAIL,
+        ),
+        group=GATES, outcomes=((1, "Blocked by a required check"),),
+        recorded="A permanent baseline was recorded where the line above says. Freezing this gate again makes a new numbered baseline and never changes this one.",
+    ),
+    Workflow(
+        "list_baselines", "List baselines",
+        "See every baseline that was frozen for this requirements file.",
+        "Use this to find a baseline's name before you sign it off or verify it.",
+        (_table_input("The CSV or Excel (.xlsx) file whose baselines to list."), *WHICH_BLOCK, GATE_CONFIG, *GATE_TAIL),
+        group=GATES, fixed=("--list-baselines",), table=("Baseline", "Gate", "System", "Frozen", "By", "Hash"),
+    ),
+    Workflow(
+        "sign_off", "Record a sign-off",
+        "Record a reviewer's decision on a frozen baseline.",
+        "Use this when a reviewer or approver has decided on a baseline and you want it on the record.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file the baseline was frozen from."), *WHICH_BLOCK, GATE_CONFIG,
+            _baseline("--sign-off", "The baseline the decision is about."),
+            Field("role", "Role", "role", "--role", "The sign-off role the decision is made in. The roles come from the baseline's gate.", required=True),
+            Field(
+                "decision", "Decision", "choice", "--decision", "What was decided.", required=True,
+                choices=tuple((d, d) for d in DECISIONS),
+            ),
+            USER,
+            Field("note", "Note", "text", "--note", "Anything worth keeping with the decision, such as the board meeting.", advanced=True),
+            Field("evidence", "Evidence file", "open", "--evidence", "A file that backs the decision, such as a signed PDF.", extensions=ANY_FILE, advanced=True),
+            *GATE_TAIL,
+        ),
+        group=GATES,
+        recorded="Your decision was recorded where the line above says. Use Verify a baseline to see where the sign-offs stand.",
+    ),
+    Workflow(
+        "verify_baseline", "Verify a baseline",
+        "Recheck that a baseline's content is unchanged and see whether it has the sign-offs it needs.",
+        "Use this to find out whether a gate is approved, or to prove a frozen baseline was not altered.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file the baseline was frozen from."), *WHICH_BLOCK, GATE_CONFIG,
+            _baseline("--verify-baseline", "The baseline to check."), *GATE_TAIL,
+        ),
+        group=GATES, outcomes=((1, "Not approved yet, or the content changed"),),
+    ),
+    Workflow(
+        "gate_package", "Make a gate review package",
+        "Write the report reviewers receive for a baseline, with a cover for recording their decisions.",
+        "Use this when you want reviewers to read a frozen baseline and record their decisions in one file.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file the baseline was frozen from."), *WHICH_BLOCK, GATE_CONFIG,
+            _baseline("--gate-package", "The baseline reviewers will look at."),
+            Field("output", "Save the package as", "save", "-o", "Where the package goes. It is one self-contained file you can email.", required=True, extensions=(".html",), default="gate-package.html"),
+            *GATE_TAIL,
+        ),
+        group=GATES,
+    ),
+    Workflow(
+        "import_decisions", "Import decisions from a returned package",
+        "Record the decisions reviewers saved in their copy of a gate package as sign-offs.",
+        "Use this when reviewers have sent back their saved copies of a gate package.",
+        (
+            _table_input("The CSV or Excel (.xlsx) file the package was made from."), *WHICH_BLOCK, GATE_CONFIG,
+            Field(
+                "package", "Returned package", "open", "--import-decisions",
+                "The package file a reviewer saved, with their decision in it.", required=True, extensions=(".html",),
+            ),
+            *GATE_TAIL,
+        ),
+        group=GATES,
+        recorded="Each decision in the package was recorded as a sign-off, as the lines above say.",
     ),
 )
 
@@ -229,29 +398,80 @@ def _shown_path(value: str, workdir: Path | None) -> str:
     return value
 
 
+def lookup_source(workflow: Workflow) -> Field | None:
+    """The field whose file the gate, baseline and system lists are read from: the table being worked on."""
+    return next((f for f in workflow.fields if f.name in ("input", "new") and f.kind == "open"), None)
+
+
+def guess_id_column(columns: Sequence[str]) -> str:
+    """The header that most likely holds each record's ID, or an empty string when none looks like one."""
+    names = [c for c in columns if c.strip()]
+    exact = next((c for c in names if c.strip().casefold() == "id"), None)
+    if exact is not None:
+        return exact
+    return next((c for c in names if c.strip().casefold().endswith((" id", "_id")) or c.strip().endswith("Id")), "")
+
+
+def blocked_checks(stderr: str) -> list[str]:
+    """The check IDs a blocked --create-baseline suggests waiving, in the order the CLI names them."""
+    found = re.search(r"--waive (\S+) --reason", stderr)
+    return [part for part in found.group(1).split(",") if part] if found else []
+
+
+def _waiver_args(field: Field, rows: object) -> list[str]:
+    if rows in (None, "", []):
+        return []
+    if not isinstance(rows, list) or not all(isinstance(row, Mapping) for row in rows):
+        raise BadRequest(f"{field.name!r} must be a list of {{check, reason}} rows")
+    assert field.flag is not None and field.pair_flag is not None
+    argv: list[str] = []
+    for row in rows:
+        check, reason = (str(row.get(key) or "").strip() for key in ("check", "reason"))
+        if not check and not reason:
+            continue
+        if not check or not reason:
+            raise GuiError("Each waiver needs both the check and the reason")
+        if "," in check or check.startswith("-"):
+            raise GuiError(f"{check!r} is not a check ID")
+        argv += [field.flag, check, f"{field.pair_flag}={reason}" if reason.startswith("-") else field.pair_flag]
+        if not reason.startswith("-"):
+            argv.append(reason)
+    return argv
+
+
 def build_argv(workflow: Workflow, values: Mapping[str, object], workdir: Path | None = None) -> list[str]:
     """Registry-order command line (positional first) for the submitted form values.
 
     Only checks the form is complete and well formed; the CLI itself validates what the values mean.
     """
+    if workflow.panel != "form":
+        raise BadRequest(f"{workflow.id!r} builds a mapping file, not a command")
     known = {f.name for f in workflow.fields}
     unknown = sorted(set(values) - known)
     if unknown:
         raise BadRequest(f"unknown field {unknown[0]!r} for workflow {workflow.id!r}")
-    given = {name: ("" if value is None else str(value)).strip() for name, value in values.items()}
-    has_workbook = any(is_workbook_path(given.get(f.name, "")) for f in workflow.fields if f.kind == "open")
+    waivers = {f.name for f in workflow.fields if f.kind == "waivers"}
+    given = {
+        name: value if name in waivers else ("" if value is None else str(value)).strip() for name, value in values.items()
+    }
+    has_workbook = any(is_workbook_path(str(given.get(f.name, ""))) for f in workflow.fields if f.kind == "open")
     ordered = sorted(workflow.fields, key=lambda f: f.flag is not None)
     argv: list[str] = []
     missing: list[str] = []
     for field in ordered:
-        value = given.get(field.name, "")
+        if field.kind == "waivers":
+            argv += _waiver_args(field, given.get(field.name))
+            continue
+        value = str(given.get(field.name, ""))
         if field.xlsx_only and not has_workbook:
+            continue
+        if field.requires and not given.get(field.requires):
             continue
         if not value:
             if field.required:
                 missing.append(field.label)
             continue
-        if field.kind in ("choice", "flag") and value not in dict(field.choices):
+        if field.kind in ("choice", "radio", "flag") and value not in dict(field.choices):
             raise BadRequest(f"{value!r} is not a choice for {field.name!r}")
         if field.kind in ("open", "save"):
             if value.startswith("-"):
@@ -268,7 +488,7 @@ def build_argv(workflow: Workflow, values: Mapping[str, object], workdir: Path |
             argv += [field.flag, value]
     if missing:
         raise GuiError("Please fill in: " + ", ".join(missing))
-    return argv
+    return [*argv, *workflow.fixed]
 
 
 PS_BARE = re.compile(r"[A-Za-z0-9_./\\:=+-]+")

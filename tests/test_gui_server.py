@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import shutil
 import unittest
 import urllib.request
 from pathlib import Path
@@ -15,6 +16,7 @@ from urllib.parse import quote, urlsplit
 
 from reqtable.gui_server import TOKEN_HEADER, make_server
 from test_xlsx_import import write_workbook
+from test_xlsx_mapping import FIXTURE
 
 
 class ServerTestCase(unittest.TestCase):
@@ -61,7 +63,7 @@ class RunTests(ServerTestCase):
         job = {"workflow": "report", "values": self.VALUES}
         status, preview = self.post("/api/command", job)
         self.assertEqual(status, 200)
-        self.assertEqual(preview["argv"], ["reqs.csv", "-o", "out.html", "--id-column", "ID"])
+        self.assertEqual(preview["argv"], ["reqs.csv", "--id-column", "ID", "-o", "out.html"])
         self.assertIn("python3 ", str(preview["sh"]))
         self.assertTrue(str(preview["powershell"]).startswith("python "))
         status, result = self.post("/api/run", job)
@@ -102,7 +104,7 @@ class RunTests(ServerTestCase):
         status, result = self.post("/api/script", {"steps": steps, "shell": "powershell"})
         self.assertEqual(status, 200)
         self.assertEqual(result["filename"], "reqtable-workflow.ps1")
-        self.assertIn("python -m reqtable reqs.csv -o out.html --id-column ID", str(result["script"]))
+        self.assertIn("python -m reqtable reqs.csv --id-column ID -o out.html", str(result["script"]))
         self.assertIn("--list-tables book.xlsx", str(result["script"]))
         self.assertEqual(self.post("/api/script", {"steps": steps, "shell": "cmd"})[0], 400)
 
@@ -112,7 +114,8 @@ class LookupTests(ServerTestCase):
         status, result = self.call("GET", "/api/workflows")
         self.assertEqual(status, 200)
         ids = [w["id"] for w in result["workflows"]]  # type: ignore[index]
-        self.assertEqual(ids, ["report", "diff", "comments", "list_tables", "to_csv"])
+        self.assertEqual([w["id"] for w in result["workflows"] if w["group"] == "Excel workbooks"], ["list_tables", "to_csv", "mapping"])  # type: ignore[index]
+        self.assertEqual(ids[:2], ["report", "develop"])
         self.assertEqual(result["workdir"], str(self.root))
 
     def test_browse_lists_folders_first_and_filters_files_by_extension(self) -> None:
@@ -128,17 +131,31 @@ class LookupTests(ServerTestCase):
         self.assertEqual([e["name"] for e in result["entries"]], ["sub"])  # type: ignore[index]
         self.assertIn("error", self.call("GET", f"/api/browse?path={quote(str(self.root / 'reqs.csv'))}")[1])
 
-    def test_columns_of_a_csv_honour_the_delimiter(self) -> None:
+    def test_columns_of_a_csv_honour_the_delimiter_and_preview_the_rows(self) -> None:
         (self.root / "semi.csv").write_text("ID;Text\nR1;x\n", encoding="utf-8")
-        self.assertEqual(self.call("GET", "/api/columns?path=reqs.csv")[1], {"columns": ["ID", "Text"]})
-        self.assertEqual(self.call("GET", "/api/columns?path=semi.csv&delimiter=%3B")[1], {"columns": ["ID", "Text"]})
+        found = self.call("GET", "/api/columns?path=reqs.csv")[1]
+        self.assertEqual(found, {"columns": ["ID", "Text"], "row_count": 2, "rows": [["R1", "Hello"], ["R2", "World"]], "id_guess": "ID"})
+        self.assertEqual(self.call("GET", "/api/columns?path=semi.csv&delimiter=%3B")[1]["columns"], ["ID", "Text"])
+
+    def test_the_preview_shows_three_rows_and_counts_the_rest(self) -> None:
+        body = "".join(f"R{i},Row {i}\n" for i in range(1, 8)) + ",\n"
+        (self.root / "long.csv").write_text("Req ID,Text\n" + body, encoding="utf-8")
+        found = self.call("GET", "/api/columns?path=long.csv")[1]
+        self.assertEqual((found["row_count"], len(found["rows"]), found["id_guess"]), (7, 3, "Req ID"))  # type: ignore[arg-type]
 
     def test_columns_of_a_workbook_follow_the_chosen_sheet(self) -> None:
         status, result = self.call("GET", "/api/columns?path=book.xlsx&sheet=Reqs")
         self.assertEqual(result["columns"], ["Req ID", "Req Type", "Requirement", "Owner", "Category"])
+        self.assertEqual((result["id_guess"], result["row_count"], len(result["rows"])), ("Req ID", 7, 3))  # type: ignore[arg-type]
         status, result = self.call("GET", "/api/columns?path=book.xlsx")
         self.assertEqual(result["columns"], [])
         self.assertIn("--table", str(result["error"]))
+
+    def test_columns_of_a_multi_table_workbook_need_a_table_and_then_preview_it(self) -> None:
+        shutil.copy(FIXTURE, self.root / "sample.xlsx")
+        self.assertIn("error", self.call("GET", "/api/columns?path=sample.xlsx")[1])
+        found = self.call("GET", "/api/columns?path=sample.xlsx&table=Requirements")[1]
+        self.assertEqual((found["columns"][:2], found["id_guess"], found["row_count"]), (["ID", "Requirement"], "ID", 4))  # type: ignore[index]
 
     def test_tables_lists_sheets_and_tables(self) -> None:
         status, result = self.call("GET", "/api/tables?path=book.xlsx")
@@ -151,6 +168,130 @@ class LookupTests(ServerTestCase):
         status, result = self.call("GET", f"/?token={self.token}")
         self.assertEqual(status, 200)
         self.assertIn(self.token, str(result["text"]))
+
+
+TRACE_CSV = (
+    "ID,Type,Name,Requirement,Part of,Priority,Verification Method,Verification Level\n"
+    "SYS-A,System,Reqtable,,,,,\n"
+    "SYS-B,System,Exporter,,SYS-A,,,\n"
+    "REQ-1,Requirement,,Shall export CSV.,,Must,Test,\n"
+)
+GATE = {
+    "id": "G1", "name": "Gate one", "scope": "table", "includes": ["Requirement", "System"], "captures_status": False,
+    "checks": [{"id": "g1-level", "description": "Every requirement has a verification level", "filled": "Verification Level"}],
+    "signoff": [{"role": "Approver", "min": 1}],
+}
+
+
+def files_config(*, enforcement: str = "advisory") -> dict[str, object]:
+    return {"id_column": "ID", "traceability": True, "gates": [GATE], "baselines": {"store": "files", "enforcement": enforcement}}
+
+
+class GateTests(ServerTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        (self.root / "trace.csv").write_text(TRACE_CSV, encoding="utf-8")
+        (self.root / "files.json").write_text(json.dumps(files_config()), encoding="utf-8")
+        (self.root / "strict.json").write_text(json.dumps(files_config(enforcement="strict")), encoding="utf-8")
+
+    def values(self, **extra: object) -> dict[str, object]:
+        return {"input": "trace.csv", "config": "files.json", **extra}
+
+    def run_job(self, workflow: str, **values: object) -> dict[str, object]:
+        status, result = self.post("/api/run", {"workflow": workflow, "values": self.values(**values)})
+        self.assertEqual(status, 200, result)
+        return result
+
+    def test_gates_come_from_the_settings_file_with_roles_and_checks(self) -> None:
+        found = self.call("GET", "/api/gates?config=files.json")[1]
+        self.assertEqual(
+            found["gates"],
+            [{
+                "id": "G1", "name": "Gate one", "scope": "table", "roles": [{"role": "Approver", "min": 1}],
+                "checks": [{"id": "g1-level", "description": "Every requirement has a verification level", "enforcement": "advisory"}],
+            }],
+        )
+        strict = self.call("GET", "/api/gates?config=strict.json")[1]
+        self.assertEqual(strict["gates"][0]["checks"][0]["enforcement"], "strict")  # type: ignore[index]
+        default = self.call("GET", "/api/gates")[1]
+        self.assertEqual([g["id"] for g in default["gates"][:2]], ["SRR", "SFR"])  # type: ignore[index]
+        self.assertIn("error", self.call("GET", "/api/gates?config=missing.json")[1])
+
+    def test_systems_come_from_the_table(self) -> None:
+        found = self.call("GET", "/api/systems?path=trace.csv&config=files.json")[1]
+        self.assertEqual(found["systems"], [{"id": "SYS-A", "name": "Reqtable"}, {"id": "SYS-B", "name": "Exporter"}])
+        self.assertEqual(self.call("GET", "/api/systems?path=")[1], {"systems": []})
+        self.assertIn("error", self.call("GET", "/api/systems?path=trace.csv")[1])
+
+    def test_baselines_are_listed_after_one_is_frozen(self) -> None:
+        self.assertEqual(self.call("GET", "/api/baselines?path=trace.csv&config=files.json")[1]["baselines"], [])
+        created = self.run_job("create_baseline", gate="G1")
+        self.assertEqual(created["exit_code"], 0, created)
+        self.assertIn("Created baseline G1", str(created["stdout"]))
+        found = self.call("GET", "/api/baselines?path=trace.csv&config=files.json")[1]
+        self.assertEqual([(b["name"], b["gate"], b["system"]) for b in found["baselines"]], [("G1", "G1", "")])  # type: ignore[index]
+        self.assertTrue(found["baselines"][0]["created_by"])  # type: ignore[index]
+        listed = self.run_job("list_baselines")
+        self.assertTrue(str(listed["stdout"]).startswith("G1\tG1\t-\t"), listed)
+
+    def test_the_git_store_explains_itself_outside_a_repository(self) -> None:
+        found = self.call("GET", "/api/baselines?path=trace.csv")[1]
+        self.assertEqual(found["baselines"], [])
+        self.assertIn("git", str(found["error"]))
+
+    def test_check_gate_not_ready_is_exit_1_with_the_check_lines(self) -> None:
+        result = self.run_job("check_gate", gate="G1")
+        self.assertEqual(result["exit_code"], 1)
+        self.assertIn("g1-level", str(result["stdout"]))
+
+    def test_freeze_sign_off_and_verify_loop(self) -> None:
+        self.assertEqual(self.run_job("create_baseline", gate="G1")["exit_code"], 0)
+        not_yet = self.run_job("verify_baseline", baseline="G1")
+        self.assertEqual(not_yet["exit_code"], 1)
+        self.assertIn("Approver", str(not_yet["stdout"]))
+        signed = self.run_job("sign_off", baseline="G1", role="Approver", decision="Approved", user="Casey", note="Board")
+        self.assertEqual(signed["exit_code"], 0, signed)
+        self.assertIn("Recorded Approved by Casey as Approver for G1", str(signed["stdout"]))
+        done = self.run_job("verify_baseline", baseline="G1")
+        self.assertEqual(done["exit_code"], 0, done)
+        package = self.run_job("gate_package", baseline="G1", output="package.html")
+        self.assertEqual(package["exit_code"], 0, package)
+        self.assertEqual(package["outputs"], [str(self.root / "package.html")])
+
+    def test_a_blocked_freeze_names_the_checks_to_waive_and_a_waiver_unblocks_it(self) -> None:
+        blocked = self.run_job("create_baseline", config="strict.json", gate="G1")
+        self.assertEqual((blocked["exit_code"], blocked["blocked"]), (1, ["g1-level"]))
+        self.assertEqual(self.call("GET", "/api/baselines?path=trace.csv&config=strict.json")[1]["baselines"], [])
+        waived = self.run_job(
+            "create_baseline", config="strict.json", gate="G1", waivers=[{"check": "g1-level", "reason": "Levels arrive at PDR"}]
+        )
+        self.assertEqual(waived["exit_code"], 0, waived)
+        self.assertIn("Waived g1-level", str(waived["stdout"]))
+
+    def test_a_run_that_fails_for_another_reason_offers_no_waivers(self) -> None:
+        result = self.run_job("create_baseline", gate="NOPE")
+        self.assertEqual((result["exit_code"], result["blocked"]), (2, []))
+
+    def test_import_decisions_runs_through_the_same_command(self) -> None:
+        self.run_job("create_baseline", gate="G1")
+        self.run_job("gate_package", baseline="G1", output="package.html")
+        result = self.run_job("import_decisions", package="package.html")
+        self.assertEqual(result["exit_code"], 0, result)
+
+    @unittest.skipUnless(shutil.which("git"), "needs git")
+    def test_a_baseline_in_a_git_repository(self) -> None:
+        def git(*args: str) -> None:
+            subprocess.run(["git", "-C", str(self.root), "-c", "user.name=T", "-c", "user.email=t@example.com", *args], check=True, capture_output=True)
+
+        git("init", "-q")
+        git("add", "trace.csv", "files.json")
+        git("commit", "-q", "-m", "data")
+        (self.root / "git.json").write_text(json.dumps({**files_config(), "baselines": {"store": "git"}}), encoding="utf-8")
+        values = {"config": "git.json", "gate": "G1"}
+        created = self.run_job("create_baseline", **values)
+        self.assertEqual(created["exit_code"], 0, created)
+        found = self.call("GET", "/api/baselines?path=trace.csv&config=git.json")[1]
+        self.assertEqual([b["name"] for b in found["baselines"]], ["G1"])  # type: ignore[index]
 
 
 class SecurityTests(ServerTestCase):
