@@ -236,7 +236,7 @@ function renderIntro() {
 function isWorkbook(v) { return /\.xlsx$/i.test(v || ""); }
 function workbookPath() {
   const values = state.values[state.current];
-  for (const f of workflow().fields) if (f.kind === "open" && isWorkbook(values[f.name])) return values[f.name];
+  for (const name of workflow().table_inputs) if (isWorkbook(values[name])) return values[name];
   return "";
 }
 

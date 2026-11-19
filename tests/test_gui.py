@@ -87,6 +87,15 @@ class BuildArgvTests(unittest.TestCase):
         argv = build_argv(workflow_named("report"), {**REPORT, "table": "Requirements", "header_row": "2"})
         self.assertEqual(argv, ["reqs.csv", "--id-column", "ID", "-o", "reqs.html"])
 
+    def test_an_excel_evidence_file_does_not_make_the_input_a_workbook(self) -> None:
+        argv = build_argv(workflow_named("sign_off"), {
+            "input": "reqs.csv", "baseline": "srr-1", "role": "Chief engineer", "decision": DECISIONS[0],
+            "evidence": "approval.xlsx", "table": "Stray", "sheet": "Old", "header_row": "3",
+        })
+        self.assertNotIn("--table", argv)
+        self.assertNotIn("--sheet", argv)
+        self.assertIn("approval.xlsx", argv)
+
     def test_paths_inside_the_working_folder_are_relative(self) -> None:
         argv = build_argv(
             workflow_named("report"),

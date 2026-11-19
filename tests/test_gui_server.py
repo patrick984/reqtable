@@ -117,6 +117,8 @@ class LookupTests(ServerTestCase):
         self.assertEqual([w["id"] for w in result["workflows"] if w["group"] == "Excel workbooks"], ["list_tables", "to_csv", "mapping"])  # type: ignore[index]
         self.assertEqual(ids[:2], ["report", "develop"])
         self.assertEqual(result["workdir"], str(self.root))
+        sign_off = next(w for w in result["workflows"] if w["id"] == "sign_off")  # type: ignore[union-attr]
+        self.assertEqual(sign_off["table_inputs"], ["input"])
 
     def test_browse_lists_folders_first_and_filters_files_by_extension(self) -> None:
         (self.root / "sub").mkdir()

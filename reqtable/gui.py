@@ -385,6 +385,11 @@ def column_source(workflow: Workflow) -> Field | None:
     )
 
 
+def table_inputs(workflow: Workflow) -> list[Field]:
+    """The open fields that take a table. Only these decide whether the Excel fields apply; an evidence file does not."""
+    return [f for f in workflow.fields if f.kind == "open" and ".xlsx" in f.extensions]
+
+
 def is_workbook_path(path: str) -> bool:
     return path.lower().endswith(".xlsx")
 
@@ -455,7 +460,7 @@ def build_argv(workflow: Workflow, values: Mapping[str, object], workdir: Path |
     given = {
         name: value if name in waivers else ("" if value is None else str(value)).strip() for name, value in values.items()
     }
-    has_workbook = any(is_workbook_path(str(given.get(f.name, ""))) for f in workflow.fields if f.kind == "open")
+    has_workbook = any(is_workbook_path(str(given.get(f.name, ""))) for f in table_inputs(workflow))
     ordered = sorted(workflow.fields, key=lambda f: f.flag is not None)
     argv: list[str] = []
     missing: list[str] = []

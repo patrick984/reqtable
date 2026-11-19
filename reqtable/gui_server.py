@@ -19,7 +19,7 @@ from . import gui_lookups
 from .gui_mapping import build_mapping, load_mapping, mapping_json, preview_mapping, role_named, save_mapping, suggest_columns
 from .gui import (
     WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, blocked_checks, build_argv, column_source, launcher, lookup_source,
-    posix_command, powershell_command, script, workflow_named,
+    posix_command, powershell_command, script, table_inputs, workflow_named,
 )
 from .gui_page import render_page
 
@@ -290,6 +290,7 @@ def workflows_json() -> list[dict[str, Any]]:
         lookup = lookup_source(workflow)
         result.append({
             **asdict(workflow), "column_source": source.name if source else "", "lookup_input": lookup.name if lookup else "",
+            "table_inputs": [f.name for f in table_inputs(workflow)],
         })
     return result
 
