@@ -177,12 +177,13 @@ async function api(path, body) {
   return data;
 }
 
+const stepsKey = () => "reqtable.steps:" + state.workdir;
 function remember() {
-  try { localStorage.setItem("reqtable.steps", JSON.stringify(state.steps)); localStorage.setItem("reqtable.shell", state.shell); } catch (e) {}
+  try { localStorage.setItem(stepsKey(), JSON.stringify(state.steps)); localStorage.setItem("reqtable.shell", state.shell); } catch (e) {}
 }
 function restore() {
   try {
-    const steps = JSON.parse(localStorage.getItem("reqtable.steps") || "[]");
+    const steps = JSON.parse(localStorage.getItem(stepsKey()) || "[]");
     if (Array.isArray(steps)) state.steps = steps.filter((s) => s && s.workflow && s.sh && s.powershell);
     const shell = localStorage.getItem("reqtable.shell");
     if (shell === "sh" || shell === "powershell") state.shell = shell;
@@ -653,10 +654,10 @@ function shownPath(path) {
 }
 
 async function start() {
-  restore();
   try {
     const data = await api("/api/workflows");
     state.workflows = data.workflows; state.workdir = data.workdir; state.mapping = data.mapping;
+    restore();
   } catch (e) {
     $("main").replaceChildren(h("div", { class: "card" }, h("div", { class: "banner bad" }, h("strong", {}, "Could not reach reqtable."), "Close this tab and start it again with --gui.")));
     return;

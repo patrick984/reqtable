@@ -9,12 +9,13 @@ import sys
 import tempfile
 import threading
 import shutil
+import socket
 import unittest
 import urllib.request
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
-from reqtable.gui_server import TOKEN_HEADER, make_server
+from reqtable.gui_server import PREFERRED_PORT, TOKEN_HEADER, make_server, open_server
 from test_xlsx_import import write_workbook
 from test_xlsx_mapping import FIXTURE, lookup_workbook
 
@@ -434,6 +435,36 @@ class SecurityTests(ServerTestCase):
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
 
 
+class PortTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+
+    def test_a_taken_preferred_port_falls_back_to_a_free_one(self) -> None:
+        holder = socket.socket()
+        self.addCleanup(holder.close)
+        try:
+            holder.bind(("127.0.0.1", PREFERRED_PORT))
+            holder.listen()
+        except OSError:
+            pass  # Something else holds it already, which is the same situation.
+        server, fell_back = open_server(self.root, opener=lambda url: None)
+        self.addCleanup(server.server_close)
+        self.assertTrue(fell_back)
+        self.assertNotEqual(server.server_address[1], PREFERRED_PORT)
+
+    def test_a_free_preferred_port_is_used_so_the_page_keeps_its_address(self) -> None:
+        try:
+            server, fell_back = open_server(self.root, opener=lambda url: None)
+        except OSError as exc:
+            self.skipTest(f"cannot bind: {exc}")
+        self.addCleanup(server.server_close)
+        if fell_back:
+            self.skipTest(f"port {PREFERRED_PORT} is held by another program")
+        self.assertEqual(server.server_address, ("127.0.0.1", PREFERRED_PORT))
+
+
 class GuiFlagTests(unittest.TestCase):
     def launch(self, *flags: str, cwd: str) -> subprocess.Popen[str]:
         here = Path(__file__).resolve().parent.parent
@@ -451,7 +482,10 @@ class GuiFlagTests(unittest.TestCase):
                 first = process.stdout.readline().strip()
                 self.assertTrue(first.startswith("reqtable GUI running at http://127.0.0.1:"), first)
                 self.assertIn("?token=", first)
-                self.assertEqual(process.stdout.readline().strip(), "Press Ctrl+C to stop")
+                second = process.stdout.readline().strip()
+                if second.startswith(f"Port {PREFERRED_PORT} is in use"):
+                    second = process.stdout.readline().strip()
+                self.assertEqual(second, "Press Ctrl+C to stop")
                 with urllib.request.urlopen(first.rsplit(" ", 1)[1]) as response:
                     self.assertIn("reqtable", response.read().decode("utf-8"))
                 process.send_signal(signal.SIGINT)

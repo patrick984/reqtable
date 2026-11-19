@@ -26,6 +26,8 @@ from .gui_page import render_page
 TOKEN_HEADER = "X-Reqtable-Token"
 RUN_TIMEOUT_SECONDS = 300
 MAX_BODY_BYTES = 1_000_000
+# The page keeps the saved workflow in browser storage, which belongs to one address, so every launch tries the same port.
+PREFERRED_PORT = 47821
 SCRIPT_NAMES = {"sh": "reqtable-workflow.sh", "powershell": "reqtable-workflow.ps1"}
 
 
@@ -273,6 +275,8 @@ class Handler(BaseHTTPRequestHandler):
 
 class GuiServer(ThreadingHTTPServer):
     daemon_threads = True
+    # On Windows this flag lets a second server take a port that is in use, so the fallback would never happen.
+    allow_reuse_address = os.name != "nt"
 
     def __init__(self, session: Session, port: int) -> None:
         super().__init__(("127.0.0.1", port), Handler)
@@ -299,9 +303,23 @@ def make_server(workdir: Path, port: int = 0, opener: Callable[[str], object] = 
     return GuiServer(Session(Path(workdir).resolve(), opener), port)
 
 
-def serve(workdir: Path, open_browser: bool, port: int = 0) -> int:
-    server = make_server(workdir, port)
+def open_server(workdir: Path, opener: Callable[[str], object] = webbrowser.open) -> tuple[GuiServer, bool]:
+    """A server on the preferred port, or on any free port when that one is taken; the flag says it fell back."""
+    try:
+        return make_server(workdir, PREFERRED_PORT, opener), False
+    except OSError:
+        return make_server(workdir, 0, opener), True
+
+
+def serve(workdir: Path, open_browser: bool) -> int:
+    server, fell_back = open_server(workdir)
     print(f"reqtable GUI running at {server.url}", flush=True)
+    if fell_back:
+        print(
+            f"Port {PREFERRED_PORT} is in use, so this window starts with an empty workflow; "
+            "a workflow saved in another reqtable window stays in that window.",
+            flush=True,
+        )
     print("Press Ctrl+C to stop", flush=True)
     if open_browser:
         threading.Thread(target=webbrowser.open, args=(server.url,), daemon=True).start()
