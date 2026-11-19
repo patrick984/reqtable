@@ -136,6 +136,13 @@ class WaiverFlow:
         self.run_main(str(self.csv), "--gate-package", "SRR", "-o", str(self.output))
         self.assertIsNone(report_data(self.output)["package"]["waivers"][0]["description"])
 
+    def test_a_check_that_cannot_be_evaluated_can_be_waived(self) -> None:
+        risk = {"id": "has-risk", "description": "Every requirement has a risk", "filled": "Risk", "enforcement": "strict"}
+        self.config = self.write_config({"gates": [{**GATES[0], "checks": [risk]}]})
+        code, out, err = self.create("--waive", "has-risk", "--reason", "risk column arrives next release")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([(w["check"], w["failing"]) for w in self.manifest_waivers()], [("has-risk", [])])
+
 
 class FileStoreWaiverTests(WaiverFlow, CliTestCase):
     def manifest_waivers(self) -> list[dict]:

@@ -71,6 +71,6 @@ def plan_waivers(
             raise ConfigError(f"cannot waive {check_id}: it is not failing")
     paired = list(reasons) if len(reasons) == len(ids) else [reasons[0]] * len(ids)
     return [
-        Waiver(check_id, reason.strip(), user, date, tuple(checks[check_id]["failing"]))
+        Waiver(check_id, reason.strip(), user, date, tuple(checks[check_id].get("failing", ())))
         for check_id, reason in zip(ids, paired)
     ]
