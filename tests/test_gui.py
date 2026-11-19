@@ -10,7 +10,7 @@ from pathlib import Path
 from reqtable import cli
 from reqtable.gui import (
     GROUPS, WORKFLOWS, BadRequest, GuiError, blocked_checks, build_argv, guess_id_column, launcher, lookup_source, posix_command,
-    powershell_command, script, workflow_named,
+    powershell_command, quote_windows, script, workflow_named,
 )
 from reqtable.signoff import DECISIONS
 from test_xlsx_import import write_workbook
@@ -130,7 +130,120 @@ class BuildArgvTests(unittest.TestCase):
 TRICKY = ["it's", 'say "hi"', "$HOME `x` $(y)", "two  spaces", "back\\slash", "semi;colon", "", "ünï", "*.csv"]
 
 
+def _windows_argv(line: str) -> list[str]:
+    """CommandLineToArgvW for the arguments after the program: 2n backslashes before a quote give n and the quote
+    toggles quoting, 2n+1 give n and a literal quote, other backslashes are literal, and unquoted whitespace splits.
+    A doubled quote inside quotes differs between the C runtimes, so reqtable must never emit one."""
+    args: list[str] = []
+    i, n = 0, len(line)
+    while True:
+        while i < n and line[i] in " \t":
+            i += 1
+        if i >= n:
+            return args
+        current, quoted = "", False
+        while i < n and (quoted or line[i] not in " \t"):
+            if line[i] == "\\":
+                j = i
+                while j < n and line[j] == "\\":
+                    j += 1
+                if j < n and line[j] == '"':
+                    current += "\\" * ((j - i) // 2) + ('"' if (j - i) % 2 else "")
+                    i = j + 1 if (j - i) % 2 else j
+                else:
+                    current += line[i:j]
+                    i = j
+            elif line[i] == '"':
+                assert not (quoted and line[i + 1:i + 2] == '"'), f"doubled quote inside quotes in {line!r}"
+                quoted = not quoted
+                i += 1
+            else:
+                current += line[i]
+                i += 1
+        args.append(current)
+
+
+def _powershell_tokens(text: str) -> list[str] | str:
+    """The argument values PowerShell sees in one emitted command, or the verbatim tail after --%."""
+    values: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] == " ":
+            i += 1
+        elif text[i] == "'":
+            j, value = i + 1, ""
+            while True:
+                if text[j] == "'" and text[j + 1:j + 2] == "'":
+                    value, j = value + "'", j + 2
+                elif text[j] == "'":
+                    break
+                else:
+                    value, j = value + text[j], j + 1
+            values.append(value)
+            i = j + 1
+        else:
+            j = text.find(" ", i)
+            j = len(text) if j < 0 else j
+            if text[i:j] == "--%":
+                return text[j + 1:]
+            values.append(text[i:j])
+            i = j
+    return values
+
+
+def _windows_powershell_51(value: str) -> str:
+    """Windows PowerShell 5.1 drops an empty value, and wraps a value in quotes when it has whitespace after an even
+    number of quote characters, counting every quote, escaped or not, and without doubling trailing backslashes."""
+    count = 0
+    for char in value:
+        if char == '"':
+            count += 1
+        elif char.isspace() and count % 2 == 0:
+            return f'"{value}"'
+    return value
+
+
+def _powershell_7_legacy(value: str) -> str:
+    """PowerShell 7 with $PSNativeCommandArgumentPassing = 'Legacy': the same wrap, except a quote right after a
+    backslash is not counted, and trailing backslashes are doubled inside the added quotes."""
+    count, after_backslash = 0, False
+    for char in value:
+        if char == '"' and not after_backslash:
+            count += 1
+        elif char.isspace() and count % 2 == 0:
+            return '"' + value + "\\" * (len(value) - len(value.rstrip("\\"))) + '"'
+        after_backslash = char == "\\"
+    return value
+
+
+def _powershell_7_standard(value: str) -> str:
+    """PowerShell 7.3+ default for a program such as python.exe: quote the value the way the C runtime reads it."""
+    return quote_windows(value)
+
+
 class QuotingTests(unittest.TestCase):
+    def test_powershell_command_reaches_python_unchanged_in_5_1_and_7(self) -> None:
+        values = [
+            'say "hi"', 'say "hi" there', '5" pipe size', 'C:\\My Docs\\', 'C:\\My Docs\\a.csv', 'back\\slash', "end\\",
+            'a\\"b', 'a\\\\" b', "it's $HOME", "$(Get-Date)", "two  spaces", "", "plain", "x;y", "@x", "a,b", "ünï",
+        ]
+        for value in values:
+            argv = ["reqs.csv", "--title", value, "-o", "out dir/x.html"]
+            for name, passing in (("5.1", _windows_powershell_51), ("7 legacy", _powershell_7_legacy), ("7", _powershell_7_standard)):
+                with self.subTest(value=value, powershell=name):
+                    text = powershell_command(argv)
+                    self.assertTrue(text.startswith("python reqtable.pyz "), text)
+                    tokens = _powershell_tokens(text.replace(" `\n", " "))
+                    if isinstance(tokens, str):
+                        line = tokens
+                    else:
+                        self.assertEqual(tokens[:2], ["python", "reqtable.pyz"])
+                        line = " ".join(passing(t) for t in tokens[2:] if t or name == "7")
+                    self.assertEqual(_windows_argv(line), argv)
+
+    def test_quote_windows_round_trips(self) -> None:
+        for value in [*TRICKY, "a\\", "a b\\\\", '\\"', '"', "\t"]:
+            self.assertEqual(_windows_argv(quote_windows(value)), [value], value)
     def test_posix_command_round_trips_through_shlex(self) -> None:
         argv = ["req file.csv", "--title", *TRICKY, "-o", "out dir/x.html"]
         for program in (("reqtable.pyz",), ("/tmp/my dir/reqtable.pyz",), ("-m", "reqtable")):
@@ -155,7 +268,7 @@ class QuotingTests(unittest.TestCase):
         self.assertEqual(text, "python reqtable.pyz --title 'it''s $HOME' 'C:\\My Docs\\a.csv' 'x;y'")
 
     def test_powershell_quotes_empty_and_comma_and_splat_tokens(self) -> None:
-        self.assertEqual(powershell_command(["", "a,b", "@x"]), "python reqtable.pyz '' 'a,b' '@x'")
+        self.assertEqual(powershell_command(["a,b", "@x"]), "python reqtable.pyz 'a,b' '@x'")
 
     def test_powershell_wraps_with_backticks(self) -> None:
         argv = ["requirements.csv", "--id-column", "ID", "--document-mode", "develop", "--title", "A long report title", "-o", "requirements-develop.html"]

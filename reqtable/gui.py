@@ -506,6 +506,25 @@ def quote_powershell(token: str) -> str:
     return "'" + token.replace("'", "''") + "'"
 
 
+def quote_windows(token: str) -> str:
+    """The token quoted so the Windows C runtime reads it back unchanged from a command line (CommandLineToArgvW rules)."""
+    if token and not re.search(r'[\s"]', token):
+        return token
+    quoted, backslashes = '"', 0
+    for char in token:
+        if char == "\\":
+            backslashes += 1
+            continue
+        quoted += "\\" * (backslashes * 2 + 1 if char == '"' else backslashes) + char
+        backslashes = 0
+    return quoted + "\\" * (backslashes * 2) + '"'
+
+
+def _needs_verbatim(token: str) -> bool:
+    """Windows PowerShell 5.1 and PowerShell 7 pass these differently to a native program, or drop them."""
+    return not token or '"' in token or (token.endswith("\\") and bool(re.search(r"\s", token)))
+
+
 _SHELLS = {
     "sh": ("python3", shlex.quote, " \\"),
     "powershell": ("python", quote_powershell, " `"),
@@ -519,6 +538,9 @@ def _is_flag(token: str) -> bool:
 
 def _command(argv: Sequence[str], program: Sequence[str], shell: Shell) -> str:
     interpreter, quote, continuation = _SHELLS[shell]
+    if shell == "powershell" and any(_needs_verbatim(t) for t in argv):
+        # After --% every PowerShell passes the rest of the line unchanged, so it can carry C runtime quoting.
+        return " ".join([interpreter, *(quote(t) for t in program), "--%", *(quote_windows(t) for t in argv)])
     tokens = [quote(t) for t in argv]
     start = next((i for i, t in enumerate(argv) if _is_flag(t)), len(argv))
     head = " ".join([interpreter, *(quote(t) for t in program), *tokens[:start]])
