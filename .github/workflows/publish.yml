@@ -1,0 +1,28 @@
+name: publish
+
+# Publishes to PyPI when a GitHub release is published. Uses PyPI trusted
+# publishing, so no API token is stored. One-time PyPI setup is described in
+# docs/development.md.
+on:
+  release:
+    types: [published]
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release tag must match the package version
+        run: |
+          version="$(python3 -c 'import reqtable; print(reqtable.__version__)')"
+          test "v$version" = "$GITHUB_REF_NAME" || {
+            echo "tag $GITHUB_REF_NAME does not match version v$version" >&2
+            exit 1
+          }
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - run: uv publish --trusted-publishing always

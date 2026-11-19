@@ -8,13 +8,23 @@ The generator uses only the Python standard library. Generated reports contain a
 
 Python 3.10 or later is required. The HTML report targets current versions of Chrome, Edge, Firefox, and Safari.
 
-Build the single-file program from a checkout:
+Install the `reqtable` command with [uv](https://docs.astral.sh/uv/):
+
+```sh
+uv tool install git+https://github.com/patrick984/reqtable
+```
+
+Then run `reqtable` from any folder. Upgrade with `uv tool upgrade reqtable`.
+
+Or build a single-file program from a checkout:
 
 ```sh
 python build.py
 ```
 
-The build writes `dist/reqtable.pyz`. The examples here and in [docs/](docs/) write `reqtable.pyz` for short; use `dist/reqtable.pyz`, or copy it next to your CSV.
+The build writes `dist/reqtable.pyz`.
+
+The examples here and in [docs/](docs/) write `python reqtable.pyz` for short. With the installed command, run `reqtable` instead (`reqtable requirements.csv --id-column ID -o requirements.html`). With the single-file build, use `dist/reqtable.pyz`, or copy it next to your CSV.
 
 ## Quick start
 
