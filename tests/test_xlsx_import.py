@@ -146,7 +146,7 @@ class RepairTests(ImportCase):
         workbook = write_workbook(self.root / "w.xlsx")
         code, err, data = self.report(workbook)
         self.assertEqual(code, 0, err)
-        missing = "w.xlsx [Reqs]: 1 row has no ID in 'ID'; named them ROW-6"
+        missing = "w.xlsx [Reqs]: 1 row has no ID in 'ID'; named it ROW-6"
         duplicate = "w.xlsx [Reqs]: duplicate ID 'R-1' at rows 3, 8, 9; renamed the later ones R-1~2, R-1~3"
         for message in (missing, duplicate):
             self.assertIn(f"warning: {message}", err)

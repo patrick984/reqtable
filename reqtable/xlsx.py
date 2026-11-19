@@ -584,7 +584,7 @@ def _repair_ids(parts: list[Part], id_column: str | None, file: str) -> list[str
             noun = "row has" if len(named) == 1 else "rows have"
             warnings.append(
                 f"{file} [{part.name}]: {len(named)} {noun} no ID in {id_column!r}; "
-                f"named them {_listed(named)}"
+                f"named {'it' if len(named) == 1 else 'them'} {_listed(named)}"
             )
     seen: dict[str, list[tuple[int, list[str], int]]] = {}
     for part, at in usable:
