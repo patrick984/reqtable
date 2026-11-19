@@ -111,6 +111,9 @@ class Part:
     rows: list[list[str]]
     numbers: list[int]
     columns: dict[int, str | None]
+    # A merge source's rows add no records: keys[i] are the IDs of the records row i fills in.
+    keys: list[list[str]] | None = None
+    lists: frozenset[str] = frozenset()
 
 
 def is_xlsx(path: str) -> bool:
@@ -544,6 +547,14 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
                 slug = _slug(alias) or (_slug(row[names]) if names is not None else "")
             if slug:
                 row[at] = source["id_prefix"] + slug
+    elif source.get("merge"):
+        if not id_column:
+            raise ConfigError(f"{where} is a merge source, which needs an ID column: use --id-column or set id_column")
+        if id_column not in out_headers:
+            raise ConfigError(
+                f"{where} is a merge source with no {id_column!r} column to match records by; "
+                f"columns: {_names(iter(out_headers))}"
+            )
     elif id_column and id_column not in out_headers:
         raise ConfigError(
             f"{where} has no {id_column!r} column: map one of its columns to {id_column!r}, "
@@ -552,7 +563,12 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
     sheet_columns = {
         block.first_col + i: None if h in exclude else columns.get(h, h) for i, h in enumerate(headers)
     }
-    return Part(block.name, block.sheet, out_headers, rows, numbers, sheet_columns)
+    lists = frozenset(source.get("lists", {}))
+    keys = None
+    if source.get("merge"):
+        at = out_headers.index(id_column)
+        keys = [_split(row[at]) if id_column in lists else [row[at].strip()] if row[at].strip() else [] for row in rows]
+    return Part(block.name, block.sheet, out_headers, rows, numbers, sheet_columns, keys, lists)
 
 
 def _plain_part(block: Block) -> Part:
@@ -562,6 +578,10 @@ def _plain_part(block: Block) -> Part:
         block.name, block.sheet, headers, [row for _, row in body], [n for n, _ in body],
         {block.first_col + i: h for i, h in enumerate(headers)},
     )
+
+
+def _split(cell: str) -> list[str]:
+    return [p for p in (part.strip() for part in cell.split(";")) if p]
 
 
 def _listed(items: list[str], limit: int = 12) -> str:
@@ -620,6 +640,47 @@ def _combine(parts: list[Part], id_column: str | None) -> Block:
     return Block(" + ".join(p.name for p in parts), rows)
 
 
+def _merge(block: Block, part: Part, id_column: str, list_columns: frozenset[str], file: str) -> list[str]:
+    """Fill the combined table's records from one merge source; one warning for unknown IDs, one for conflicts."""
+    headers = block.rows[0]
+    for name in part.headers:
+        if name not in headers:
+            headers.append(name)
+            for row in block.rows[1:]:
+                row.append("")
+    by_id = {row[headers.index(id_column)].strip(): row for row in block.rows[1:]}
+    fills = [(part.headers.index(h), headers.index(h), h in list_columns or h in part.lists, h)
+             for h in part.headers if h != id_column]
+    unknown: dict[str, None] = {}
+    conflicts: dict[str, None] = {}
+    for row, keys in zip(part.rows, part.keys or []):
+        for key in keys:
+            target = by_id.get(key)
+            if target is None:
+                unknown[key] = None
+                continue
+            for source_at, target_at, is_list, name in fills:
+                value = row[source_at]
+                if is_list:
+                    have = _split(target[target_at])
+                    new = [v for v in dict.fromkeys(_split(value)) if v not in have]
+                    if new:
+                        target[target_at] = "; ".join(have + new)
+                elif value.strip() and not target[target_at].strip():
+                    target[target_at] = value
+                elif value.strip() and target[target_at].strip() != value.strip():
+                    conflicts[f"{key} {name}: kept {target[target_at].strip()!r}, ignored {value.strip()!r}"] = None
+    warnings = []
+    where = f"{file} [{part.name}]"
+    if unknown:
+        noun = "ID matches" if len(unknown) == 1 else "IDs match"
+        warnings.append(f"{where}: {len(unknown)} {noun} no record in {id_column!r}; ignored {_listed(list(unknown))}")
+    if conflicts:
+        noun = "value differs" if len(conflicts) == 1 else "values differ"
+        warnings.append(f"{where}: {len(conflicts)} {noun} from the record; {_listed(list(conflicts))}")
+    return warnings
+
+
 def _initials(author: str) -> str:
     words = re.sub(r"[\x00-\x1f\x7f]", " ", author).split()
     if not words:
@@ -628,20 +689,30 @@ def _initials(author: str) -> str:
     return value if valid_initials(value) else "XL"
 
 
-def _place(part: Part, id_column: str | None, comment: RawComment) -> tuple[str, str, str] | None:
-    """The (requirement ID, output column, text) a comment lands on in this part, or None if it falls outside it."""
+def _place(part: Part, id_column: str | None, comment: RawComment, ids: set[str]) -> tuple[str, str, str] | None:
+    """The (requirement ID, output column, text) a comment lands on in this part, or None if it falls outside it.
+
+    A comment on a merge source's row lands on the first record that row fills in.
+    """
     column = part.columns.get(comment.col)
     if not id_column or id_column not in part.headers or column is None or comment.row not in part.numbers:
         return None
-    row = part.rows[part.numbers.index(comment.row)]
-    rid = row[part.headers.index(id_column)].strip()
+    at = part.numbers.index(comment.row)
+    if part.keys is None:
+        rid = part.rows[at][part.headers.index(id_column)].strip()
+    else:
+        rid = next((key for key in part.keys[at] if key in ids), None)
+        if rid is None:
+            return None
     if column != id_column:
         return rid, column, comment.text
     others = [h for h in part.headers if h != id_column]
     return (rid, others[0], f"[on ID] {comment.text}") if others else None
 
 
-def _review_comments(wb: Workbook, parts: list[Part], id_column: str | None, label: str) -> tuple[list[dict[str, Any]], list[str]]:
+def _review_comments(
+    wb: Workbook, parts: list[Part], id_column: str | None, ids: set[str], label: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
     comments: list[dict[str, Any]] = []
     dropped = 0
     for sheet_name in dict.fromkeys(part.sheet for part in parts):
@@ -651,7 +722,7 @@ def _review_comments(wb: Workbook, parts: list[Part], id_column: str | None, lab
             raise InputError(f"{wb.path.name}: cannot read comments of sheet {sheet_name!r}: {exc}") from exc
         for raw in found:
             placed = next(
-                (hit for part in parts if part.sheet == sheet_name and (hit := _place(part, id_column, raw))), None
+                (hit for part in parts if part.sheet == sheet_name and (hit := _place(part, id_column, raw, ids))), None
             )
             if placed is None:
                 dropped += 1
@@ -690,12 +761,24 @@ def import_workbook(
             ]
         else:
             parts = [_plain_part(select_block(wb, selection))]
-        warnings = _repair_ids(parts, id_column, Path(path).name)
-        block = _combine(parts, id_column)
-        label = f"{Path(path).name} [{block.name}]"
+        file = Path(path).name
+        records = [part for part in parts if part.keys is None]
+        warnings = _repair_ids(records, id_column, file)
+        block = _combine(records, id_column)
+        if len(records) < len(parts):
+            # findings imports baselines, which imports this module.
+            from .findings import TRACE_FIELDS
+            list_columns = frozenset([*(f for f, (_, _, single) in TRACE_FIELDS.items() if not single), "Aliases"])
+            for part in parts:
+                if part.keys is not None:
+                    warnings += _merge(block, part, id_column, list_columns, file)
+            block = Block(" + ".join(p.name for p in parts), block.rows)
+        label = f"{file} [{block.name}]"
         found: list[dict[str, Any]] = []
         if comments:
-            found, extra = _review_comments(wb, parts, id_column, label)
+            at = block.rows[0].index(id_column) if id_column in block.rows[0] else None
+            ids = {row[at].strip() for row in block.rows[1:]} if at is not None else set()
+            found, extra = _review_comments(wb, parts, id_column, ids, label)
             warnings += extra
         return Imported(block, tuple(warnings), tuple(found))
 
