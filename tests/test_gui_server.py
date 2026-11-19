@@ -201,6 +201,21 @@ class MappingEndpointTests(ServerTestCase):
         self.assertEqual(found["types"], {"Test": 3})
         self.assertEqual(found["mapping"]["xlsx"]["sources"][0]["type"], "Test")  # type: ignore[index]
 
+    def test_preview_of_a_workbook_with_heading_rows_lists_the_categories(self) -> None:
+        columns = [
+            {"header": "Req ID", "action": "map", "to": "ID", "separator": ""}, {"header": "Req Type", "action": "exclude", "to": "", "separator": ""},
+            {"header": "Requirement", "action": "map", "to": "Text", "separator": ""},
+        ]
+        headings = {"column": "Req Type", "values": ["Heading"], "text": "Requirement", "into": "Category"}
+        form = {"sources": [{"kind": "sheet", "name": "Reqs", "role": "requirements", "columns": columns, "headings": headings}]}
+        status, found = self.post("/api/mapping/preview", {"path": "book.xlsx", "form": form})
+        self.assertEqual(status, 200)
+        self.assertEqual(found["mapping"]["xlsx"]["sources"][0]["headings"], headings)  # type: ignore[index]
+        summary = found["sources"][0]["headings"]  # type: ignore[index]
+        self.assertEqual((summary["removed"], [(c["name"], c["count"]) for c in summary["categories"]]), (2, [("Safety", 1), ("Custom", 1), ("Comms", 3)]))
+        form["sources"][0]["role"] = "glossary"  # type: ignore[index]
+        self.assertEqual(self.post("/api/mapping/preview", {"path": "book.xlsx", "form": form})[0], 400)
+
     def test_preview_explains_a_form_or_workbook_problem_in_words(self) -> None:
         self.assertIn("at least one", str(self.post("/api/mapping/preview", {"path": "lookup.xlsx", "form": {"sources": []}})[1]["error"]))
         form = self.form()

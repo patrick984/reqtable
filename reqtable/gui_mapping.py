@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from .core import ConfigError, ReqtableError, atomic_write_text, validate_xlsx_sources
+from .core import ConfigError, ReqtableError, atomic_write_text, validate_headings, validate_xlsx_sources
 from .gui import BadRequest, GuiError, guess_id_column
 from .xlsx import XlsxSelection, import_workbook
 
@@ -16,6 +16,7 @@ ID_COLUMN = "ID"
 FIELD_COLUMN = "Field"
 SEPARATORS = ((",", "Comma"), (";", "Semicolon"), ("newline", "New line"))
 LIST_SEPARATOR = ","
+DEFAULT_CATEGORY = "Category"
 KEEP, MAP, EXCLUDE = "keep", "map", "exclude"
 FIELD_CHOICES = (
     ("Priority", "Priority"),
@@ -47,6 +48,7 @@ class Role:
     id_prefix: str = ""
     needs_field: bool = False
     merge: bool = False
+    headings: bool = False
 
 
 def _id(label: str = "ID") -> Target:
@@ -72,6 +74,7 @@ ROLES: tuple[Role, ...] = (
             Target("Owner", "Owning system"), Target("Rationale", "Rationale"),
             Target("Compliance", "Compliance (is it met?)"), Target("Type", "Record type", hints=("kind",)),
         ),
+        headings=True,
     ),
     Role(
         "glossary", "Glossary terms", "Words and abbreviations the project defines. Each row becomes a Term.", "Term",
@@ -221,6 +224,23 @@ class ColumnDraft:
 
 
 @dataclass(frozen=True)
+class HeadingRows:
+    """Rows whose `column` cell holds one of `values` are category names; the requirements below one get its text in `into`."""
+
+    column: str
+    values: tuple[str, ...]
+    text: str
+    into: str = DEFAULT_CATEGORY
+
+    def to_json(self) -> dict[str, Any]:
+        return {"column": self.column, "values": list(self.values), **({"text": self.text} if self.text else {}), "into": self.into}
+
+    @classmethod
+    def from_json(cls, headings: Mapping[str, Any]) -> HeadingRows:
+        return cls(headings["column"], tuple(headings["values"]), headings.get("text", ""), headings["into"])
+
+
+@dataclass(frozen=True)
 class SourceDraft:
     kind: str
     name: str
@@ -231,6 +251,7 @@ class SourceDraft:
     columns: tuple[ColumnDraft, ...]
     extra: Mapping[str, Any]
     raw: Mapping[str, Any] | None = None
+    headings: HeadingRows | None = None
 
     @property
     def where(self) -> str:
@@ -254,6 +275,20 @@ def _parse_column(item: object, where: str) -> ColumnDraft:
     return ColumnDraft(
         _text(item.get("header"), f"{where}.header"), action, _text(item.get("to"), f"{where}.to"),
         _text(item.get("separator"), f"{where}.separator"),
+    )
+
+
+def _parse_headings(item: object, where: str) -> HeadingRows | None:
+    if item is None:
+        return None
+    if not isinstance(item, Mapping):
+        raise BadRequest(f"{where} must be an object")
+    values = item.get("values", [])
+    if not isinstance(values, list):
+        raise BadRequest(f"{where}.values must be a list")
+    return HeadingRows(
+        _text(item.get("column"), f"{where}.column"), tuple(v for v in (_text(v, f"{where}.values") for v in values) if v),
+        _text(item.get("text"), f"{where}.text"), _text(item.get("into"), f"{where}.into"),
     )
 
 
@@ -285,7 +320,20 @@ def _parse_source(item: object, index: int) -> SourceDraft:
         kind, name, header_row, role_named(role_id) if role_id else None, _text(item.get("field"), f"{where}.field"),
         _text(item.get("id_prefix"), f"{where}.id_prefix"),
         tuple(_parse_column(column, f"{where}.columns[{i}]") for i, column in enumerate(columns)), extra,
+        headings=_parse_headings(item.get("headings"), f"{where}.headings"),
     )
+
+
+def _build_headings(draft: SourceDraft) -> dict[str, Any]:
+    headings = draft.headings
+    assert headings is not None
+    if not headings.column:
+        raise GuiError(f"{draft.where}: choose which column marks a heading row")
+    if not headings.values:
+        raise GuiError(f"{draft.where}: say which value in {headings.column!r} marks a heading row, such as Heading")
+    if not headings.into:
+        raise GuiError(f"{draft.where}: say which column receives the category")
+    return headings.to_json()
 
 
 def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
@@ -293,6 +341,8 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         return dict(draft.raw)
     assert draft.role is not None
     role = draft.role
+    if draft.headings and not role.headings:
+        raise BadRequest(f"{draft.where}: {role.label} cannot have heading rows")
     source: dict[str, Any] = {draft.kind: draft.name}
     if draft.kind == "sheet" and draft.header_row is not None:
         source["header_row"] = draft.header_row
@@ -333,6 +383,8 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         source["set"] = constants
     if draft.id_prefix and not role.merge:
         source["id_prefix"] = draft.id_prefix
+    if draft.headings:
+        source["headings"] = _build_headings(draft)
     return {**source, **{k: v for k, v in draft.extra.items() if k not in source and k != "set"}}
 
 
@@ -385,6 +437,14 @@ def form_from_mapping(mapping: object) -> tuple[dict[str, Any], list[str]]:
     }, notes
 
 
+def _loadable_headings(headings: object) -> HeadingRows | None:
+    try:
+        validate_headings(headings, "headings")
+    except ConfigError:
+        return None
+    return HeadingRows.from_json(headings)  # type: ignore[arg-type]
+
+
 def _source_form(source: object, index: int, notes: list[str], id_column: str) -> dict[str, Any]:
     if not isinstance(source, Mapping) or ("table" in source) == ("sheet" in source):
         raise GuiError(f"xlsx.sources[{index}] needs exactly one of 'table' or 'sheet'.")
@@ -398,7 +458,8 @@ def _source_form(source: object, index: int, notes: list[str], id_column: str) -
     if role is None or ("type" in source and "Type" in constants):
         notes.append(f"{kind.capitalize()} {name!r} has a record type this form cannot edit, so it is kept exactly as it is.")
         return {"kind": kind, "name": name, "raw": dict(source)}
-    handled = {kind, "header_row", "columns", "exclude", "lists", "id_prefix", "set", "type", "merge"}
+    headings = _loadable_headings(source.get("headings")) if role.headings else None
+    handled = {kind, "header_row", "columns", "exclude", "lists", "id_prefix", "set", "type", "merge", *(("headings",) if headings else ())}
     extra = {k: v for k, v in source.items() if k not in handled}
     if type_name == "Requirement":
         extra["type"] = "Requirement"
@@ -423,6 +484,18 @@ def _source_form(source: object, index: int, notes: list[str], id_column: str) -
     return {
         "kind": kind, "name": name, "header_row": source.get("header_row"), "role": role.id, "field": field,
         "id_prefix": source.get("id_prefix", ""), "columns": list(columns.values()), "extra": extra,
+        "headings": headings.to_json() if headings else None,
+    }
+
+
+def _heading_summary(headings: Mapping[str, Any], rows: list[list[str]], removed: int) -> dict[str, Any]:
+    at = rows[0].index(headings["into"])
+    found = Counter(row[at].strip() for row in rows[1:])
+    return {
+        "removed": removed,
+        "categories": [{"name": name, "count": count} for name, count in found.items() if name],
+        "uncategorised": found.get("", 0),
+        "warning": None if removed else f"No row in {headings['column']!r} says {' or '.join(headings['values'])}.",
     }
 
 
@@ -439,7 +512,13 @@ def preview_mapping(workbook: Path, mapping: Mapping[str, Any]) -> dict[str, Any
                 counts.append({"name": name, "rows": None})
                 continue
             alone = import_workbook(workbook, XlsxSelection(), [source], id_column, True, False)
-            counts.append({"name": name, "rows": len(alone.block.rows) - 1})
+            entry: dict[str, Any] = {"name": name, "rows": len(alone.block.rows) - 1}
+            if "headings" in source:
+                plain = import_workbook(
+                    workbook, XlsxSelection(), [{k: v for k, v in source.items() if k != "headings"}], id_column, True, False
+                )
+                entry["headings"] = _heading_summary(source["headings"], alone.block.rows, len(plain.block.rows) - len(alone.block.rows))
+            counts.append(entry)
     except (ReqtableError, OSError) as exc:
         return {"error": str(exc)}
     rows = imported.block.rows

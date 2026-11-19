@@ -9,10 +9,11 @@ from pathlib import Path
 from reqtable.core import RECORD_TYPES
 from reqtable.gui import BadRequest, GuiError
 from reqtable.gui_mapping import (
-    FIELD_CHOICES, ROLES, build_mapping, form_from_mapping, load_mapping, preview_mapping, role_named, save_mapping,
+    FIELD_CHOICES, ROLES, HeadingRows, build_mapping, form_from_mapping, load_mapping, preview_mapping, role_named, save_mapping,
     suggest_columns,
 )
 from reqtable.xlsx import Workbook
+from test_xlsx_import import GRID, HEADERS, SOURCES, write_workbook
 from test_xlsx_mapping import lookup_workbook, report_data, run_cli
 
 README = Path(__file__).resolve().parent.parent / "README.md"
@@ -216,6 +217,107 @@ class MergeRoleTests(unittest.TestCase):
             source("table", "T", "merge", [("Verifies", "map", "ID", ",")]),
         ]}
         self.assertEqual(len(build_mapping(both)["xlsx"]["sources"]), 2)  # type: ignore[index]
+
+
+HEADING_FORM = {"column": "Req Type", "values": ["Heading"], "text": "Requirement", "into": "Category"}
+
+
+def heading_source(headings: object = HEADING_FORM, **extra: object) -> dict[str, object]:
+    return source("sheet", "Reqs", "requirements", [
+        ("Req ID", "map", "ID", ""), ("Req Type", "exclude", "", ""), ("Requirement", "map", "Text", ""),
+    ], headings=headings, **extra)
+
+
+class HeadingRowsTests(unittest.TestCase):
+    def test_only_the_requirements_role_offers_heading_rows(self) -> None:
+        self.assertEqual([r.id for r in ROLES if r.headings], ["requirements"])
+
+    def test_the_form_builds_the_documented_headings_key(self) -> None:
+        built = build_mapping({"sources": [heading_source()]})["xlsx"]["sources"][0]  # type: ignore[index]
+        self.assertEqual(built, SOURCES[0] | {"columns": {"Req ID": "ID", "Requirement": "Text"}})
+        self.assertEqual(built["headings"], HEADING_FORM)
+
+    def test_text_is_left_out_when_empty_and_values_are_trimmed(self) -> None:
+        form = {"column": "Req Type", "values": [" Heading ", "", "Section"], "text": "", "into": "Category"}
+        built = build_mapping({"sources": [heading_source(headings=form)]})["xlsx"]["sources"][0]  # type: ignore[index]
+        self.assertEqual(built["headings"], {"column": "Req Type", "values": ["Heading", "Section"], "into": "Category"})
+
+    def test_missing_pieces_are_explained(self) -> None:
+        for change, message in (
+            ({"column": ""}, "which column marks a heading row"), ({"values": [" "]}, "which value in 'Req Type'"),
+            ({"into": ""}, "which column receives the category"),
+        ):
+            with self.subTest(change=change), self.assertRaisesRegex(GuiError, message):
+                build_mapping({"sources": [heading_source(headings={**HEADING_FORM, **change})]})
+
+    def test_a_role_without_heading_rows_rejects_them(self) -> None:
+        for role in ("glossary", "tests", "merge", "values"):
+            with self.subTest(role=role), self.assertRaises(BadRequest):
+                build_mapping({"sources": [source("sheet", "S", role, [("ID", "keep", "", "")], headings=HEADING_FORM)]})
+
+    def test_a_malformed_headings_shape_is_a_bad_request(self) -> None:
+        for bad in ("Heading", {**HEADING_FORM, "values": "Heading"}, {**HEADING_FORM, "column": 5}):
+            with self.subTest(bad=bad), self.assertRaises(BadRequest):
+                build_mapping({"sources": [heading_source(headings=bad)]})
+
+    def test_the_readme_example_round_trips_through_the_typed_form(self) -> None:
+        mapping = {"id_column": "ID", "traceability": True, "xlsx": {"sources": SOURCES}}
+        form, notes = form_from_mapping(mapping)
+        self.assertEqual(notes, [])
+        self.assertEqual(form["sources"][0]["headings"], HEADING_FORM)
+        self.assertEqual(form["sources"][0]["extra"], {})
+        self.assertEqual(build_mapping(form), mapping)
+
+    def test_malformed_headings_stay_as_they_are_with_a_note(self) -> None:
+        for bad in ({"column": "T"}, {"column": "T", "values": [], "into": "C"}, "Heading"):
+            mapping = {"xlsx": {"sources": [{"sheet": "S", "headings": bad}]}}
+            with self.subTest(bad=bad):
+                form, notes = form_from_mapping(mapping)
+                self.assertIsNone(form["sources"][0]["headings"])
+                self.assertEqual(form["sources"][0]["extra"], {"headings": bad})
+                self.assertTrue(any("headings" in n for n in notes))
+
+    def test_heading_rows_on_another_role_stay_untouched(self) -> None:
+        mapping = {"xlsx": {"sources": [{"sheet": "S", "type": "Term", "headings": HEADING_FORM}]}}
+        form, notes = form_from_mapping(mapping)
+        self.assertEqual(form["sources"][0]["extra"], {"headings": HEADING_FORM})
+        self.assertTrue(any("headings" in n for n in notes))
+
+    def test_the_dataclass_matches_the_json_shape(self) -> None:
+        self.assertEqual(HeadingRows.from_json(HEADING_FORM).to_json(), HEADING_FORM)
+
+
+class HeadingPreviewTests(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.book = write_workbook(Path(directory.name) / "w.xlsx")
+
+    def preview(self, headings: dict[str, object] | None = HEADING_FORM) -> dict[str, object]:
+        form = {"sources": [heading_source(headings=headings)]}
+        return preview_mapping(self.book, build_mapping(form))
+
+    def test_categories_come_in_order_with_their_counts_and_the_removed_heading_rows(self) -> None:
+        found = self.preview()["sources"][0]  # type: ignore[index]
+        self.assertEqual(found["rows"], 5)
+        self.assertEqual(found["headings"], {
+            "removed": 2, "categories": [{"name": "Safety", "count": 1}, {"name": "Custom", "count": 1}, {"name": "Comms", "count": 3}],
+            "uncategorised": 0, "warning": None,
+        })
+
+    def test_rows_above_the_first_heading_are_counted_apart(self) -> None:
+        grid = [HEADERS, ["R-0", "System Requirement", "Shall Z.", "", ""], *GRID[1:3]]
+        book = write_workbook(self.book.parent / "x.xlsx", grid)
+        found = preview_mapping(book, build_mapping({"sources": [heading_source()]}))["sources"][0]["headings"]  # type: ignore[index]
+        self.assertEqual((found["uncategorised"], found["categories"], found["removed"]), (1, [{"name": "Safety", "count": 1}], 1))
+
+    def test_a_marker_no_row_uses_warns_in_plain_words(self) -> None:
+        found = self.preview({**HEADING_FORM, "values": ["Section"]})["sources"][0]["headings"]  # type: ignore[index]
+        self.assertEqual(found["removed"], 0)
+        self.assertEqual(found["warning"], "No row in 'Req Type' says Section.")
+
+    def test_sources_without_headings_have_none(self) -> None:
+        self.assertNotIn("headings", self.preview(None)["sources"][0])  # type: ignore[index]
 
 
 class LoadMappingTests(unittest.TestCase):
