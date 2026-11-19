@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from reqtable.cli import main
 
 
 class CliTests(unittest.TestCase):
@@ -28,6 +32,13 @@ class CliTests(unittest.TestCase):
     def test_validation_exit_code(self) -> None:
         completed = subprocess.run([sys.executable, "-m", "reqtable"], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 2)
+
+    def test_gui_refuses_other_arguments_instead_of_ignoring_them(self) -> None:
+        for argv in (["--gui", "reqs.csv"], ["--gui", "--no-browser", "--id-column", "ID"], ["--gui", "-o", "x.html"]):
+            error = io.StringIO()
+            with self.subTest(argv=argv), contextlib.redirect_stderr(error):
+                self.assertEqual(main(argv), 2)
+                self.assertIn("--gui takes no other arguments except --no-browser", error.getvalue())
 
     def test_develop_mode_cli(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -280,6 +280,9 @@ def run(argv: list[str] | None = None) -> int:
     if args.no_browser and not args.gui:
         raise ConfigError("--no-browser applies only to --gui")
     if args.gui:
+        defaults = vars(parser().parse_args([]))
+        if any(value != defaults[name] for name, value in vars(args).items() if name not in ("gui", "no_browser")):
+            raise ConfigError("--gui takes no other arguments except --no-browser; choose files and settings in the page")
         from .gui_server import serve
 
         return serve(Path.cwd(), not args.no_browser)
