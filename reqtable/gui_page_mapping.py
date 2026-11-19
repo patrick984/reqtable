@@ -8,7 +8,7 @@ PANELS.mapping = renderMappingPanel;
 const mappingRoles = () => state.mapping.roles;
 const roleOf = (s) => mappingRoles().find((r) => r.id === s.role);
 let sourceUid = 0;
-const newSource = (kind, name, where) => ({ uid: ++sourceUid, dup: false, kind, name, where, role: "", header_row: "", field: "", id_prefix: "", columns: [], extra: {}, headings: null, raw: null, missing: false, error: "" });
+const newSource = (kind, name, where) => ({ uid: ++sourceUid, seq: 0, dup: false, kind, name, where, role: "", header_row: "", field: "", id_prefix: "", columns: [], extra: {}, headings: null, raw: null, missing: false, error: "" });
 const hasTarget = (s, column) => s.columns.some((c) => c.action === "map" && c.to === column);
 const mpKey = (s) => s.kind + ":" + s.name;
 
@@ -46,11 +46,14 @@ function drawBookMessage() {
     mp.notes.length ? h("div", { class: "banner warn" }, h("strong", {}, "About the loaded mapping"), h("ul", { class: "plain" }, mp.notes.map((n) => h("li", {}, n)))) : null);
 }
 
+let bookSeq = 0;
 async function loadBook() {
+  const seq = ++bookSeq;
   mp.bookError = "";
   if (!mp.workbook.trim()) { mp.sources = []; drawBookMessage(); drawSources(); schedulePreview(); return; }
   let data;
   try { data = await api("/api/tables?path=" + encodeURIComponent(mp.workbook)); } catch (e) { data = { error: e.message }; }
+  if (seq !== bookSeq) return;
   if (data.error) { mp.bookError = data.error; mp.sources = []; drawBookMessage(); drawSources(); schedulePreview(); return; }
   const onTable = new Set(data.tables.map((t) => t.sheet));
   const found = [
@@ -101,26 +104,29 @@ async function loadSaved() {
 }
 
 async function fetchColumns(s, fresh) {
-  const query = new URLSearchParams({ path: mp.workbook });
+  const seq = ++s.seq;
+  const query = new URLSearchParams({ path: mp.workbook, role: s.role });
   query.set(s.kind, s.name);
   if (s.kind === "sheet" && s.header_row) query.set("header_row", s.header_row);
   let data;
-  try {
-    if (fresh) query.set("role", s.role);
-    data = await api((fresh ? "/api/mapping/suggest?" : "/api/columns?") + query);
-  } catch (e) { data = { error: e.message }; }
+  try { data = await api("/api/mapping/suggest?" + query); } catch (e) { data = { error: e.message }; }
+  if (seq !== s.seq) return;
   if (data.error) { s.error = data.error; if (fresh) s.columns = []; drawSources(); schedulePreview(); return; }
   s.error = "";
   if (fresh) { s.columns = data.columns; s.id_prefix = data.id_prefix; }
   else {
-    const have = new Map(s.columns.map((c) => [c.header, c]));
-    s.columns = data.columns.map((header) => have.get(header) || { header, action: "keep", to: "", separator: "" });
-    for (const c of have.values()) if (!data.columns.includes(c.header)) s.columns.push({ ...c, missing: true });
+    const have = new Map(s.columns.map(({ missing, ...c }) => [c.header, c]));
+    const headers = data.columns.map((c) => c.header);
+    const taken = new Set([...have.values()].filter((c) => headers.includes(c.header) && c.action === "map").map((c) => c.to));
+    const unmatched = roleOf(s).merge ? "exclude" : "keep";
+    s.columns = data.columns.map((c) => have.get(c.header) || (c.action === "map" && taken.has(c.to) ? { ...c, action: unmatched, to: "", separator: "" } : c));
+    for (const c of have.values()) if (!headers.includes(c.header)) s.columns.push({ ...c, missing: true });
   }
   drawSources(); schedulePreview();
 }
 
 function setRole(s, roleId) {
+  s.seq++;
   s.role = roleId; s.columns = []; s.field = ""; s.id_prefix = ""; s.error = ""; s.headings = null;
   if (!roleId) { drawSources(); schedulePreview(); return; }
   drawSources();
@@ -128,7 +134,7 @@ function setRole(s, roleId) {
 }
 
 const MARKER_GUESS = /^(requirement type|req\.? type|type)$/i;
-const markerChoices = (s) => s.columns.map((c) => c.header);
+const markerChoices = (s) => s.columns.filter((c) => !c.missing).map((c) => c.header);
 const columnNamed = (s, header) => s.columns.find((c) => c.header === header);
 
 function restoreMarker(s) {
@@ -252,7 +258,7 @@ function drawSource(s, i) {
   const row = h("div", { class: "srcrow" }, h("div", { class: "top" }, title,
     h("div", {}, h("label", { class: "mini", for: pick.id }, "What is it?"), pick),
     s.kind === "sheet" ? h("div", {}, h("label", { class: "mini", for: "hr-" + i }, "Header row"),
-      h("input", { type: "number", id: "hr-" + i, min: "1", placeholder: "first", value: s.header_row, onchange: (e) => { s.header_row = e.target.value; if (s.role) fetchColumns(s, true); } })) : h("div", {})));
+      h("input", { type: "number", id: "hr-" + i, min: "1", placeholder: "first", value: s.header_row, onchange: (e) => { s.header_row = e.target.value; if (s.role) fetchColumns(s, false); } })) : h("div", {})));
   const again = h("div", { class: "actions", style: "margin-top:8px" },
     h("button", { class: "small", type: "button", onclick: () => { const c = newSource(s.kind, s.name, s.where); c.dup = true; mp.sources.splice(i + 1, 0, c); drawSources(); } }, "Add this table again with another role"),
     s.dup ? h("button", { class: "small", type: "button", onclick: () => { mp.sources.splice(i, 1); drawSources(); schedulePreview(); } }, "Remove this extra row") : null);
