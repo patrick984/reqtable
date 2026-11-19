@@ -159,6 +159,8 @@ class CsvSource:
     label: str
     text: str | None
     path: Path
+    warnings: tuple[str, ...] = ()
+    comments: tuple[dict[str, Any], ...] = ()
 
     @property
     def filename(self) -> str:
@@ -173,6 +175,8 @@ class CsvTable:
     rows: list[dict[str, str]]
     ids: list[str]
     by_id: dict[str, dict[str, str]]
+    warnings: tuple[str, ...] = ()
+    comments: tuple[dict[str, Any], ...] = ()
 
 
 def _merge_known(base: dict[str, Any], override: dict[str, Any], prefix: str = "") -> dict[str, Any]:
@@ -351,7 +355,7 @@ def validate_gates(gates: Any) -> None:
         validate_checks(gate.get("checks", []), where)
 
 
-_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists"}
+_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists", "headings"}
 
 
 def validate_xlsx_sources(sources: Any) -> None:
@@ -395,11 +399,29 @@ def validate_xlsx_sources(sources: Any) -> None:
                 raise ConfigError(f"{where}.id_from must be a non-empty array of column names")
             if "id_prefix" not in source:
                 raise ConfigError(f"{where}.id_from needs id_prefix")
+        if "headings" in source:
+            validate_headings(source["headings"], f"{where}.headings")
         lists = source.get("lists", {})
         if not isinstance(lists, dict) or not all(
             isinstance(k, str) and isinstance(v, str) and v for k, v in lists.items()
         ):
             raise ConfigError(f"{where}.lists must be an object of output header to separator string (or \"newline\")")
+
+
+def validate_headings(headings: Any, where: str) -> None:
+    if not isinstance(headings, dict):
+        raise ConfigError(f"{where} must be an object with column, values and into")
+    unknown = sorted(set(headings) - {"column", "values", "text", "into"})
+    if unknown:
+        raise ConfigError(f"unknown configuration key: {where}.{unknown[0]}")
+    for key in ("column", "into"):
+        if not isinstance(headings.get(key), str) or not headings[key].strip():
+            raise ConfigError(f"{where}.{key} is required and must be a non-empty string")
+    if "text" in headings and (not isinstance(headings["text"], str) or not headings["text"].strip()):
+        raise ConfigError(f"{where}.text must be a non-empty string")
+    values = headings.get("values")
+    if not isinstance(values, list) or not values or not all(isinstance(v, str) and v.strip() for v in values):
+        raise ConfigError(f"{where}.values must be a non-empty array of the type values that mark a heading row")
 
 
 def valid_initials(value: Any) -> bool:
@@ -472,7 +494,7 @@ def read_csv_source(csv_source: CsvSource, config: dict[str, Any]) -> CsvTable:
                 record_by_id[normalized_id] = record_number
         except (csv.Error, UnicodeError) as exc:
             raise InputError(f"{source}: invalid CSV near record {reader.line_num}: {exc}") from exc
-    return CsvTable(source, csv_source.filename, headers, rows, ids, by_id)
+    return CsvTable(source, csv_source.filename, headers, rows, ids, by_id, csv_source.warnings, csv_source.comments)
 
 
 def effective_columns(old: CsvTable | None, new: CsvTable, config: dict[str, Any]) -> list[str]:
@@ -681,7 +703,10 @@ def prepare_trace_table(
                     "requirementId": rid,
                     **{key: record.get(key) for key in ("column", "initials", "created", "modified", "text")},
                 })
-    return CsvTable(table.label, table.filename, headers, rows, table.ids, dict(zip(table.ids, rows))), comments
+    prepared = CsvTable(
+        table.label, table.filename, headers, rows, table.ids, dict(zip(table.ids, rows)), table.warnings, table.comments
+    )
+    return prepared, comments
 
 
 def build_report_data(
@@ -700,6 +725,13 @@ def build_report_data(
             old, old_comments = prepare_trace_table(old, config)
             comments.extend({**comment, "id": f"old-{comment['id']}"} for comment in old_comments
                             if comment["requirementId"] not in new.by_id)
+    if config["comments"]["enabled"]:
+        comments.extend(c for c in new.comments if c["column"] in new.headers)
+        if old:
+            comments.extend(
+                {**c, "id": f"old-{c['id']}"} for c in old.comments
+                if c["requirementId"] not in new.by_id and c["column"] in old.headers
+            )
     columns = effective_columns(old, new, config)
     quality = config["quality"]
     quality_columns = set(quality["required_columns"])
@@ -770,7 +802,7 @@ def build_report_data(
         }
         for name in columns
     ]
-    warnings: list[str] = []
+    warnings: list[str] = [*new.warnings, *(old.warnings if old else ())]
     optional_names = set(config["columns"]["hidden"])
     optional_names.update(config["columns"]["labels"])
     optional_names.update(config["columns"]["widths"])

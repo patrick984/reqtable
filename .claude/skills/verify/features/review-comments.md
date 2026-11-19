@@ -43,3 +43,12 @@ Preconditions:
 - The ID column never offers a comment control.
 - Initials are kept in browser storage per origin, so a second page in the same run starts with them filled in.
 - The browser-to-CLI round trip cannot be driven by this harness. Report it as not covered instead of substituting a generated report for the browser copy.
+
+## Driving Excel comment import with the CLI
+
+Preconditions:
+
+- A workbook with Excel notes or threaded comments on a sheet, such as the one `commented_workbook` in `tests/test_xlsx_import.py` writes, and a config with `xlsx.sources` and a `headings` entry.
+
+- **Import.** Run `python3 dist/reqtable.pyz <workbook.xlsx> -c <config.json> -o "$RUN_DIR/xlsx.html"`. Exit code `0`, `warning:` lines on stderr for missing IDs, duplicate IDs and dropped comments.
+- **Browse.** Open the report and choose **View → Browse comments**. Imported comments list with the author's initials. A cell with an imported comment shows its red count.

@@ -296,21 +296,22 @@ class SyntheticMappingTests(MappingCase):
                 self.assertEqual(code, 2)
                 self.assertIn("xlsx.sources[0]", err)
 
-    def test_impossible_slug(self) -> None:
+    def test_impossible_slug_becomes_a_numbered_row(self) -> None:
         requirements_workbook(self.workbook, [["Term", "Meaning", "Abbreviation", "Notes"], ["***", "Symbols only.", "", ""]])
-        code, err, _ = self.report(self.workbook, self.SOURCES, "--traceability")
-        self.assertEqual(code, 3)
-        self.assertIn("Terms", err)
-        self.assertIn("row 2", err)
+        code, err, data = self.report(self.workbook, self.SOURCES, "--traceability")
+        self.assertEqual(code, 0, err)
+        self.assertIn("ROW-2", [row["ID"] for row in data["source"]["new"]["rows"]])
+        self.assertIn("[Terms]: 1 row has no ID", err)
 
-    def test_duplicate_generated_ids_use_the_existing_error(self) -> None:
+    def test_duplicate_generated_ids_are_suffixed(self) -> None:
         requirements_workbook(
             self.workbook,
             [["Term", "Meaning", "Abbreviation", "Notes"], ["Alpha", "One.", "A-1", ""], ["Beta", "Two.", "A 1", ""]],
         )
-        code, err, _ = self.report(self.workbook, self.SOURCES, "--traceability")
-        self.assertEqual(code, 3)
-        self.assertIn("duplicate ID 'T-A-1'", err)
+        code, err, data = self.report(self.workbook, self.SOURCES, "--traceability")
+        self.assertEqual(code, 0, err)
+        self.assertIn("T-A-1~2", [row["ID"] for row in data["source"]["new"]["rows"]])
+        self.assertIn("duplicate ID 'T-A-1' at rows 2, 3", err)
 
 
 @unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")

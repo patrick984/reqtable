@@ -31,7 +31,7 @@ from .gates import evaluate_gate, format_result, table_findings
 from .html_report import render_report
 from .review import build_package, import_decisions, sign_off, verify_baseline
 from .waivers import describe_failure, plan_waivers, records, split_ids
-from .xlsx import XlsxSelection, block_to_csv, describe, is_xlsx, mapping_template, read_mapped, read_selection
+from .xlsx import XlsxSelection, block_to_csv, describe, import_workbook, is_xlsx, mapping_template
 
 
 def parser() -> argparse.ArgumentParser:
@@ -154,14 +154,14 @@ def file_source(path: str) -> CsvSource:
 
 
 def xlsx_source(path: str, selection: XlsxSelection, config: dict[str, object]) -> CsvSource:
-    sources = config["xlsx"]["sources"]  # type: ignore[index]
-    if sources:
-        block = read_mapped(path, sources, config["id_column"], config["traceability"])  # type: ignore[arg-type]
-    else:
-        block = read_selection(path, selection)
+    imported = import_workbook(
+        path, selection, config["xlsx"]["sources"], config["id_column"],  # type: ignore[index,arg-type]
+        config["traceability"], config["comments"]["enabled"],  # type: ignore[index,arg-type]
+    )
+    block = imported.block
     text = block_to_csv(block.rows, config["csv"]["delimiter"])  # type: ignore[index]
     # Name only: the label ends up in the report, which gets shared.
-    return CsvSource(f"{Path(path).name} [{block.name}]", text, Path(path))
+    return CsvSource(f"{Path(path).name} [{block.name}]", text, Path(path), imported.warnings, imported.comments)
 
 
 def input_source(path: str, selection: XlsxSelection, config: dict[str, object]) -> CsvSource:
@@ -352,6 +352,8 @@ def run(argv: list[str] | None = None) -> int:
         if is_xlsx(args.input) and args.output.lower().endswith(".csv"):
             # Same bytes the browser's Save CSV writes: BOM and CRLF.
             assert source.text is not None
+            for warning in new.warnings:
+                print(f"warning: {warning}", file=sys.stderr)
             atomic_write_text(args.output, "\ufeff" + source.text)
             return 0
     store = table_store(args.new if diff_mode else args.input, selection, config)
