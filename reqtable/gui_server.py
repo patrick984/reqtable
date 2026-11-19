@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .core import ReqtableError, load_config
 from .gui import (
-    WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, build_argv, is_workbook_path, launcher, posix_command,
+    WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, build_argv, column_source, is_workbook_path, launcher, posix_command,
     powershell_command, script, workflow_named,
 )
 from .gui_page import render_page
@@ -78,7 +78,7 @@ class Session:
         self.opener(target.as_uri())
 
     def browse(self, path: str, extensions: tuple[str, ...]) -> dict[str, Any]:
-        folder = Path(path).expanduser().resolve() if path else self.workdir
+        folder = (self.workdir / Path(path).expanduser()).resolve() if path else self.workdir
         try:
             children = sorted(folder.iterdir(), key=lambda p: p.name.lower())
         except (OSError, NotADirectoryError) as exc:
@@ -274,7 +274,11 @@ class GuiServer(ThreadingHTTPServer):
 
 
 def workflows_json() -> list[dict[str, Any]]:
-    return [asdict(workflow) for workflow in WORKFLOWS]
+    result = []
+    for workflow in WORKFLOWS:
+        source = column_source(workflow)
+        result.append({**asdict(workflow), "column_source": source.name if source else ""})
+    return result
 
 
 def make_server(workdir: Path, port: int = 0, opener: Callable[[str], object] = webbrowser.open) -> GuiServer:

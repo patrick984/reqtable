@@ -100,8 +100,8 @@ def _source(name: str, label: str, flag: str | None, help: str) -> Field:
     return Field(name, label, "open", flag, help, required=True, extensions=TABLE_EXTENSIONS)
 
 
-def _html_output(help: str) -> Field:
-    return Field("output", "Save the report as", "save", "-o", help, required=True, extensions=(".html",))
+def _html_output(name: str, help: str) -> Field:
+    return Field("output", "Save the report as", "save", "-o", help, required=True, extensions=(".html",), default=name)
 
 
 WORKFLOWS: tuple[Workflow, ...] = (
@@ -111,7 +111,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         "Use this when you have a requirements spreadsheet and want to read, filter, review or edit it as a report.",
         (
             _source("input", "Spreadsheet to read", None, "A CSV or Excel (.xlsx) file."),
-            _html_output("Where the finished report goes. It is one self-contained file you can email."),
+            _html_output("requirements-report.html", "Where the finished report goes. It is one self-contained file you can email."),
             ID_COLUMN,
             Field(
                 "document_mode", "What is the report for?", "choice", "--document-mode",
@@ -134,7 +134,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         (
             _source("old", "Older version", "--old", "The file to compare against."),
             _source("new", "Newer version", "--new", "The file with the latest changes."),
-            _html_output("Where the comparison report goes."),
+            _html_output("requirements-diff.html", "Where the comparison report goes."),
             ID_COLUMN,
             Field(
                 "initial_diff_view", "How to show changes", "choice", "--initial-diff-view",
@@ -158,7 +158,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
                 "report", "Reviewed report", "open", "--extract-comments",
                 "The report file a reviewer saved, with their comments in it.", required=True, extensions=(".html",),
             ),
-            Field("output", "Save the comments as", "save", "-o", "Where the CSV file of comments goes.", required=True, extensions=(".csv",)),
+            Field("output", "Save the comments as", "save", "-o", "Where the CSV file of comments goes.", required=True, extensions=(".csv",), default="review-comments.csv"),
             Field(
                 "csv_base", "Which rows to include", "choice", "--csv-base",
                 "For a comparison report. New keeps rows in the newer version, old the older one, union both.",
@@ -192,7 +192,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         "Use this when you need a plain CSV, for example to keep in version control or compare with an older version.",
         (
             Field("input", "Excel workbook", "open", None, "The .xlsx file to read.", required=True, extensions=(".xlsx",)),
-            Field("output", "Save the CSV as", "save", "-o", "Where the CSV file goes. The name must end in .csv.", required=True, extensions=(".csv",)),
+            Field("output", "Save the CSV as", "save", "-o", "Where the CSV file goes. The name must end in .csv.", required=True, extensions=(".csv",), default="workbook-table.csv"),
             ID_COLUMN, TABLE, SHEET, HEADER_ROW, CONFIG, DELIMITER,
         ),
     ),
