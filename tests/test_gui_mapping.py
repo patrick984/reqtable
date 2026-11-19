@@ -180,8 +180,11 @@ class MergeRoleTests(unittest.TestCase):
         self.assertNotIn("merge", built[0])
 
     def test_the_id_column_name_is_used_for_the_merge_key(self) -> None:
-        form = {"id_column": "Req ID", "sources": [source("sheet", "Matrix", "merge", [("Requirement", "map", "ID", ""), ("Level", "map", "Verification Level", "")])]}
-        built = build_mapping(form)["xlsx"]["sources"][0]  # type: ignore[index]
+        form = {"id_column": "Req ID", "sources": [
+            source("table", "Reqs", "requirements", [("Req ID", "map", "ID", "")]),
+            source("sheet", "Matrix", "merge", [("Requirement", "map", "ID", ""), ("Level", "map", "Verification Level", "")]),
+        ]}
+        built = build_mapping(form)["xlsx"]["sources"][1]  # type: ignore[index]
         self.assertEqual(built["columns"], {"Requirement": "Req ID", "Level": "Verification Level"})
 
     def test_a_merge_source_must_say_which_column_holds_the_id(self) -> None:

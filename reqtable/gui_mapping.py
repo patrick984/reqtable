@@ -346,8 +346,7 @@ def build_mapping(form: Mapping[str, Any]) -> dict[str, Any]:
         "xlsx": {**{k: v for k, v in xlsx_extra.items() if k != "sources"}, "sources": sources},
     }
     try:
-        # `merge` is checked by the importer; the validator only learns it once the importer branch lands.
-        validate_xlsx_sources([{k: v for k, v in source.items() if k != "merge"} for source in sources])
+        validate_xlsx_sources(sources)
     except ConfigError as exc:
         raise GuiError(str(exc)) from exc
     return mapping
