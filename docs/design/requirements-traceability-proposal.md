@@ -1,6 +1,6 @@
 # ReqTable systems and traceability proposal
 
-**Status:** Implemented as an opt-in pilot. The [reviewed baseline](requirements-uat.csv) applies the model to ReqTable's full requirement set. See the [README](README.md#systems-and-traceability-pilot) for generation commands and the [UAT checklist](UAT-CHECKLIST.md#systems-and-traceability-pilot) for trial scenarios.
+**Status:** Implemented as an opt-in pilot. The [reviewed baseline](../../requirements-uat.csv) applies the model to ReqTable's full requirement set. See the [traceability guide](../traceability.md) for generation commands and the [UAT checklist](../uat/UAT-CHECKLIST.md#systems-and-traceability-pilot) for trial scenarios.
 
 ReqTable should support system breakdown, requirement allocation, and traceability in a single CSV. The generated report should derive its navigation, reverse links, and findings from that CSV and run offline. The pilot will use ReqTable itself as the system, with the Python generator and Browser report as subsystems.
 
@@ -80,7 +80,7 @@ Keep existing requirement wording and IDs. The pilot adds a small set of system 
 | `REQ-124` | Requirement | Existing Python standard-library constraint. | | `SYS-GENERATOR` | `SYS-GENERATOR` | | |
 | `REQ-145` | Requirement | Existing keyboard navigation and offline shortcut help requirement. | | `SYS-REPORT` | `SYS-REPORT` | | |
 
-The proposed children have separate verification activities. Run the generator against a local fixture with networking disabled, then open the resulting HTML with networking disabled and exercise the review and save-copy workflows. Retain end-to-end ownership of `REQ-003` at the ReqTable level. The existing source statements are in [requirements-uat.csv](requirements-uat.csv).
+The proposed children have separate verification activities. Run the generator against a local fixture with networking disabled, then open the resulting HTML with networking disabled and exercise the review and save-copy workflows. Retain end-to-end ownership of `REQ-003` at the ReqTable level. The existing source statements are in [requirements-uat.csv](../../requirements-uat.csv).
 
 ## Baseline review
 

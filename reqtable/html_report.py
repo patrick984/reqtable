@@ -11,7 +11,15 @@ from .comparison import COMPARISON_JS
 from .gate_checks import GATE_CHECKS_JS
 from .package import PACKAGE_CSS, PACKAGE_HTML, PACKAGE_JS
 from .values import VALUE_EDIT_JS
-from .traceability import TRACE_CSS, TRACE_HTML, TRACE_MENU, TRACE_MODEL_JS, TRACE_SYSTEMS, TRACE_UI_JS, TRACE_WORKSPACE
+from .traceability import (
+    TRACE_CSS,
+    TRACE_HTML,
+    TRACE_MENU,
+    TRACE_MODEL_JS,
+    TRACE_SYSTEMS,
+    TRACE_UI_JS,
+    TRACE_WORKSPACE,
+)
 
 
 CSS = r"""
@@ -185,7 +193,8 @@ tr.drop-before>td,tr.drop-before>th{box-shadow:inset 0 3px var(--accent)}
 """
 
 
-JS = r"""
+JS = (
+    r"""
 "use strict";
 const data=JSON.parse(document.getElementById("reqtable-data").textContent);
 function configuredPixels(column,fallback=column.estimatedWidth||160){const raw=column.width;if(!raw)return fallback;const n=parseFloat(raw);if(raw.endsWith("rem")||raw.endsWith("em"))return n*16;if(raw.endsWith("ch"))return n*8;if(raw.endsWith("%"))return Math.max(70,document.documentElement.clientWidth*n/100);return n;}
@@ -2247,7 +2256,9 @@ document.addEventListener("keydown",event=>{
   event.preventDefault();
   event.stopImmediatePropagation();
 },true);
-""" + QUALITY_JS
+"""
+    + QUALITY_JS
+)
 
 FILTER_JS = r"""
 const naturalCompare=new Intl.Collator(undefined,{numeric:true,sensitivity:"base"}).compare;
@@ -2529,7 +2540,11 @@ def render_report(data: dict[str, Any]) -> str:
             for name in ("added", "removed", "changed", "unchanged")
         )
     if meta["ignoredColumns"]:
-        summary += '<span class="badge">Ignored for change detection: ' + html.escape(", ".join(meta["ignoredColumns"])) + "</span>"
+        summary += (
+            '<span class="badge">Ignored for change detection: '
+            + html.escape(", ".join(meta["ignoredColumns"]))
+            + "</span>"
+        )
     embedded = {key: value for key, value in data.items() if key != "rows"}
     embedded["formatVersion"] = 2
     if meta["mode"] == "diff":
@@ -2545,12 +2560,36 @@ def render_report(data: dict[str, Any]) -> str:
         .replace("__DRAFTS_HTML__", DRAFTS_HTML)
         .replace("__PACKAGE_HTML__", PACKAGE_HTML if has_package else "")
         .replace("__TITLE__", title)
-        .replace("__DOCUMENT_MODE_LABEL__", "Develop mode" if document_mode == "develop" else "Review mode")
+        .replace(
+            "__DOCUMENT_MODE_LABEL__",
+            "Develop mode" if document_mode == "develop" else "Review mode",
+        )
         .replace("__DOCUMENT_MODE__", document_mode)
         .replace("__META__", description)
         .replace("__SUMMARY__", summary)
-        .replace("__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True))
-        .replace("__CSS__", CSS + DRAFTS_CSS + (PACKAGE_CSS if has_package else "") + (TRACE_CSS + GLOSSARY_CSS if traceability else ""))
+        .replace(
+            "__INITIALS__", html.escape(data["options"]["reviewerInitials"], quote=True)
+        )
+        .replace(
+            "__CSS__",
+            CSS
+            + DRAFTS_CSS
+            + (PACKAGE_CSS if has_package else "")
+            + (TRACE_CSS + GLOSSARY_CSS if traceability else ""),
+        )
         .replace("__DATA__", _safe_json(embedded))
-        .replace("__JS__", COMPARISON_JS + GATE_CHECKS_JS + POPOVER_JS + JS + FILTER_JS + WINDOW_JS + VALUE_EDIT_JS + trace_js + (PACKAGE_JS if has_package else "const renderPackage=null;\n") + DRAFTS_JS + INITIAL_RENDER_JS)
+        .replace(
+            "__JS__",
+            COMPARISON_JS
+            + GATE_CHECKS_JS
+            + POPOVER_JS
+            + JS
+            + FILTER_JS
+            + WINDOW_JS
+            + VALUE_EDIT_JS
+            + trace_js
+            + (PACKAGE_JS if has_package else "const renderPackage=null;\n")
+            + DRAFTS_JS
+            + INITIAL_RENDER_JS,
+        )
     )

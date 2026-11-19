@@ -25,11 +25,19 @@ class ValueColumnTests(TempFiles):
             self.assertIn(name, headers)
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class ValueModelTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + TRACE_MODEL_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + TRACE_MODEL_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     PRELUDE = r"""
 const HEADERS=["ID","Type","Name","Definition","Aliases","Priority","Method","Field","Multiple","Part of","Source refs"];
@@ -46,7 +54,9 @@ const base=[
 """
 
     def test_clean_table_and_unconstrained_column_have_no_findings(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 assert.deepEqual(findings([...base,req("R1",{Priority:"Must",Method:"Manual browser test; Automated test"}),
   req("R2",{Priority:" Should "}),req("R3",{})]),[]);
 const loose=[value("V1","Priority","Must"),req("R1",{Method:"Anything goes"})];
@@ -58,10 +68,13 @@ assert.equal(rules.get("Priority").multiple,false);
 assert.equal(rules.get("Method").multiple,true);
 assert.equal(rules.get("Method").aliases.get("Browser check").row.Name,"Manual browser test");
 assert.deepEqual([...rules.get("Method").values.keys()],["Manual browser test","Automated test"]);
-""")
+"""
+        )
 
     def test_undefined_alias_and_case_spellings(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const found=findings([...base,req("R1",{Priority:"Shoud"}),req("R2",{Priority:"must"}),
   req("R3",{Method:"Manual verification"}),req("R4",{Priority:"Must; Should"}),
   req("R5",{Method:"automated TEST"}),{ID:"N",Type:"Need",Priority:"Urgent"}]);
@@ -73,10 +86,13 @@ assert.deepEqual(found,[
   "R5|Method|“automated TEST” is spelled differently from the defined value; use “Automated test”.",
   "N|Priority|“Urgent” is not a defined Priority value."
 ]);
-""")
+"""
+        )
 
     def test_multiple_values_split_and_flag_duplicates(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const found=findings([...base,
   req("R1",{Method:"Automated test; Browser check; Bogus;; "}),
   req("R2",{Method:"Automated test; automated test"})]);
@@ -86,10 +102,13 @@ assert.deepEqual(found,[
   "R2|Method|“automated test” is listed more than once.",
   "R2|Method|“automated test” is spelled differently from the defined value; use “Automated test”."
 ]);
-""")
+"""
+        )
 
     def test_invalid_value_records(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const found=findings([
   value("V1","Priority","Must"),value("DUP","Priority","must"),
   value("A1","Method","One",{Aliases:"Uno"}),value("A2","Method","Two",{Aliases:"uno; One"}),
@@ -112,10 +131,13 @@ has("NONAME|Name|Enter the allowed value.");
 has("NODEF|Definition|Explain what this value means.");
 has("LINK|Source refs|Source refs does not apply to Value records.");
 assert.equal(index([value("GHOST","Colour","Red")]).values.size,0);
-""")
+"""
+        )
 
     def test_invalid_field_records(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const found=findings([
   value("V1","Priority","Must"),field("F1","Priority"),field("F2","Priority","Yes"),
   field("NONAME",""),field("GHOST","Colour"),field("RES","Type"),
@@ -136,28 +158,56 @@ assert(!found.some(line=>line.startsWith("UNUSED|")));
 const rules=index([value("V1","Priority","Must"),field("F1","Priority","Yes")]).values;
 assert.equal(rules.get("Priority").field.id,"F1");
 assert.equal(rules.get("Priority").multiple,true);
-""")
+"""
+        )
 
     def test_shipped_uat_csv_has_no_value_findings(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
-        source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
+        source = build_report_data(
+            read_csv_table(str(UAT_CSV), config), config, "uat.html"
+        )["source"]["new"]
         script = (
-            'const rows=' + json.dumps(source["rows"]) + ';\n' + TRACE_MODEL_JS
-            + 'const index=buildTraceIndex(rows,row=>row.ID,{headers:' + json.dumps(source["headers"])
+            "const rows="
+            + json.dumps(source["rows"])
+            + ";\n"
+            + TRACE_MODEL_JS
+            + "const index=buildTraceIndex(rows,row=>row.ID,{headers:"
+            + json.dumps(source["headers"])
             + ',idColumn:"ID"});console.log(JSON.stringify({issues:index.issues,'
-            + 'columns:[...index.values.keys()]}));'
+            + "columns:[...index.values.keys()]}));"
         )
-        result = json.loads(subprocess.run(["node"], input=script, text=True, check=True,
-                                           capture_output=True).stdout)
+        result = json.loads(
+            subprocess.run(
+                ["node"], input=script, text=True, check=True, capture_output=True
+            ).stdout
+        )
         self.assertEqual(result["issues"], [])
-        self.assertEqual(sorted(result["columns"]), ["Compliance", "Execution", "Priority", "Result", "Verification Level", "Verification Method"])
+        self.assertEqual(
+            sorted(result["columns"]),
+            [
+                "Compliance",
+                "Execution",
+                "Priority",
+                "Result",
+                "Verification Level",
+                "Verification Method",
+            ],
+        )
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class BooleanColumnTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + VALUE_EDIT_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + VALUE_EDIT_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_toggle_writes_yes_or_empty(self):
         self.run_js("""
@@ -187,20 +237,34 @@ if __name__ == "__main__":
     unittest.main()
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class ValueEditorTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + TRACE_MODEL_JS + VALUE_EDIT_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + TRACE_MODEL_JS
+            + VALUE_EDIT_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
-    PRELUDE = ValueModelTests.PRELUDE + r"""
+    PRELUDE = (
+        ValueModelTests.PRELUDE
+        + r"""
 const names=source=>source.items.map(item=>item.value);
 const rule=column=>index(base).values.get(column);
 const pick=(source,text,caret=text.length)=>matchSuggestions(source,text,caret).map(item=>item.value);
 """
+    )
 
     def test_defined_values_carry_definitions_and_skip_aliases(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const source=suggestionSource(rule("Priority"),[],"Priority");
 assert.deepEqual(source.items,[{value:"Must",detail:"Defined."},{value:"Should",detail:"Defined."}]);
 assert.equal(source.defined,true);
@@ -208,10 +272,13 @@ assert.equal(source.multiple,false);
 const method=suggestionSource(rule("Method"),[],"Method");
 assert.deepEqual(names(method),["Manual browser test","Automated test"]);
 assert.equal(method.multiple,true);
-""")
+"""
+        )
 
     def test_observed_values_keep_prefix_matching_and_limits(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const rows=[{Cat:"Zed"},{Cat:"Alpha"},{Cat:"Alpine "},{Cat:""}];
 const source=suggestionSource(undefined,rows,"Cat");
 assert.deepEqual(source.items,[{value:"Alpha",detail:""},{value:"Alpine",detail:""},{value:"Zed",detail:""}]);
@@ -221,30 +288,39 @@ assert.deepEqual(pick(source,"Alpha"),[]);
 assert.deepEqual(suggestionSource(undefined,[{Cat:"a\nb"}],"Cat").items,[]);
 assert.deepEqual(suggestionSource(undefined,[{Cat:"x".repeat(61)}],"Cat").items,[]);
 assert.deepEqual(suggestionSource(undefined,Array.from({length:51},(_,i)=>({Cat:"v"+i})),"Cat").items,[]);
-""")
+"""
+        )
 
     def test_defined_values_match_prefix_before_contained_text(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const source=suggestionSource(rule("Method"),[],"Method");
 assert.deepEqual(pick(source,"browser"),["Manual browser test"]);
 assert.deepEqual(pick(source,"A"),["Automated test","Manual browser test"]);
 assert.deepEqual(pick(source,"TEST"),["Manual browser test","Automated test"]);
 assert.deepEqual(pick(source,"auto"),["Automated test"]);
 assert.deepEqual(pick(source,"zzz"),[]);
-""")
+"""
+        )
 
     def test_multiple_columns_work_on_the_segment_under_the_caret(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const source=suggestionSource(rule("Method"),[],"Method");
 const text="Manual browser test; au; ";
 assert.deepEqual(pick(source,text,text.indexOf("au")+1),["Automated test"]);
 assert.deepEqual(pick(source,"Automated test; ",16),["Manual browser test"]);
 assert.deepEqual(pick(source,"Automated test; Manual browser test",5),[]);
 assert.deepEqual(pick(source,"Manual browser test; ",3),[]);
-""")
+"""
+        )
 
     def test_choosing_replaces_only_the_segment(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const multi=suggestionSource(rule("Method"),[],"Method");
 const middle="Manual browser test;au;Documentation review";
 const joined="Manual browser test; Automated test; Documentation review";
@@ -255,10 +331,13 @@ assert.deepEqual(chooseSuggestion(multi,"Manual browser test; ",21,"Automated te
 assert.deepEqual(chooseSuggestion(multi,"",0,"Automated test"),{text:"Automated test",caret:14,commit:false});
 const single=suggestionSource(rule("Priority"),[],"Priority");
 assert.deepEqual(chooseSuggestion(single,"Mu",2,"Must"),{text:"Must",caret:4,commit:true});
-""")
+"""
+        )
 
     def test_findings_group_by_record_and_column(self):
-        self.run_js(self.PRELUDE + r"""
+        self.run_js(
+            self.PRELUDE
+            + r"""
 const found=index([...base,req("R1",{Priority:"Shoud",Method:"Nope; Automated test"}),req("R2",{Priority:"Must"})]).issues;
 const cells=groupFindingsByCell(found);
 assert.deepEqual([...cells.keys()],["R1"]);
@@ -267,14 +346,23 @@ assert.equal(cells.get("R1").get("Priority").length,1);
 const two=groupFindingsByCell([{id:null,field:"Part of",message:"x"},{id:"A",field:"ID",message:"y"},{id:"A",field:"ID",message:"z"}]);
 assert.equal(two.get("A").get("ID").length,2);
 assert.equal(two.size,1);
-""")
+"""
+        )
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class ValueRenameTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + VALUE_EDIT_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + VALUE_EDIT_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_single_value_columns_match_the_whole_cell(self):
         self.run_js(r"""

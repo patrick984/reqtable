@@ -38,7 +38,9 @@ class TempFiles(unittest.TestCase):
 
 class ConfigTests(TempFiles):
     def test_cli_override_wins(self) -> None:
-        path = self.write("config.json", json.dumps({"id_column": "Old", "title": "Configured"}))
+        path = self.write(
+            "config.json", json.dumps({"id_column": "Old", "title": "Configured"})
+        )
         config = load_config(str(path), {"id_column": "ID", "title": "CLI"})
         self.assertEqual(config["id_column"], "ID")
         self.assertEqual(config["title"], "CLI")
@@ -49,12 +51,16 @@ class ConfigTests(TempFiles):
             load_config(str(path))
 
     def test_unsafe_width_fails(self) -> None:
-        path = self.write("config.json", '{"columns":{"widths":{"ID":"1rem; color:red"}}}')
+        path = self.write(
+            "config.json", '{"columns":{"widths":{"ID":"1rem; color:red"}}}'
+        )
         with self.assertRaisesRegex(ConfigError, "unsafe"):
             load_config(str(path))
 
     def test_document_mode_validation(self) -> None:
-        self.assertEqual(load_config(None, {"document_mode": "develop"})["document_mode"], "develop")
+        self.assertEqual(
+            load_config(None, {"document_mode": "develop"})["document_mode"], "develop"
+        )
         with self.assertRaisesRegex(ConfigError, "document_mode"):
             load_config(None, {"document_mode": "edit"})
 
@@ -91,7 +97,9 @@ class CsvTests(TempFiles):
 
 class MarkdownAndDiffTests(unittest.TestCase):
     def test_safe_markdown(self) -> None:
-        rendered = render_markdown('**bold** <script>alert(1)</script> [bad](javascript:alert(1))')
+        rendered = render_markdown(
+            "**bold** <script>alert(1)</script> [bad](javascript:alert(1))"
+        )
         self.assertIn("<strong>bold</strong>", rendered)
         self.assertNotIn("<script>", rendered)
         self.assertNotIn('href="javascript:', rendered)
@@ -115,16 +123,29 @@ class ReportTests(TempFiles):
         return load_config(None, {"id_column": "ID", "title": "Test report"})
 
     def tables(self):
-        old = self.write("old.csv", "ID,Requirement,Status\nR1,Old wording,Draft\nR2,Removed item,Draft\nR4,Same,Final\n")
-        new = self.write("new.csv", "ID,Requirement,Status,Owner\nR1,New wording,Final,PN\nR3,Added item,Draft,AB\nR4,Same,Final,PN\n")
-        return read_csv_table(str(old), self.config()), read_csv_table(str(new), self.config())
+        old = self.write(
+            "old.csv",
+            "ID,Requirement,Status\nR1,Old wording,Draft\nR2,Removed item,Draft\nR4,Same,Final\n",
+        )
+        new = self.write(
+            "new.csv",
+            "ID,Requirement,Status,Owner\nR1,New wording,Final,PN\nR3,Added item,Draft,AB\nR4,Same,Final,PN\n",
+        )
+        return read_csv_table(str(old), self.config()), read_csv_table(
+            str(new), self.config()
+        )
 
     def test_diff_status_and_schema_union(self) -> None:
         old, new = self.tables()
         data = build_report_data(new, self.config(), "report.html", old)
         statuses = {row["id"]: row["status"] for row in data["rows"]}
-        self.assertEqual(statuses, {"R1": "changed", "R2": "removed", "R3": "added", "R4": "changed"})
-        self.assertEqual([c["name"] for c in data["columns"]], ["ID", "Requirement", "Status", "Owner"])
+        self.assertEqual(
+            statuses, {"R1": "changed", "R2": "removed", "R3": "added", "R4": "changed"}
+        )
+        self.assertEqual(
+            [c["name"] for c in data["columns"]],
+            ["ID", "Requirement", "Status", "Owner"],
+        )
 
     def test_absent_empty_column_does_not_create_cell_diff(self) -> None:
         old_path = self.write("old-empty.csv", "ID,Text\nR1,Same\n")
@@ -136,12 +157,14 @@ class ReportTests(TempFiles):
         self.assertFalse(data["rows"][0]["cells"]["New Column"]["changed"])
 
     def test_report_is_self_contained_and_escaped(self) -> None:
-        path = self.write("input.csv", 'ID,Text\nR1,"</script><script>alert(1)</script>"\n')
+        path = self.write(
+            "input.csv", 'ID,Text\nR1,"</script><script>alert(1)</script>"\n'
+        )
         table = read_csv_table(str(path), self.config())
         report = render_report(build_report_data(table, self.config(), "report.html"))
         self.assertIn('id="reqtable-data"', report)
-        self.assertNotIn('</script><script>alert(1)</script>', report)
-        self.assertNotRegex(report, r'<(?:link|script)[^>]+src=')
+        self.assertNotIn("</script><script>alert(1)</script>", report)
+        self.assertNotRegex(report, r"<(?:link|script)[^>]+src=")
         self.assertNotIn("https://cdn", report)
 
     def test_report_includes_interactive_uat_controls(self) -> None:
@@ -172,7 +195,7 @@ class ReportTests(TempFiles):
         self.assertIn("wrap.clientHeight", report)
         self.assertIn("safeLeft=wr.left+statusWidth", report)
         self.assertIn('"#dirty-indicator"', report)
-        self.assertIn('data-inline-comment-id=', report)
+        self.assertIn("data-inline-comment-id=", report)
         self.assertIn("saveInlineComment", report)
         self.assertIn("restoreSidebarFocus", report)
         self.assertIn(">Comments only</button>", report)
@@ -184,7 +207,9 @@ class ReportTests(TempFiles):
     def test_develop_report_includes_editing_and_csv_controls(self) -> None:
         path = self.write("input.csv", "ID,Text\nR1,Hello\n")
         config = load_config(None, {"id_column": "ID", "document_mode": "develop"})
-        data = build_report_data(read_csv_table(str(path), config), config, "report.html")
+        data = build_report_data(
+            read_csv_table(str(path), config), config, "report.html"
+        )
         report = render_report(data)
         self.assertEqual(data["meta"]["documentMode"], "develop")
         self.assertIn(">Develop mode<", report)
@@ -215,13 +240,22 @@ class ReportTests(TempFiles):
         path = self.write("input.csv", "ID,Text\nR1,Hello\nR2,World\n")
         table = read_csv_table(str(path), self.config())
         data = build_report_data(table, self.config(), "report.html")
-        data["comments"] = [{
-            "id": "c1", "requirementId": "R1", "column": "Text", "initials": "PN",
-            "created": "2026-09-13T15:42:18+10:00", "modified": None, "text": "Clarify this."
-        }]
+        data["comments"] = [
+            {
+                "id": "c1",
+                "requirementId": "R1",
+                "column": "Text",
+                "initials": "PN",
+                "created": "2026-09-13T15:42:18+10:00",
+                "modified": None,
+                "text": "Clarify this.",
+            }
+        ]
         report_path = self.write("reviewed.html", render_report(data))
         csv_path = self.root / "reviewed.csv"
-        extract_comments_csv(str(report_path), str(csv_path), "Comments", "json", "new", False)
+        extract_comments_csv(
+            str(report_path), str(csv_path), "Comments", "json", "new", False
+        )
         with csv_path.open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         comments = json.loads(rows[0]["Comments"])
@@ -232,17 +266,38 @@ class ReportTests(TempFiles):
     def test_diff_export_refuses_comment_loss(self) -> None:
         old, new = self.tables()
         data = build_report_data(new, self.config(), "report.html", old)
-        data["comments"] = [{
-            "id": "c1", "requirementId": "R2", "column": "Requirement", "initials": "PN",
-            "created": "2026-09-13T15:42:18+10:00", "modified": None, "text": "Why removed?"
-        }]
+        data["comments"] = [
+            {
+                "id": "c1",
+                "requirementId": "R2",
+                "column": "Requirement",
+                "initials": "PN",
+                "created": "2026-09-13T15:42:18+10:00",
+                "modified": None,
+                "text": "Why removed?",
+            }
+        ]
         report_path = self.write("diff-reviewed.html", render_report(data))
         embedded = extract_report_json(report_path)
         self.assertEqual(embedded["formatVersion"], 2)
         self.assertNotIn("rows", embedded)
         with self.assertRaisesRegex(InputError, "would omit comments"):
-            extract_comments_csv(str(report_path), str(self.root / "out.csv"), "Comments", "json", "new", False)
-        extract_comments_csv(str(report_path), str(self.root / "union.csv"), "Comments", "json", "union", False)
+            extract_comments_csv(
+                str(report_path),
+                str(self.root / "out.csv"),
+                "Comments",
+                "json",
+                "new",
+                False,
+            )
+        extract_comments_csv(
+            str(report_path),
+            str(self.root / "union.csv"),
+            "Comments",
+            "json",
+            "union",
+            False,
+        )
         with (self.root / "union.csv").open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         removed = next(row for row in rows if row["ID"] == "R2")
@@ -255,8 +310,12 @@ class ReportTests(TempFiles):
             + "</script>",
         )
         legacy_csv = self.root / "legacy.csv"
-        extract_comments_csv(str(legacy), str(legacy_csv), "Comments", "json", "union", False)
-        self.assertEqual(legacy_csv.read_bytes(), (self.root / "union.csv").read_bytes())
+        extract_comments_csv(
+            str(legacy), str(legacy_csv), "Comments", "json", "union", False
+        )
+        self.assertEqual(
+            legacy_csv.read_bytes(), (self.root / "union.csv").read_bytes()
+        )
 
 
 if __name__ == "__main__":

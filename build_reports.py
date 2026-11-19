@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from __future__ import annotations
 
 import sys
@@ -13,16 +15,28 @@ REPORTS = {
     "requirements-uat-develop.html": [*UAT, "--document-mode", "develop"],
     "requirements-uat.html": UAT,
     "examples/requirements-diff.html": [
-        "--old", "examples/requirements-old.csv", "--new", "examples/requirements-new.csv",
-        "-c", "examples/config.json",
+        "--old",
+        "examples/requirements-old.csv",
+        "--new",
+        "examples/requirements-new.csv",
+        "-c",
+        "examples/config.json",
     ],
 }
 
 
 def main() -> int:
     for output, args in REPORTS.items():
-        code = reqtable([*(str(ROOT / arg) if arg.endswith((".csv", ".json")) else arg for arg in args),
-                         "-o", str(ROOT / output)])
+        code = reqtable(
+            [
+                *(
+                    str(ROOT / arg) if arg.endswith((".csv", ".json")) else arg
+                    for arg in args
+                ),
+                "-o",
+                str(ROOT / output),
+            ]
+        )
         if code:
             print(f"failed: {output}", file=sys.stderr)
             return code

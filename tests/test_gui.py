@@ -9,8 +9,21 @@ from pathlib import Path
 
 from reqtable import cli
 from reqtable.gui import (
-    GROUPS, WORKFLOWS, BadRequest, ScriptStep, GuiError, blocked_checks, build_argv, guess_id_column, launcher, lookup_source, posix_command,
-    powershell_command, quote_windows, script, workflow_named,
+    GROUPS,
+    WORKFLOWS,
+    BadRequest,
+    ScriptStep,
+    GuiError,
+    blocked_checks,
+    build_argv,
+    guess_id_column,
+    launcher,
+    lookup_source,
+    posix_command,
+    powershell_command,
+    quote_windows,
+    script,
+    workflow_named,
 )
 from reqtable.signoff import DECISIONS
 from test_xlsx_import import write_workbook
@@ -21,77 +34,215 @@ REPORT = {"input": "reqs.csv", "output": "reqs.html", "id_column": "ID"}
 def run_cli(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     here = Path(cli.__file__).resolve().parent.parent
     return subprocess.run(
-        [sys.executable, "-m", "reqtable", *argv], cwd=cwd, capture_output=True, text=True, env={"PYTHONPATH": str(here)},
+        [sys.executable, "-m", "reqtable", *argv],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env={"PYTHONPATH": str(here)},
     )
 
 
 class BuildArgvTests(unittest.TestCase):
     def test_report_puts_positional_first_and_skips_empty_values(self) -> None:
-        argv = build_argv(workflow_named("report"), {"output": "out.html", "id_column": "ID", "title": "", "input": "reqs.csv"})
+        argv = build_argv(
+            workflow_named("report"),
+            {"output": "out.html", "id_column": "ID", "title": "", "input": "reqs.csv"},
+        )
         self.assertEqual(argv, ["reqs.csv", "--id-column", "ID", "-o", "out.html"])
 
     def test_report_develop_mode_and_advanced_values(self) -> None:
-        argv = build_argv(workflow_named("report"), {**REPORT, "document_mode": "develop", "title": "My reqs", "encoding": "latin-1"})
+        argv = build_argv(
+            workflow_named("report"),
+            {
+                **REPORT,
+                "document_mode": "develop",
+                "title": "My reqs",
+                "encoding": "latin-1",
+            },
+        )
         self.assertEqual(
-            argv, ["reqs.csv", "--id-column", "ID", "-o", "reqs.html", "--document-mode", "develop", "--title", "My reqs", "--encoding", "latin-1"]
+            argv,
+            [
+                "reqs.csv",
+                "--id-column",
+                "ID",
+                "-o",
+                "reqs.html",
+                "--document-mode",
+                "develop",
+                "--title",
+                "My reqs",
+                "--encoding",
+                "latin-1",
+            ],
         )
 
     def test_develop_card_always_emits_develop_mode_and_has_no_mode_field(self) -> None:
         develop = workflow_named("develop")
         self.assertNotIn("document_mode", [f.name for f in develop.fields])
-        self.assertEqual(build_argv(develop, REPORT), ["reqs.csv", "--id-column", "ID", "-o", "reqs.html", "--document-mode", "develop"])
+        self.assertEqual(
+            build_argv(develop, REPORT),
+            [
+                "reqs.csv",
+                "--id-column",
+                "ID",
+                "-o",
+                "reqs.html",
+                "--document-mode",
+                "develop",
+            ],
+        )
         with self.assertRaises(BadRequest):
             build_argv(develop, {**REPORT, "document_mode": "review"})
 
     def test_a_header_row_without_a_sheet_is_dropped(self) -> None:
         values = {**REPORT, "input": "w.xlsx", "table": "Reqs", "header_row": "3"}
         self.assertNotIn("--header-row", build_argv(workflow_named("report"), values))
-        self.assertIn("--header-row", build_argv(workflow_named("report"), {**values, "table": "", "sheet": "Reqs"}))
+        self.assertIn(
+            "--header-row",
+            build_argv(
+                workflow_named("report"), {**values, "table": "", "sheet": "Reqs"}
+            ),
+        )
 
     def test_excel_choices_come_before_the_id_column_and_the_output(self) -> None:
         for workflow_id in ("report", "diff", "to_csv"):
             names = [f.name for f in workflow_named(workflow_id).fields]
-            order = [names.index(n) for n in ("table", "sheet", "header_row", "id_column", "output")]
+            order = [
+                names.index(n)
+                for n in ("table", "sheet", "header_row", "id_column", "output")
+            ]
             self.assertEqual(order, sorted(order), workflow_id)
             self.assertLess(names.index("id_column"), names.index("output"))
 
     def test_diff_takes_a_document_mode(self) -> None:
-        argv = build_argv(workflow_named("diff"), {"old": "a.csv", "new": "b.csv", "output": "d.html", "document_mode": "develop"})
-        self.assertEqual(argv, ["--old", "a.csv", "--new", "b.csv", "-o", "d.html", "--document-mode", "develop"])
+        argv = build_argv(
+            workflow_named("diff"),
+            {
+                "old": "a.csv",
+                "new": "b.csv",
+                "output": "d.html",
+                "document_mode": "develop",
+            },
+        )
+        self.assertEqual(
+            argv,
+            [
+                "--old",
+                "a.csv",
+                "--new",
+                "b.csv",
+                "-o",
+                "d.html",
+                "--document-mode",
+                "develop",
+            ],
+        )
 
     def test_diff(self) -> None:
-        argv = build_argv(workflow_named("diff"), {
-            "old": "a.csv", "new": "b.csv", "output": "d.html", "id_column": "ID",
-            "initial_diff_view": "side-by-side", "changes_only": "on", "include_unchanged": "off",
-        })
-        self.assertEqual(argv, [
-            "--old", "a.csv", "--new", "b.csv", "--id-column", "ID", "-o", "d.html",
-            "--initial-diff-view", "side-by-side", "--changes-only", "--no-include-unchanged",
-        ])
+        argv = build_argv(
+            workflow_named("diff"),
+            {
+                "old": "a.csv",
+                "new": "b.csv",
+                "output": "d.html",
+                "id_column": "ID",
+                "initial_diff_view": "side-by-side",
+                "changes_only": "on",
+                "include_unchanged": "off",
+            },
+        )
+        self.assertEqual(
+            argv,
+            [
+                "--old",
+                "a.csv",
+                "--new",
+                "b.csv",
+                "--id-column",
+                "ID",
+                "-o",
+                "d.html",
+                "--initial-diff-view",
+                "side-by-side",
+                "--changes-only",
+                "--no-include-unchanged",
+            ],
+        )
 
     def test_comments(self) -> None:
-        argv = build_argv(workflow_named("comments"), {"report": "r.html", "output": "c.csv", "csv_base": "union", "allow_comment_loss": "on"})
-        self.assertEqual(argv, ["--extract-comments", "r.html", "-o", "c.csv", "--csv-base", "union", "--allow-comment-loss"])
+        argv = build_argv(
+            workflow_named("comments"),
+            {
+                "report": "r.html",
+                "output": "c.csv",
+                "csv_base": "union",
+                "allow_comment_loss": "on",
+            },
+        )
+        self.assertEqual(
+            argv,
+            [
+                "--extract-comments",
+                "r.html",
+                "-o",
+                "c.csv",
+                "--csv-base",
+                "union",
+                "--allow-comment-loss",
+            ],
+        )
 
     def test_list_tables(self) -> None:
-        self.assertEqual(build_argv(workflow_named("list_tables"), {"workbook": "w.xlsx"}), ["--list-tables", "w.xlsx"])
+        self.assertEqual(
+            build_argv(workflow_named("list_tables"), {"workbook": "w.xlsx"}),
+            ["--list-tables", "w.xlsx"],
+        )
 
     def test_to_csv_uses_excel_fields_only_for_a_workbook(self) -> None:
-        values = {"input": "w.xlsx", "output": "o.csv", "id_column": "ID", "sheet": "Reqs", "header_row": "3"}
+        values = {
+            "input": "w.xlsx",
+            "output": "o.csv",
+            "id_column": "ID",
+            "sheet": "Reqs",
+            "header_row": "3",
+        }
         self.assertEqual(
             build_argv(workflow_named("to_csv"), values),
-            ["w.xlsx", "--sheet", "Reqs", "--header-row", "3", "--id-column", "ID", "-o", "o.csv"],
+            [
+                "w.xlsx",
+                "--sheet",
+                "Reqs",
+                "--header-row",
+                "3",
+                "--id-column",
+                "ID",
+                "-o",
+                "o.csv",
+            ],
         )
 
     def test_excel_fields_are_dropped_when_the_input_is_a_csv(self) -> None:
-        argv = build_argv(workflow_named("report"), {**REPORT, "table": "Requirements", "header_row": "2"})
+        argv = build_argv(
+            workflow_named("report"),
+            {**REPORT, "table": "Requirements", "header_row": "2"},
+        )
         self.assertEqual(argv, ["reqs.csv", "--id-column", "ID", "-o", "reqs.html"])
 
     def test_an_excel_evidence_file_does_not_make_the_input_a_workbook(self) -> None:
-        argv = build_argv(workflow_named("sign_off"), {
-            "input": "reqs.csv", "baseline": "srr-1", "role": "Chief engineer", "decision": DECISIONS[0],
-            "evidence": "approval.xlsx", "table": "Stray", "sheet": "Old", "header_row": "3",
-        })
+        argv = build_argv(
+            workflow_named("sign_off"),
+            {
+                "input": "reqs.csv",
+                "baseline": "srr-1",
+                "role": "Chief engineer",
+                "decision": DECISIONS[0],
+                "evidence": "approval.xlsx",
+                "table": "Stray",
+                "sheet": "Old",
+                "header_row": "3",
+            },
+        )
         self.assertNotIn("--table", argv)
         self.assertNotIn("--sheet", argv)
         self.assertIn("approval.xlsx", argv)
@@ -99,10 +250,16 @@ class BuildArgvTests(unittest.TestCase):
     def test_paths_inside_the_working_folder_are_relative(self) -> None:
         argv = build_argv(
             workflow_named("report"),
-            {"input": "/work/data/reqs.csv", "output": "/elsewhere/out.html", "id_column": "ID"},
+            {
+                "input": "/work/data/reqs.csv",
+                "output": "/elsewhere/out.html",
+                "id_column": "ID",
+            },
             workdir=Path("/work"),
         )
-        self.assertEqual([argv[0], *argv[-2:]], ["data/reqs.csv", "-o", "/elsewhere/out.html"])
+        self.assertEqual(
+            [argv[0], *argv[-2:]], ["data/reqs.csv", "-o", "/elsewhere/out.html"]
+        )
 
     def test_missing_required_fields_are_named_by_label(self) -> None:
         with self.assertRaises(GuiError) as caught:
@@ -127,7 +284,17 @@ class BuildArgvTests(unittest.TestCase):
         self.assertIn("--title=-draft", argv)
 
 
-TRICKY = ["it's", 'say "hi"', "$HOME `x` $(y)", "two  spaces", "back\\slash", "semi;colon", "", "ünï", "*.csv"]
+TRICKY = [
+    "it's",
+    'say "hi"',
+    "$HOME `x` $(y)",
+    "two  spaces",
+    "back\\slash",
+    "semi;colon",
+    "",
+    "ünï",
+    "*.csv",
+]
 
 
 def _windows_argv(line: str) -> list[str]:
@@ -154,7 +321,9 @@ def _windows_argv(line: str) -> list[str]:
                     current += line[i:j]
                     i = j
             elif line[i] == '"':
-                assert not (quoted and line[i + 1:i + 2] == '"'), f"doubled quote inside quotes in {line!r}"
+                assert not (quoted and line[i + 1 : i + 2] == '"'), (
+                    f"doubled quote inside quotes in {line!r}"
+                )
                 quoted = not quoted
                 i += 1
             else:
@@ -173,7 +342,7 @@ def _powershell_tokens(text: str) -> list[str] | str:
         elif text[i] == "'":
             j, value = i + 1, ""
             while True:
-                if text[j] == "'" and text[j + 1:j + 2] == "'":
+                if text[j] == "'" and text[j + 1 : j + 2] == "'":
                     value, j = value + "'", j + 2
                 elif text[j] == "'":
                     break
@@ -185,7 +354,7 @@ def _powershell_tokens(text: str) -> list[str] | str:
             j = text.find(" ", i)
             j = len(text) if j < 0 else j
             if text[i:j] == "--%":
-                return text[j + 1:]
+                return text[j + 1 :]
             values.append(text[i:j])
             i = j
     return values
@@ -224,12 +393,32 @@ def _powershell_7_standard(value: str) -> str:
 class QuotingTests(unittest.TestCase):
     def test_powershell_command_reaches_python_unchanged_in_5_1_and_7(self) -> None:
         values = [
-            'say "hi"', 'say "hi" there', '5" pipe size', 'C:\\My Docs\\', 'C:\\My Docs\\a.csv', 'back\\slash', "end\\",
-            'a\\"b', 'a\\\\" b', "it's $HOME", "$(Get-Date)", "two  spaces", "", "plain", "x;y", "@x", "a,b", "ünï",
+            'say "hi"',
+            'say "hi" there',
+            '5" pipe size',
+            "C:\\My Docs\\",
+            "C:\\My Docs\\a.csv",
+            "back\\slash",
+            "end\\",
+            'a\\"b',
+            'a\\\\" b',
+            "it's $HOME",
+            "$(Get-Date)",
+            "two  spaces",
+            "",
+            "plain",
+            "x;y",
+            "@x",
+            "a,b",
+            "ünï",
         ]
         for value in values:
             argv = ["reqs.csv", "--title", value, "-o", "out dir/x.html"]
-            for name, passing in (("5.1", _windows_powershell_51), ("7 legacy", _powershell_7_legacy), ("7", _powershell_7_standard)):
+            for name, passing in (
+                ("5.1", _windows_powershell_51),
+                ("7 legacy", _powershell_7_legacy),
+                ("7", _powershell_7_standard),
+            ):
                 with self.subTest(value=value, powershell=name):
                     text = powershell_command(argv)
                     self.assertTrue(text.startswith("python reqtable.pyz "), text)
@@ -238,67 +427,142 @@ class QuotingTests(unittest.TestCase):
                         line = tokens
                     else:
                         self.assertEqual(tokens[:2], ["python", "reqtable.pyz"])
-                        line = " ".join(passing(t) for t in tokens[2:] if t or name == "7")
+                        line = " ".join(
+                            passing(t) for t in tokens[2:] if t or name == "7"
+                        )
                     self.assertEqual(_windows_argv(line), argv)
 
     def test_quote_windows_round_trips(self) -> None:
         for value in [*TRICKY, "a\\", "a b\\\\", '\\"', '"', "\t"]:
             self.assertEqual(_windows_argv(quote_windows(value)), [value], value)
+
     def test_posix_command_round_trips_through_shlex(self) -> None:
         argv = ["req file.csv", "--title", *TRICKY, "-o", "out dir/x.html"]
-        for program in (("reqtable.pyz",), ("/tmp/my dir/reqtable.pyz",), ("-m", "reqtable")):
+        for program in (
+            ("reqtable.pyz",),
+            ("/tmp/my dir/reqtable.pyz",),
+            ("-m", "reqtable"),
+        ):
             with self.subTest(program=program):
-                self.assertEqual(shlex.split(posix_command(argv, program).replace("\\\n", "")), ["python3", *program, *argv])
+                self.assertEqual(
+                    shlex.split(posix_command(argv, program).replace("\\\n", "")),
+                    ["python3", *program, *argv],
+                )
 
-    def test_long_posix_command_wraps_one_flag_group_per_line_and_still_round_trips(self) -> None:
-        argv = ["requirements.csv", "--id-column", "ID", "--document-mode", "develop", "--title", "A long report title", "-o", "requirements-develop.html"]
+    def test_long_posix_command_wraps_one_flag_group_per_line_and_still_round_trips(
+        self,
+    ) -> None:
+        argv = [
+            "requirements.csv",
+            "--id-column",
+            "ID",
+            "--document-mode",
+            "develop",
+            "--title",
+            "A long report title",
+            "-o",
+            "requirements-develop.html",
+        ]
         text = posix_command(argv)
         lines = text.split("\n")
         self.assertEqual(lines[0], "python3 reqtable.pyz requirements.csv \\")
         self.assertEqual(lines[1], "  --id-column ID \\")
         self.assertEqual(lines[-1], "  -o requirements-develop.html")
-        self.assertEqual(shlex.split(text.replace("\\\n", "")), ["python3", "reqtable.pyz", *argv])
+        self.assertEqual(
+            shlex.split(text.replace("\\\n", "")), ["python3", "reqtable.pyz", *argv]
+        )
 
     def test_short_command_stays_on_one_line(self) -> None:
-        self.assertEqual(posix_command(["a.csv", "-o", "a.html"]), "python3 reqtable.pyz a.csv -o a.html")
-        self.assertEqual(powershell_command(["a.csv", "-o", "a.html"]), "python reqtable.pyz a.csv -o a.html")
+        self.assertEqual(
+            posix_command(["a.csv", "-o", "a.html"]),
+            "python3 reqtable.pyz a.csv -o a.html",
+        )
+        self.assertEqual(
+            powershell_command(["a.csv", "-o", "a.html"]),
+            "python reqtable.pyz a.csv -o a.html",
+        )
 
     def test_powershell_single_quotes_double_embedded_quotes(self) -> None:
-        text = powershell_command(["--title", "it's $HOME", "C:\\My Docs\\a.csv", "x;y"])
-        self.assertEqual(text, "python reqtable.pyz --title 'it''s $HOME' 'C:\\My Docs\\a.csv' 'x;y'")
+        text = powershell_command(
+            ["--title", "it's $HOME", "C:\\My Docs\\a.csv", "x;y"]
+        )
+        self.assertEqual(
+            text, "python reqtable.pyz --title 'it''s $HOME' 'C:\\My Docs\\a.csv' 'x;y'"
+        )
 
     def test_powershell_quotes_empty_and_comma_and_splat_tokens(self) -> None:
-        self.assertEqual(powershell_command(["a,b", "@x"]), "python reqtable.pyz 'a,b' '@x'")
+        self.assertEqual(
+            powershell_command(["a,b", "@x"]), "python reqtable.pyz 'a,b' '@x'"
+        )
 
     def test_powershell_wraps_with_backticks(self) -> None:
-        argv = ["requirements.csv", "--id-column", "ID", "--document-mode", "develop", "--title", "A long report title", "-o", "requirements-develop.html"]
+        argv = [
+            "requirements.csv",
+            "--id-column",
+            "ID",
+            "--document-mode",
+            "develop",
+            "--title",
+            "A long report title",
+            "-o",
+            "requirements-develop.html",
+        ]
         lines = powershell_command(argv).split("\n")
         self.assertTrue(all(line.endswith(" `") for line in lines[:-1]))
         self.assertEqual(lines[-1], "  -o requirements-develop.html")
 
 
 class ScriptTests(unittest.TestCase):
-    STEPS = [ScriptStep("Make a report from a spreadsheet", ["a.csv", "-o", "a.html"]), ScriptStep("Compare two versions", ["--old", "o.csv", "--new", "n.csv", "-o", "d.html"])]
+    STEPS = [
+        ScriptStep("Make a report from a spreadsheet", ["a.csv", "-o", "a.html"]),
+        ScriptStep(
+            "Compare two versions", ["--old", "o.csv", "--new", "n.csv", "-o", "d.html"]
+        ),
+    ]
 
     def test_sh_script(self) -> None:
         text = script(self.STEPS, "sh", Path("/my work"))
-        self.assertEqual(text.splitlines()[:3], ["#!/bin/sh", "set -e", "cd '/my work'"])
-        self.assertIn("# Compare two versions\npython3 reqtable.pyz --old o.csv --new n.csv -o d.html", text)
+        self.assertEqual(
+            text.splitlines()[:3], ["#!/bin/sh", "set -e", "cd '/my work'"]
+        )
+        self.assertIn(
+            "# Compare two versions\npython3 reqtable.pyz --old o.csv --new n.csv -o d.html",
+            text,
+        )
         self.assertNotIn("LASTEXITCODE", text)
 
     def test_powershell_script_checks_the_exit_code_after_each_step(self) -> None:
         text = script(self.STEPS, "powershell", Path("C:\\My Work"))
-        self.assertEqual(text.splitlines()[:2], ["$ErrorActionPreference = 'Stop'", "Set-Location -LiteralPath 'C:\\My Work'"])
-        self.assertEqual(text.count("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"), 2)
+        self.assertEqual(
+            text.splitlines()[:2],
+            [
+                "$ErrorActionPreference = 'Stop'",
+                "Set-Location -LiteralPath 'C:\\My Work'",
+            ],
+        )
+        self.assertEqual(
+            text.count("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"), 2
+        )
         self.assertIn("python reqtable.pyz a.csv -o a.html\nif ($LASTEXITCODE", text)
 
     def test_a_step_that_records_says_so_above_its_command_in_both_shells(self) -> None:
-        steps = [*self.STEPS, ScriptStep("Record a sign-off", ["r.csv", "--sign-off", "srr-1"], records=True)]
+        steps = [
+            *self.STEPS,
+            ScriptStep(
+                "Record a sign-off", ["r.csv", "--sign-off", "srr-1"], records=True
+            ),
+        ]
         for shell in ("sh", "powershell"):
             lines = script(steps, shell, Path("/w")).splitlines()  # type: ignore[arg-type]
             at = lines.index("# Record a sign-off")
-            self.assertEqual(lines[at + 1], "# This step records a new entry each time the script runs.", shell)
-            self.assertEqual(sum("records a new entry" in line for line in lines), 1, shell)
+            self.assertEqual(
+                lines[at + 1],
+                "# This step records a new entry each time the script runs.",
+                shell,
+            )
+            self.assertEqual(
+                sum("records a new entry" in line for line in lines), 1, shell
+            )
 
     def test_every_workflow_whose_flag_writes_a_record_records(self) -> None:
         writes = {"--create-baseline", "--sign-off", "--import-decisions"}
@@ -326,13 +590,24 @@ class LauncherTests(unittest.TestCase):
             found = launcher(root, str(archive / "reqtable" / "gui.py"))
             self.assertEqual(found.shown, ("tools/reqtable.pyz",))
             self.assertEqual(found.run, (sys.executable, str(archive)))
-            self.assertEqual(launcher(root / "other", str(archive / "reqtable" / "gui.py")).shown, (str(archive),))
+            self.assertEqual(
+                launcher(root / "other", str(archive / "reqtable" / "gui.py")).shown,
+                (str(archive),),
+            )
 
 
 class RegistryMatchesParserTests(unittest.TestCase):
     def test_every_flag_and_choice_is_accepted_by_the_cli_parser(self) -> None:
-        actions = {option: action for action in cli.parser()._actions for option in action.option_strings}
-        positionals = [action.dest for action in cli.parser()._actions if not action.option_strings and action.dest != "help"]
+        actions = {
+            option: action
+            for action in cli.parser()._actions
+            for option in action.option_strings
+        }
+        positionals = [
+            action.dest
+            for action in cli.parser()._actions
+            if not action.option_strings and action.dest != "help"
+        ]
         self.assertEqual(positionals, ["input"])
         for workflow in WORKFLOWS:
             if workflow.panel != "form":
@@ -357,7 +632,9 @@ class RegistryMatchesParserTests(unittest.TestCase):
                     assert field.pair_flag is not None
                     self.assertIn(field.pair_flag, actions, where)
                     for flag in (field.flag, field.pair_flag):
-                        self.assertEqual(type(actions[flag]).__name__, "_AppendAction", where)
+                        self.assertEqual(
+                            type(actions[flag]).__name__, "_AppendAction", where
+                        )
                 else:
                     self.assertNotEqual(action.nargs, 0, where)
                     if action.choices is None:
@@ -371,10 +648,16 @@ class RegistryMatchesParserTests(unittest.TestCase):
                     self.assertTrue(field.choices, where)
                     self.assertIn(field.default or values[0], values, where)
                 else:
-                    self.assertEqual(field.choices if field.kind != "flag" else (), (), where)
+                    self.assertEqual(
+                        field.choices if field.kind != "flag" else (), (), where
+                    )
 
     def test_fixed_flags_are_real_and_never_also_a_field(self) -> None:
-        actions = {option: action for action in cli.parser()._actions for option in action.option_strings}
+        actions = {
+            option: action
+            for action in cli.parser()._actions
+            for option in action.option_strings
+        }
         fixed = [w for w in WORKFLOWS if w.fixed]
         self.assertTrue(fixed)
         for workflow in fixed:
@@ -391,10 +674,15 @@ class RegistryMatchesParserTests(unittest.TestCase):
         for workflow in WORKFLOWS:
             names = {f.name for f in workflow.fields}
             for field in workflow.fields:
-                self.assertTrue(not field.requires or field.requires in names, f"{workflow.id}.{field.name}")
+                self.assertTrue(
+                    not field.requires or field.requires in names,
+                    f"{workflow.id}.{field.name}",
+                )
 
     def test_sign_off_decisions_are_the_ones_the_cli_records(self) -> None:
-        decision = next(f for f in workflow_named("sign_off").fields if f.name == "decision")
+        decision = next(
+            f for f in workflow_named("sign_off").fields if f.name == "decision"
+        )
         self.assertEqual([value for value, _ in decision.choices], list(DECISIONS))
 
     def test_groups_are_contiguous_known_and_in_the_nav_order(self) -> None:
@@ -415,7 +703,10 @@ class RegistryMatchesParserTests(unittest.TestCase):
         for workflow in WORKFLOWS:
             self.assertTrue(workflow.when.startswith("Use this "), workflow.id)
             for field in workflow.fields:
-                self.assertTrue(field.label and field.help.endswith("."), f"{workflow.id}.{field.name}")
+                self.assertTrue(
+                    field.label and field.help.endswith("."),
+                    f"{workflow.id}.{field.name}",
+                )
             if workflow.recorded:
                 self.assertTrue(workflow.recorded.endswith("."), workflow.id)
 
@@ -427,47 +718,146 @@ class RegistryMatchesParserTests(unittest.TestCase):
 
 class GateWorkflowTests(unittest.TestCase):
     def test_check_gate_and_system(self) -> None:
-        argv = build_argv(workflow_named("check_gate"), {"input": "r.csv", "id_column": "ID", "gate": "DDR", "system": "SYS-A", "config": "c.json"})
-        self.assertEqual(argv, ["r.csv", "--id-column", "ID", "--config", "c.json", "--check-gate", "DDR", "--system", "SYS-A"])
+        argv = build_argv(
+            workflow_named("check_gate"),
+            {
+                "input": "r.csv",
+                "id_column": "ID",
+                "gate": "DDR",
+                "system": "SYS-A",
+                "config": "c.json",
+            },
+        )
+        self.assertEqual(
+            argv,
+            [
+                "r.csv",
+                "--id-column",
+                "ID",
+                "--config",
+                "c.json",
+                "--check-gate",
+                "DDR",
+                "--system",
+                "SYS-A",
+            ],
+        )
 
     def test_create_baseline_emits_waivers_as_ordered_pairs(self) -> None:
         values = {
-            "input": "r.csv", "gate": "PDR", "user": "Ann",
-            "waivers": [{"check": "pdr-a", "reason": "Because"}, {"check": "", "reason": ""}, {"check": "pdr-b", "reason": "-odd"}],
+            "input": "r.csv",
+            "gate": "PDR",
+            "user": "Ann",
+            "waivers": [
+                {"check": "pdr-a", "reason": "Because"},
+                {"check": "", "reason": ""},
+                {"check": "pdr-b", "reason": "-odd"},
+            ],
         }
         argv = build_argv(workflow_named("create_baseline"), values)
         self.assertEqual(
-            argv, ["r.csv", "--create-baseline", "PDR", "--waive", "pdr-a", "--reason", "Because", "--waive", "pdr-b", "--reason=-odd", "--user", "Ann"]
+            argv,
+            [
+                "r.csv",
+                "--create-baseline",
+                "PDR",
+                "--waive",
+                "pdr-a",
+                "--reason",
+                "Because",
+                "--waive",
+                "pdr-b",
+                "--reason=-odd",
+                "--user",
+                "Ann",
+            ],
         )
 
     def test_a_half_filled_waiver_and_bad_check_ids_are_refused(self) -> None:
-        for row in ({"check": "pdr-a", "reason": ""}, {"check": "", "reason": "why"}, {"check": "a,b", "reason": "why"}, {"check": "-x", "reason": "why"}):
+        for row in (
+            {"check": "pdr-a", "reason": ""},
+            {"check": "", "reason": "why"},
+            {"check": "a,b", "reason": "why"},
+            {"check": "-x", "reason": "why"},
+        ):
             with self.subTest(row=row), self.assertRaises(GuiError):
-                build_argv(workflow_named("create_baseline"), {"input": "r.csv", "gate": "PDR", "waivers": [row]})
+                build_argv(
+                    workflow_named("create_baseline"),
+                    {"input": "r.csv", "gate": "PDR", "waivers": [row]},
+                )
         with self.assertRaises(BadRequest):
-            build_argv(workflow_named("create_baseline"), {"input": "r.csv", "gate": "PDR", "waivers": "pdr-a"})
+            build_argv(
+                workflow_named("create_baseline"),
+                {"input": "r.csv", "gate": "PDR", "waivers": "pdr-a"},
+            )
 
     def test_sign_off(self) -> None:
-        argv = build_argv(workflow_named("sign_off"), {
-            "input": "r.csv", "baseline": "PDR-2", "role": "Approver", "decision": "Approved", "note": "Board", "evidence": "p.pdf",
-        })
-        self.assertEqual(argv, ["r.csv", "--sign-off", "PDR-2", "--role", "Approver", "--decision", "Approved", "--note", "Board", "--evidence", "p.pdf"])
+        argv = build_argv(
+            workflow_named("sign_off"),
+            {
+                "input": "r.csv",
+                "baseline": "PDR-2",
+                "role": "Approver",
+                "decision": "Approved",
+                "note": "Board",
+                "evidence": "p.pdf",
+            },
+        )
+        self.assertEqual(
+            argv,
+            [
+                "r.csv",
+                "--sign-off",
+                "PDR-2",
+                "--role",
+                "Approver",
+                "--decision",
+                "Approved",
+                "--note",
+                "Board",
+                "--evidence",
+                "p.pdf",
+            ],
+        )
         with self.assertRaises(BadRequest):
-            build_argv(workflow_named("sign_off"), {"input": "r.csv", "baseline": "B", "role": "R", "decision": "Fine"})
+            build_argv(
+                workflow_named("sign_off"),
+                {"input": "r.csv", "baseline": "B", "role": "R", "decision": "Fine"},
+            )
 
     def test_the_other_gate_commands(self) -> None:
-        self.assertEqual(build_argv(workflow_named("verify_baseline"), {"input": "r.csv", "baseline": "SRR"}), ["r.csv", "--verify-baseline", "SRR"])
-        self.assertEqual(build_argv(workflow_named("list_baselines"), {"input": "r.csv"}), ["r.csv", "--list-baselines"])
         self.assertEqual(
-            build_argv(workflow_named("gate_package"), {"input": "r.csv", "baseline": "SRR", "output": "p.html"}),
+            build_argv(
+                workflow_named("verify_baseline"), {"input": "r.csv", "baseline": "SRR"}
+            ),
+            ["r.csv", "--verify-baseline", "SRR"],
+        )
+        self.assertEqual(
+            build_argv(workflow_named("list_baselines"), {"input": "r.csv"}),
+            ["r.csv", "--list-baselines"],
+        )
+        self.assertEqual(
+            build_argv(
+                workflow_named("gate_package"),
+                {"input": "r.csv", "baseline": "SRR", "output": "p.html"},
+            ),
             ["r.csv", "--gate-package", "SRR", "-o", "p.html"],
         )
         self.assertEqual(
-            build_argv(workflow_named("import_decisions"), {"input": "r.csv", "package": "p.html"}), ["r.csv", "--import-decisions", "p.html"]
+            build_argv(
+                workflow_named("import_decisions"),
+                {"input": "r.csv", "package": "p.html"},
+            ),
+            ["r.csv", "--import-decisions", "p.html"],
         )
 
     def test_embedded_baselines_are_an_advanced_report_and_diff_option(self) -> None:
-        self.assertEqual(build_argv(workflow_named("report"), {**REPORT, "baselines": "SRR,PDR"})[-2:], ["--baselines", "SRR,PDR"])
+        self.assertEqual(
+            build_argv(workflow_named("report"), {**REPORT, "baselines": "SRR,PDR"})[
+                -2:
+            ],
+            ["--baselines", "SRR,PDR"],
+        )
         diff = {"old": "a.csv", "new": "b.csv", "output": "d.html", "baselines": "SRR"}
         self.assertIn("--baselines", build_argv(workflow_named("diff"), diff))
 
@@ -497,25 +887,61 @@ class CommandsRunTests(unittest.TestCase):
     def test_every_workflow_builds_a_command_the_cli_accepts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            (root / "reqs.csv").write_text("ID,Text\nR1,Hello\nR2,World\n", encoding="utf-8")
-            (root / "reqs2.csv").write_text("ID,Text\nR1,Hello again\n", encoding="utf-8")
+            (root / "reqs.csv").write_text(
+                "ID,Text\nR1,Hello\nR2,World\n", encoding="utf-8"
+            )
+            (root / "reqs2.csv").write_text(
+                "ID,Text\nR1,Hello again\n", encoding="utf-8"
+            )
             write_workbook(root / "book.xlsx")
             cases = {
-                "report": {"input": "reqs.csv", "output": "r.html", "id_column": "ID", "document_mode": "develop"},
-                "develop": {"input": "reqs.csv", "output": "dev.html", "id_column": "ID"},
-                "diff": {"old": "reqs.csv", "new": "reqs2.csv", "output": "d.html", "id_column": "ID", "initial_diff_view": "side-by-side", "include_unchanged": "on", "document_mode": "develop"},
-                "to_csv": {"input": str(root / "book.xlsx"), "output": "book.csv", "id_column": "Req ID", "sheet": "Reqs"},
+                "report": {
+                    "input": "reqs.csv",
+                    "output": "r.html",
+                    "id_column": "ID",
+                    "document_mode": "develop",
+                },
+                "develop": {
+                    "input": "reqs.csv",
+                    "output": "dev.html",
+                    "id_column": "ID",
+                },
+                "diff": {
+                    "old": "reqs.csv",
+                    "new": "reqs2.csv",
+                    "output": "d.html",
+                    "id_column": "ID",
+                    "initial_diff_view": "side-by-side",
+                    "include_unchanged": "on",
+                    "document_mode": "develop",
+                },
+                "to_csv": {
+                    "input": str(root / "book.xlsx"),
+                    "output": "book.csv",
+                    "id_column": "Req ID",
+                    "sheet": "Reqs",
+                },
                 "list_tables": {"workbook": "book.xlsx"},
             }
             for workflow_id, values in cases.items():
                 with self.subTest(workflow_id):
-                    completed = run_cli(build_argv(workflow_named(workflow_id), values, root), root)
+                    completed = run_cli(
+                        build_argv(workflow_named(workflow_id), values, root), root
+                    )
                     self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertTrue((root / "r.html").is_file())
-            self.assertIn('"documentMode":"develop"', (root / "dev.html").read_text(encoding="utf-8"))
+            self.assertIn(
+                '"documentMode":"develop"',
+                (root / "dev.html").read_text(encoding="utf-8"),
+            )
             self.assertTrue((root / "book.csv").is_file())
             extracted = run_cli(
-                build_argv(workflow_named("comments"), {"report": "r.html", "output": "c.csv", "comments_format": "text"}, root), root
+                build_argv(
+                    workflow_named("comments"),
+                    {"report": "r.html", "output": "c.csv", "comments_format": "text"},
+                    root,
+                ),
+                root,
             )
             self.assertEqual(extracted.returncode, 0, extracted.stderr)
             self.assertTrue((root / "c.csv").is_file())

@@ -9,12 +9,21 @@ from reqtable.gate_checks import GATE_CHECKS_JS
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "gate_checks.json"
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class GateCheckTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + COMPARISON_JS + GATE_CHECKS_JS + f"const fixture={FIXTURE.read_text()};\n" + assertions,
-                       text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + COMPARISON_JS
+            + GATE_CHECKS_JS
+            + f"const fixture={FIXTURE.read_text()};\n"
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_shared_fixture_cases(self):
         self.run_js("""

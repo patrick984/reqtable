@@ -29,11 +29,32 @@ TRACE_FIELDS: dict[str, tuple[tuple[str, ...], tuple[str, ...], bool]] = {
     "Verified by": (("Requirement",), ("Test",), False),
     "Test plan": (("Test",), ("Test plan",), True),
     "Affects": (
-        ("Change request",), ("Requirement", "System", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan"), False,
+        ("Change request",),
+        (
+            "Requirement",
+            "System",
+            "Need",
+            "Source",
+            "Term",
+            "Value",
+            "Field",
+            "Test",
+            "Test plan",
+        ),
+        False,
     ),
 }
 RECORD_TYPES = (
-    "System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan", "Change request",
+    "System",
+    "Requirement",
+    "Need",
+    "Source",
+    "Term",
+    "Value",
+    "Field",
+    "Test",
+    "Test plan",
+    "Change request",
 )
 VERIFICATION_STATES = {
     "Compliance": ("Requirement", "requirements"),
@@ -84,7 +105,13 @@ def trace_type(row: dict[str, str]) -> str:
 
 
 def trace_ids(value: str | None) -> list[str]:
-    return [part for part in (_trim(piece) for piece in ("" if value is None else value).split(";")) if part]
+    return [
+        part
+        for part in (
+            _trim(piece) for piece in ("" if value is None else value).split(";")
+        )
+        if part
+    ]
 
 
 def trace_target_types(field_name: str, record_type: str) -> tuple[str, ...]:
@@ -96,12 +123,20 @@ def trace_target_types(field_name: str, record_type: str) -> tuple[str, ...]:
 def defined_values(rule: ValueRule, cell: str | None) -> list[str]:
     text = _trim("" if cell is None else cell)
     parts = trace_ids(text) if rule.multiple else [text] if text else []
-    names = [part if part in rule.values else _trim(_cell(rule.aliases[part].row, "Name")) if part in rule.aliases else part
-             for part in parts]
+    names = [
+        part
+        if part in rule.values
+        else _trim(_cell(rule.aliases[part].row, "Name"))
+        if part in rule.aliases
+        else part
+        for part in parts
+    ]
     return list(dict.fromkeys(names))
 
 
-def verification_state(values: dict[str, ValueRule], column: str, cell: str | None) -> str:
+def verification_state(
+    values: dict[str, ValueRule], column: str, cell: str | None
+) -> str:
     text = _trim("" if cell is None else cell)
     rule = values.get(column)
     if not rule:
@@ -110,25 +145,40 @@ def verification_state(values: dict[str, ValueRule], column: str, cell: str | No
     return found[0] if found else ""
 
 
-def check_verification(records: dict[str, Record], values: dict[str, ValueRule], issue: Issue) -> None:
+def check_verification(
+    records: dict[str, Record], values: dict[str, ValueRule], issue: Issue
+) -> None:
     def sentence(parts: list[str]) -> str:
-        return f"{', '.join(parts[:-1])} and {parts[-1]}" if len(parts) > 1 else parts[0]
+        return (
+            f"{', '.join(parts[:-1])} and {parts[-1]}" if len(parts) > 1 else parts[0]
+        )
 
     for record in records.values():
         for column, (applies_to, plural) in VERIFICATION_STATES.items():
             if record.type != applies_to and _trim(_cell(record.row, column)):
                 issue(record.id, column, f"{column} applies to {plural}.")
-        if record.type != "Requirement" or verification_state(values, "Compliance", record.row.get("Compliance")) != "Compliant":
+        if (
+            record.type != "Requirement"
+            or verification_state(values, "Compliance", record.row.get("Compliance"))
+            != "Compliant"
+        ):
             continue
-        results = [(test.id, verification_state(values, "Result", test.row.get("Result")))
-                   for test in record.outgoing.get("Verified by", [])]
+        results = [
+            (test.id, verification_state(values, "Result", test.row.get("Result")))
+            for test in record.outgoing.get("Verified by", [])
+        ]
         unmet = [(test_id, result) for test_id, result in results if result != "Passed"]
         if unmet:
-            described = [f"{test_id} is “{result}”" if result else f"{test_id} has no result" for test_id, result in unmet]
+            described = [
+                f"{test_id} is “{result}”" if result else f"{test_id} has no result"
+                for test_id, result in unmet
+            ]
             issue(record.id, "Compliance", f"Compliant, but {sentence(described)}.")
 
 
-def check_test_coverage(records: dict[str, Record], values: dict[str, ValueRule], issue: Issue) -> None:
+def check_test_coverage(
+    records: dict[str, Record], values: dict[str, ValueRule], issue: Issue
+) -> None:
     def quote(names: Iterable[str]) -> str:
         return ", ".join(f"“{name}”" for name in names)
 
@@ -138,10 +188,20 @@ def check_test_coverage(records: dict[str, Record], values: dict[str, ValueRule]
             continue
         for field_name, rule in values.items():
             planned = defined_values(rule, record.row.get(field_name))
-            covered = list(dict.fromkeys(name for test in tests for name in defined_values(rule, test.row.get(field_name))))
+            covered = list(
+                dict.fromkeys(
+                    name
+                    for test in tests
+                    for name in defined_values(rule, test.row.get(field_name))
+                )
+            )
             missing = [name for name in planned if name not in covered]
             if covered and missing:
-                issue(record.id, field_name, f"No test in Verified by covers {quote(missing)}. Its tests have {quote(covered)}.")
+                issue(
+                    record.id,
+                    field_name,
+                    f"No test in Verified by covers {quote(missing)}. Its tests have {quote(covered)}.",
+                )
 
 
 def build_glossary(records: Iterable[Record], issue: Issue) -> None:
@@ -150,16 +210,24 @@ def build_glossary(records: Iterable[Record], issue: Issue) -> None:
     for record in records:
         if record.type != "Term":
             continue
-        name, definition = _trim(_cell(record.row, "Name")), _trim(_cell(record.row, "Definition"))
+        name, definition = (
+            _trim(_cell(record.row, "Name")),
+            _trim(_cell(record.row, "Definition")),
+        )
         if not name:
             issue(record.id, "Name", "Enter a glossary term name.")
         if not definition:
             issue(record.id, "Definition", "Enter a glossary definition.")
         if name:
             names.setdefault(name.lower(), []).append(record)
-        for spelling, field_name in [(name, "Name"), *((alias, "Aliases") for alias in trace_ids(record.row.get("Aliases")))]:
+        for spelling, field_name in [
+            (name, "Name"),
+            *((alias, "Aliases") for alias in trace_ids(record.row.get("Aliases"))),
+        ]:
             if spelling:
-                spellings.setdefault(spelling, {}).setdefault(record.id, (record, field_name))
+                spellings.setdefault(spelling, {}).setdefault(
+                    record.id, (record, field_name)
+                )
     ambiguous_names = set()
     for group in names.values():
         if len(group) < 2:
@@ -172,10 +240,16 @@ def build_glossary(records: Iterable[Record], issue: Issue) -> None:
             continue
         for record, field_name in entries.values():
             if field_name != "Name" or spelling not in ambiguous_names:
-                issue(record.id, field_name, f"Glossary spelling “{spelling}” is shared by multiple terms.")
+                issue(
+                    record.id,
+                    field_name,
+                    f"Glossary spelling “{spelling}” is shared by multiple terms.",
+                )
 
 
-def value_column_problem(name: str, headers: set[str], reserved: set[str]) -> str | None:
+def value_column_problem(
+    name: str, headers: set[str], reserved: set[str]
+) -> str | None:
     if not name:
         return None
     if name in reserved:
@@ -185,7 +259,9 @@ def value_column_problem(name: str, headers: set[str], reserved: set[str]) -> st
     return None
 
 
-def value_groups(records: Iterable[Record], key: Callable[[Record], str]) -> dict[str, list[Record]]:
+def value_groups(
+    records: Iterable[Record], key: Callable[[Record], str]
+) -> dict[str, list[Record]]:
     groups: dict[str, list[Record]] = {}
     for record in records:
         name = key(record)
@@ -194,8 +270,13 @@ def value_groups(records: Iterable[Record], key: Callable[[Record], str]) -> dic
     return groups
 
 
-def build_value_rules(records: Iterable[Record], headers: list[str], id_column: str, issue: Issue) -> dict[str, ValueRule]:
-    header_set, reserved = set(headers), {*TRACE_FIELDS, "Type", "Field", "Multiple", id_column}
+def build_value_rules(
+    records: Iterable[Record], headers: list[str], id_column: str, issue: Issue
+) -> dict[str, ValueRule]:
+    header_set, reserved = (
+        set(headers),
+        {*TRACE_FIELDS, "Type", "Field", "Multiple", id_column},
+    )
     rules: dict[str, ValueRule] = {}
     every = list(records)
     field_records = [record for record in every if record.type == "Field"]
@@ -215,7 +296,9 @@ def build_value_rules(records: Iterable[Record], headers: list[str], id_column: 
         if len(group) > 1:
             for record in group:
                 issue(record.id, "Name", f"Another Field record describes {name}.")
-        rules[name] = ValueRule(multiple=_trim(_cell(group[0].row, "Multiple")).lower() == "yes")
+        rules[name] = ValueRule(
+            multiple=_trim(_cell(group[0].row, "Multiple")).lower() == "yes"
+        )
     for record in field_records:
         multiple = _trim(_cell(record.row, "Multiple"))
         if not target(record):
@@ -248,7 +331,9 @@ def build_value_rules(records: Iterable[Record], headers: list[str], id_column: 
                 continue
             owner = claims.get(name.lower())
             if owner and owner is not record:
-                issue(record.id, "Name", f"Another {field_name} value is named “{name}”.")
+                issue(
+                    record.id, "Name", f"Another {field_name} value is named “{name}”."
+                )
                 continue
             claims[name.lower()] = record
             rule.values[name] = record
@@ -258,7 +343,11 @@ def build_value_rules(records: Iterable[Record], headers: list[str], id_column: 
             for alias in trace_ids(record.row.get("Aliases")):
                 owner = claims.get(alias.lower())
                 if owner and owner is not record:
-                    issue(record.id, "Aliases", f"“{alias}” is already a {field_name} value name or alias.")
+                    issue(
+                        record.id,
+                        "Aliases",
+                        f"“{alias}” is already a {field_name} value name or alias.",
+                    )
                     continue
                 if not owner:
                     claims[alias.lower()] = record
@@ -280,18 +369,49 @@ def build_value_rules(records: Iterable[Record], headers: list[str], id_column: 
                 if part in rule.values:
                     continue
                 replaced = rule.aliases.get(part) or next(
-                    (owner for alias, owner in rule.aliases.items() if alias.lower() == key), None)
-                canonical = replaced or next((value for value in rule.values.values() if target(value).lower() == key), None)
+                    (
+                        owner
+                        for alias, owner in rule.aliases.items()
+                        if alias.lower() == key
+                    ),
+                    None,
+                )
+                canonical = replaced or next(
+                    (
+                        value
+                        for value in rule.values.values()
+                        if target(value).lower() == key
+                    ),
+                    None,
+                )
                 if canonical:
-                    spelling = "a replaced spelling" if replaced else "spelled differently from the defined value"
-                    issue(record.id, field_name, f"“{part}” is {spelling}; use “{target(canonical)}”.")
+                    spelling = (
+                        "a replaced spelling"
+                        if replaced
+                        else "spelled differently from the defined value"
+                    )
+                    issue(
+                        record.id,
+                        field_name,
+                        f"“{part}” is {spelling}; use “{target(canonical)}”.",
+                    )
                 else:
-                    one = f" {field_name} allows one value." if not rule.multiple and ";" in part else ""
-                    issue(record.id, field_name, f"“{part}” is not a defined {field_name} value.{one}")
+                    one = (
+                        f" {field_name} allows one value."
+                        if not rule.multiple and ";" in part
+                        else ""
+                    )
+                    issue(
+                        record.id,
+                        field_name,
+                        f"“{part}” is not a defined {field_name} value.{one}",
+                    )
     return rules
 
 
-def link_records(records: dict[str, Record], issue: Issue, controlled: Container[str] = frozenset()) -> list[Record]:
+def link_records(
+    records: dict[str, Record], issue: Issue, controlled: Container[str] = frozenset()
+) -> list[Record]:
     systems = []
     for record in records.values():
         record_id, row, record_type = record.id, record.row, record.type
@@ -301,14 +421,26 @@ def link_records(records: dict[str, Record], issue: Issue, controlled: Container
             systems.append(record)
         if record_type not in RECORD_TYPES:
             issue(record_id, "Type", f"Unknown record type “{record_type}”.")
-        if record_type == "Requirement" and _trim(_cell(row, "Origin")) == "Self-derived" and not _trim(_cell(row, "Rationale")):
-            issue(record_id, "Rationale", "Explain why this self-derived requirement is needed.")
+        if (
+            record_type == "Requirement"
+            and _trim(_cell(row, "Origin")) == "Self-derived"
+            and not _trim(_cell(row, "Rationale"))
+        ):
+            issue(
+                record_id,
+                "Rationale",
+                "Explain why this self-derived requirement is needed.",
+            )
         for field_name, (sources, _, single) in TRACE_FIELDS.items():
             ids = trace_ids(row.get(field_name))
             if not ids:
                 continue
             if record_type not in sources:
-                issue(record_id, field_name, f"{field_name} does not apply to {record_type} records.")
+                issue(
+                    record_id,
+                    field_name,
+                    f"{field_name} does not apply to {record_type} records.",
+                )
                 continue
             if single and len(ids) > 1:
                 issue(record_id, field_name, "Select at most one target.")
@@ -326,7 +458,11 @@ def link_records(records: dict[str, Record], issue: Issue, controlled: Container
                     if field_name != "Affects" or target_id not in controlled:
                         issue(record_id, field_name, f"Target {target_id} is missing.")
                 elif target.type not in expected:
-                    issue(record_id, field_name, f"Target {target_id} has type {target.type}. Expected {' or '.join(expected)}.")
+                    issue(
+                        record_id,
+                        field_name,
+                        f"Target {target_id} has type {target.type}. Expected {' or '.join(expected)}.",
+                    )
                 else:
                     targets.append(target)
             record.outgoing[field_name] = targets
@@ -349,26 +485,45 @@ def find_cycles(records: dict[str, Record], field_name: str, issue: Issue) -> No
                 done.add(record.id)
                 stack.pop()
             elif target.id in active:
-                cycle = [item.id for item, _ in stack[next(i for i, (item, _) in enumerate(stack) if item is target):]]
-                issue(record.id, field_name, f"Cycle: {' → '.join([*cycle, target.id])}.")
+                cycle = [
+                    item.id
+                    for item, _ in stack[
+                        next(i for i, (item, _) in enumerate(stack) if item is target) :
+                    ]
+                ]
+                issue(
+                    record.id, field_name, f"Cycle: {' → '.join([*cycle, target.id])}."
+                )
             elif target.id not in done:
                 active.add(target.id)
                 stack.append((target, iter(target.outgoing.get(field_name, []))))
 
 
 def check_changes(
-    rows: list[dict[str, str]], id_column: str, records: dict[str, Record], values: dict[str, ValueRule],
-    headers: list[str], controls: Controls, issue: Issue,
+    rows: list[dict[str, str]],
+    id_column: str,
+    records: dict[str, Record],
+    values: dict[str, ValueRule],
+    headers: list[str],
+    controls: Controls,
+    issue: Issue,
 ) -> None:
     baselines, controlled = controls["baselines"], controls["records"]
     authorised = {
-        target for record in records.values()
+        target
+        for record in records.values()
         if record.type == "Change request"
-        and verification_state(values, "Change status", record.row.get("Change status")) in APPROVED_CHANGE_STATES
+        and verification_state(values, "Change status", record.row.get("Change status"))
+        in APPROVED_CHANGE_STATES
         for target in trace_ids(record.row.get("Affects"))
     }
     scopes = [
-        {_trim(_cell(row, id_column)) for row in select_scope(rows, id_column, baseline["system"], baseline["includes"])}
+        {
+            _trim(_cell(row, id_column))
+            for row in select_scope(
+                rows, id_column, baseline["system"], baseline["includes"]
+            )
+        }
         for baseline in baselines
     ]
     for row in rows:
@@ -379,26 +534,46 @@ def check_changes(
             name, old = controlled[record_id]["baseline"], controlled[record_id]["row"]
             baseline = next(item for item in baselines if item["name"] == name)
             ignored = () if baseline["capturesStatus"] else baseline["statusColumns"]
-            changed = [column for column in dict.fromkeys([*headers, *old, *row])
-                       if column not in ignored and _cell(old, column) != _cell(row, column)]
+            changed = [
+                column
+                for column in dict.fromkeys([*headers, *old, *row])
+                if column not in ignored and _cell(old, column) != _cell(row, column)
+            ]
             if changed:
                 columns = ", ".join(changed)
-                issue(record_id, changed[0], f"Changed since {name} ({columns}) without an approved change request.")
+                issue(
+                    record_id,
+                    changed[0],
+                    f"Changed since {name} ({columns}) without an approved change request.",
+                )
             continue
         latest = None
         for baseline, scope in zip(baselines, scopes):
-            if record_id in scope and (latest is None or baseline["created"] > latest["created"]):
+            if record_id in scope and (
+                latest is None or baseline["created"] > latest["created"]
+            ):
                 latest = baseline
         if latest:
-            issue(record_id, id_column, f"Added since {latest['name']} without an approved change request.")
+            issue(
+                record_id,
+                id_column,
+                f"Added since {latest['name']} without an approved change request.",
+            )
     present = {_trim(_cell(row, id_column)) for row in rows}
     for record_id, entry in controlled.items():
         if record_id not in present and record_id not in authorised:
-            issue(record_id, id_column, f"Removed since {entry['baseline']} without an approved change request.")
+            issue(
+                record_id,
+                id_column,
+                f"Removed since {entry['baseline']} without an approved change request.",
+            )
 
 
 def trace_findings(
-    rows: list[dict[str, str]], headers: list[str], id_column: str, controls: Controls | None = None
+    rows: list[dict[str, str]],
+    headers: list[str],
+    id_column: str,
+    controls: Controls | None = None,
 ) -> list[Finding]:
     """Return the findings buildTraceIndex reports for these rows, in the same order.
 
@@ -413,7 +588,9 @@ def trace_findings(
     for row in rows:
         record_id = _trim(_cell(row, id_column))
         records[record_id] = Record(record_id, row, trace_type(row))
-    systems = link_records(records, issue, controls["records"] if controls else frozenset())
+    systems = link_records(
+        records, issue, controls["records"] if controls else frozenset()
+    )
     roots = [system for system in systems if not trace_ids(system.row.get("Part of"))]
     if len(roots) != 1:
         issue(None, "Part of", f"Expected one top-level system. Found {len(roots)}.")

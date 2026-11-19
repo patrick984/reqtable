@@ -26,7 +26,11 @@ def run_cli(*argv: str) -> tuple[int, str, str]:
 
 
 def report_data(path: Path) -> dict:
-    match = re.search(r'<script[^>]*id="reqtable-data"[^>]*>(.*?)</script>', path.read_text(encoding="utf-8"), re.S)
+    match = re.search(
+        r'<script[^>]*id="reqtable-data"[^>]*>(.*?)</script>',
+        path.read_text(encoding="utf-8"),
+        re.S,
+    )
     return json.loads(match.group(1))
 
 
@@ -45,11 +49,18 @@ class ExcelFixtureTests(unittest.TestCase):
         self.assertEqual(by_id["REQ-3"]["Due"], "2027-01-15")
         self.assertEqual(by_id["REQ-2"]["Due"], "")
         self.assertEqual(
-            [by_id[i]["Version"] for i in ("REQ-1", "REQ-2", "REQ-3", "REQ-4")], ["1.1", "1.10", "2", "TRUE"]
+            [by_id[i]["Version"] for i in ("REQ-1", "REQ-2", "REQ-3", "REQ-4")],
+            ["1.1", "1.10", "2", "TRUE"],
         )
-        self.assertEqual([by_id[i]["Length"] for i in ("REQ-1", "REQ-2", "REQ-3", "REQ-4")], ["41", "41", "45", "0"])
+        self.assertEqual(
+            [by_id[i]["Length"] for i in ("REQ-1", "REQ-2", "REQ-3", "REQ-4")],
+            ["41", "41", "45", "0"],
+        )
         self.assertEqual(by_id["REQ-2"]["Requirement"].count("\n"), 2)
-        self.assertEqual(by_id["REQ-3"]["Requirement"], "Café names shall keep accents — “quotes” too.")
+        self.assertEqual(
+            by_id["REQ-3"]["Requirement"],
+            "Café names shall keep accents — “quotes” too.",
+        )
         self.assertEqual(by_id["REQ-4"]["Requirement"], "")
 
     def test_sheet_with_default_header_detection(self) -> None:
@@ -60,27 +71,54 @@ class ExcelFixtureTests(unittest.TestCase):
 
     def test_sheet_with_header_row_matches_table(self) -> None:
         table = read_selection(FIXTURE, XlsxSelection(table="Requirements")).rows
-        sheet = read_selection(FIXTURE, XlsxSelection(sheet="Requirements", header_row=3)).rows
+        sheet = read_selection(
+            FIXTURE, XlsxSelection(sheet="Requirements", header_row=3)
+        ).rows
         self.assertEqual(sheet, table)
 
     def test_selection_errors(self) -> None:
-        code, _, err = run_cli(str(FIXTURE), "--id-column", "ID", "-o", str(self.root / "r.html"))
+        code, _, err = run_cli(
+            str(FIXTURE), "--id-column", "ID", "-o", str(self.root / "r.html")
+        )
         self.assertEqual(code, 3)
         self.assertIn("Table2", err)
         self.assertIn("Requirements", err)
         self.assertIn("Glossary", err)
 
-        code, _, err = run_cli(str(FIXTURE), "--table", "Nope", "--id-column", "ID", "-o", str(self.root / "r.html"))
+        code, _, err = run_cli(
+            str(FIXTURE),
+            "--table",
+            "Nope",
+            "--id-column",
+            "ID",
+            "-o",
+            str(self.root / "r.html"),
+        )
         self.assertEqual(code, 3)
         self.assertIn("Table2", err)
 
-        code, _, err = run_cli(str(FIXTURE), "--sheet", "Nope", "--id-column", "ID", "-o", str(self.root / "r.html"))
+        code, _, err = run_cli(
+            str(FIXTURE),
+            "--sheet",
+            "Nope",
+            "--id-column",
+            "ID",
+            "-o",
+            str(self.root / "r.html"),
+        )
         self.assertEqual(code, 3)
         self.assertIn("Glossary", err)
 
         code, _, err = run_cli(
-            str(FIXTURE), "--table", "Requirements", "--sheet", "Glossary", "--id-column", "ID",
-            "-o", str(self.root / "r.html"),
+            str(FIXTURE),
+            "--table",
+            "Requirements",
+            "--sheet",
+            "Glossary",
+            "--id-column",
+            "ID",
+            "-o",
+            str(self.root / "r.html"),
         )
         self.assertEqual(code, 2)
         self.assertFalse((self.root / "r.html").exists())
@@ -92,30 +130,73 @@ class ExcelFixtureTests(unittest.TestCase):
             XlsxSelection(sheet="A", header_row=0)
         csv_path = self.root / "in.csv"
         csv_path.write_text("ID\nR1\n", encoding="utf-8")
-        code, _, err = run_cli(str(csv_path), "--table", "T", "--id-column", "ID", "-o", str(self.root / "r.html"))
+        code, _, err = run_cli(
+            str(csv_path),
+            "--table",
+            "T",
+            "--id-column",
+            "ID",
+            "-o",
+            str(self.root / "r.html"),
+        )
         self.assertEqual(code, 2)
         self.assertIn(".xlsx", err)
 
     def test_csv_export_round_trips_into_a_report(self) -> None:
         exported = self.root / "requirements.csv"
-        code, _, err = run_cli(str(FIXTURE), "--table", "Requirements", "--id-column", "ID", "-o", str(exported))
+        code, _, err = run_cli(
+            str(FIXTURE),
+            "--table",
+            "Requirements",
+            "--id-column",
+            "ID",
+            "-o",
+            str(exported),
+        )
         self.assertEqual(code, 0, err)
         raw = exported.read_bytes()
         self.assertTrue(raw.startswith(b"\xef\xbb\xbf"))
         self.assertTrue(raw.endswith(b"\r\n"))
         self.assertNotIn(b"\r\n\r\n", raw)
-        self.assertEqual(raw.count(b"\r\n"), 5)  # the multi-line cell keeps bare LFs inside its quotes
+        self.assertEqual(
+            raw.count(b"\r\n"), 5
+        )  # the multi-line cell keeps bare LFs inside its quotes
 
         direct, via_csv = self.root / "direct.html", self.root / "via.html"
-        self.assertEqual(run_cli(str(FIXTURE), "--table", "Requirements", "--id-column", "ID", "-o", str(direct))[0], 0)
-        self.assertEqual(run_cli(str(exported), "--id-column", "ID", "-o", str(via_csv))[0], 0)
-        self.assertEqual(report_data(direct)["source"]["new"], report_data(via_csv)["source"]["new"])
+        self.assertEqual(
+            run_cli(
+                str(FIXTURE),
+                "--table",
+                "Requirements",
+                "--id-column",
+                "ID",
+                "-o",
+                str(direct),
+            )[0],
+            0,
+        )
+        self.assertEqual(
+            run_cli(str(exported), "--id-column", "ID", "-o", str(via_csv))[0], 0
+        )
+        self.assertEqual(
+            report_data(direct)["source"]["new"], report_data(via_csv)["source"]["new"]
+        )
         self.assertIn("[Requirements]", report_data(direct)["meta"]["newFilename"])
-        self.assertNotIn(str(FIXTURE.parent), report_data(direct)["meta"]["newFilename"])
+        self.assertNotIn(
+            str(FIXTURE.parent), report_data(direct)["meta"]["newFilename"]
+        )
 
     def test_csv_export_rejects_what_reqtable_would_reject(self) -> None:
         exported = self.root / "glossary.csv"
-        code, _, err = run_cli(str(FIXTURE), "--sheet", "Glossary", "--id-column", "ID", "-o", str(exported))
+        code, _, err = run_cli(
+            str(FIXTURE),
+            "--sheet",
+            "Glossary",
+            "--id-column",
+            "ID",
+            "-o",
+            str(exported),
+        )
         self.assertEqual(code, 3)
         self.assertIn("ID column", err)
         self.assertFalse(exported.exists())
@@ -125,21 +206,47 @@ class ExcelFixtureTests(unittest.TestCase):
         old.write_text("ID,Requirement\nREQ-1,Old text\nREQ-9,Gone\n", encoding="utf-8")
         out = self.root / "diff.html"
         code, _, err = run_cli(
-            "--old", str(old), "--new", str(FIXTURE), "--table", "Requirements", "--id-column", "ID", "-o", str(out)
+            "--old",
+            str(old),
+            "--new",
+            str(FIXTURE),
+            "--table",
+            "Requirements",
+            "--id-column",
+            "ID",
+            "-o",
+            str(out),
         )
         self.assertEqual(code, 0, err)
         data = report_data(out)
         self.assertEqual(data["meta"]["mode"], "diff")
         self.assertIn("[Requirements]", data["meta"]["newFilename"])
         code, _, err = run_cli(
-            "--old", str(FIXTURE), "--new", str(old), "--table", "Requirements", "--id-column", "ID", "-o", str(out)
+            "--old",
+            str(FIXTURE),
+            "--new",
+            str(old),
+            "--table",
+            "Requirements",
+            "--id-column",
+            "ID",
+            "-o",
+            str(out),
         )
         self.assertEqual(code, 0, err)
 
     def test_git_baseline_with_xlsx_is_refused(self) -> None:
         code, _, err = run_cli(
-            "--old", "git:HEAD", "--new", str(FIXTURE), "--table", "Requirements", "--id-column", "ID",
-            "-o", str(self.root / "d.html"),
+            "--old",
+            "git:HEAD",
+            "--new",
+            str(FIXTURE),
+            "--table",
+            "Requirements",
+            "--id-column",
+            "ID",
+            "-o",
+            str(self.root / "d.html"),
         )
         self.assertEqual(code, 3)
         self.assertIn("git baselines need CSV", err)
@@ -154,7 +261,9 @@ class ExcelFixtureTests(unittest.TestCase):
     def test_not_a_workbook(self) -> None:
         bogus = self.root / "bogus.xlsx"
         bogus.write_text("not a zip", encoding="utf-8")
-        code, _, err = run_cli(str(bogus), "--id-column", "ID", "-o", str(self.root / "r.html"))
+        code, _, err = run_cli(
+            str(bogus), "--id-column", "ID", "-o", str(self.root / "r.html")
+        )
         self.assertEqual(code, 3)
         self.assertIn("bogus.xlsx", err)
 
@@ -184,7 +293,7 @@ def synthetic_workbook(path: Path, date1904: bool) -> None:
             '<c r="B2" t="inlineStr"><is><r><t>Rich </t></r><r><t>text</t></r><rPh><t>phonetic</t></rPh></is></c>'
             '<c r="C2" s="1"><v>1</v></c></row>'
             '<row r="3"><c r="A3" t="inlineStr"><is><t>R2</t></is></c><c r="C3" s="2"><v>45000.75</v></c></row>'
-            '</sheetData></worksheet>'
+            "</sheetData></worksheet>"
         ),
     }
     with zipfile.ZipFile(path, "w") as archive:
@@ -219,7 +328,10 @@ class SyntheticWorkbookTests(unittest.TestCase):
 
     def test_csv_text_uses_delimiter_and_quotes(self) -> None:
         text = block_to_csv([["a", "b;c"], ["x\ny", 'q"']], ";")
-        self.assertEqual(list(csv.reader(io.StringIO(text, newline=""), delimiter=";")), [["a", "b;c"], ["x\ny", 'q"']])
+        self.assertEqual(
+            list(csv.reader(io.StringIO(text, newline=""), delimiter=";")),
+            [["a", "b;c"], ["x\ny", 'q"']],
+        )
         self.assertTrue(text.endswith("\r\n"))
 
 

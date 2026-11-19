@@ -13,7 +13,7 @@ The CLI freezes a gate baseline (`--create-baseline GATE [--system ID]`) as a Gi
 
 ## How to get to it (user POV)
 
-- Run the CLI commands in the README's Gate baselines section.
+- Run the CLI commands in [docs/gates.md](../../../../docs/gates.md).
 - In a report generated with `--baselines`, open **View** and choose a baseline under **Compare with**.
 
 ## Driving it with the CLI

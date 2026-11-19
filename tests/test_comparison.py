@@ -11,11 +11,19 @@ from reqtable.comparison import COMPARISON_JS
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "baseline_scope.json"
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class ComparisonModelTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + COMPARISON_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + COMPARISON_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_scope_matches_shared_fixture(self):
         self.run_js(f"""

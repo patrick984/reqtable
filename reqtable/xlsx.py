@@ -4,6 +4,7 @@ Reading only: the workbook is never written. Cell values come out as the text
 Excel displays for the stored value, so a block of cells can be fed to the CSV
 pipeline unchanged. Merged cells keep their value in the top-left cell only.
 """
+
 from __future__ import annotations
 
 import csv
@@ -27,8 +28,41 @@ _DC_MODIFIED = "{http://purl.org/dc/terms/}modified"
 NS = {"m": _MAIN, "rel": _REL}
 
 # Built-in number formats that Excel displays as dates or times (including the CJK locale ones).
-_BUILTIN_DATE_FORMATS = frozenset({14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
-                                   45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58})
+_BUILTIN_DATE_FORMATS = frozenset(
+    {
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        45,
+        46,
+        47,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -57,7 +91,9 @@ class XlsxSelection:
 
     def __post_init__(self) -> None:
         if self.table and self.sheet:
-            raise ConfigError("--table and --sheet cannot be combined; a table already belongs to one sheet")
+            raise ConfigError(
+                "--table and --sheet cannot be combined; a table already belongs to one sheet"
+            )
         if self.header_row is not None:
             if not self.sheet:
                 raise ConfigError("--header-row needs --sheet")
@@ -168,7 +204,9 @@ def _text_of(node: ET.Element) -> str:
         elif child.tag == f"{{{_MAIN}}}r":
             parts.extend(t.text or "" for t in child.findall("m:t", NS))
     # Excel writes control characters as _xHHHH_, such as the CR in a line break typed on Windows.
-    return re.sub(r"_x([0-9A-Fa-f]{4})_", lambda m: chr(int(m.group(1), 16)), "".join(parts))
+    return re.sub(
+        r"_x([0-9A-Fa-f]{4})_", lambda m: chr(int(m.group(1), 16)), "".join(parts)
+    )
 
 
 def _excel_date(serial: float, date1904: bool) -> str:
@@ -208,7 +246,9 @@ class Workbook:
     date_styles: frozenset[int]
     date1904: bool
     _zip: zipfile.ZipFile = field(repr=False)
-    _grids: dict[str, dict[tuple[int, int], str]] = field(default_factory=dict, repr=False)
+    _grids: dict[str, dict[tuple[int, int], str]] = field(
+        default_factory=dict, repr=False
+    )
 
     def __enter__(self) -> "Workbook":
         return self
@@ -244,35 +284,55 @@ class Workbook:
         ]
         shared: list[str] = []
         if "xl/sharedStrings.xml" in names:
-            shared = [_text_of(si) for si in ET.fromstring(archive.read("xl/sharedStrings.xml")).findall("m:si", NS)]
+            shared = [
+                _text_of(si)
+                for si in ET.fromstring(archive.read("xl/sharedStrings.xml")).findall(
+                    "m:si", NS
+                )
+            ]
         tables = []
         for sheet in sheets:
             for target in _relationships(archive, sheet.part).values():
                 if "/tables/" not in target or target not in names:
                     continue
                 table = ET.fromstring(archive.read(target))
-                tables.append(Table(
-                    table.get("displayName") or table.get("name") or "",
-                    sheet.name,
-                    table.get("ref", ""),
-                    int(table.get("headerRowCount", "1")),
-                    int(table.get("totalsRowCount", "0")),
-                ))
+                tables.append(
+                    Table(
+                        table.get("displayName") or table.get("name") or "",
+                        sheet.name,
+                        table.get("ref", ""),
+                        int(table.get("headerRowCount", "1")),
+                        int(table.get("totalsRowCount", "0")),
+                    )
+                )
         return cls(
-            path, sheets, tables, shared, _date_styles(archive, names),
-            properties is not None and properties.get("date1904") in ("1", "true"), archive,
+            path,
+            sheets,
+            tables,
+            shared,
+            _date_styles(archive, names),
+            properties is not None and properties.get("date1904") in ("1", "true"),
+            archive,
         )
 
     def sheet_named(self, name: str) -> Sheet:
-        found = next((s for s in self.sheets if s.name.casefold() == name.casefold()), None)
+        found = next(
+            (s for s in self.sheets if s.name.casefold() == name.casefold()), None
+        )
         if found is None:
-            raise InputError(f"{self.path.name} has no sheet {name!r}; sheets: {_names(s.name for s in self.sheets)}")
+            raise InputError(
+                f"{self.path.name} has no sheet {name!r}; sheets: {_names(s.name for s in self.sheets)}"
+            )
         return found
 
     def table_named(self, name: str) -> Table:
-        found = next((t for t in self.tables if t.name.casefold() == name.casefold()), None)
+        found = next(
+            (t for t in self.tables if t.name.casefold() == name.casefold()), None
+        )
         if found is None:
-            raise InputError(f"{self.path.name} has no table {name!r}; tables: {_names(t.name for t in self.tables)}")
+            raise InputError(
+                f"{self.path.name} has no table {name!r}; tables: {_names(t.name for t in self.tables)}"
+            )
         return found
 
     def cells(self, sheet: Sheet) -> dict[tuple[int, int], str]:
@@ -281,44 +341,67 @@ class Workbook:
             try:
                 self._grids[sheet.name] = dict(self._parse_cells(sheet))
             except (KeyError, ET.ParseError, ValueError, zipfile.BadZipFile) as exc:
-                raise InputError(f"{self.path.name}: cannot read sheet {sheet.name!r}: {exc}") from exc
+                raise InputError(
+                    f"{self.path.name}: cannot read sheet {sheet.name!r}: {exc}"
+                ) from exc
         return self._grids[sheet.name]
 
-    def read_block(self, sheet: Sheet, r1: int, c1: int, r2: int, c2: int) -> list[list[str]]:
+    def read_block(
+        self, sheet: Sheet, r1: int, c1: int, r2: int, c2: int
+    ) -> list[list[str]]:
         grid = self.cells(sheet)
-        return [[grid.get((r, c), "") for c in range(c1, c2 + 1)] for r in range(r1, r2 + 1)]
+        return [
+            [grid.get((r, c), "") for c in range(c1, c2 + 1)] for r in range(r1, r2 + 1)
+        ]
 
     def raw_comments(self, sheet: Sheet) -> list[RawComment]:
         """Comments of a sheet: threaded ones with each reply on its own, else the legacy note on that cell."""
         names = set(self._zip.namelist())
-        links = [(kind, target) for _, kind, target in _typed_relationships(self._zip, sheet.part) if target in names]
+        links = [
+            (kind, target)
+            for _, kind, target in _typed_relationships(self._zip, sheet.part)
+            if target in names
+        ]
         threaded: list[RawComment] = []
         for _, target in (l for l in links if l[0].endswith("/threadedComment")):
             people = self._people()
-            for node in ET.fromstring(self._zip.read(target)).findall("{*}threadedComment"):
+            for node in ET.fromstring(self._zip.read(target)).findall(
+                "{*}threadedComment"
+            ):
                 text = node.find("{*}text")
                 row, col = split_ref(node.get("ref", ""))
-                threaded.append(RawComment(
-                    row, col, people.get(node.get("personId", ""), ""), node.get("dT", ""),
-                    (text.text or "").strip() if text is not None else "",
-                ))
+                threaded.append(
+                    RawComment(
+                        row,
+                        col,
+                        people.get(node.get("personId", ""), ""),
+                        node.get("dT", ""),
+                        (text.text or "").strip() if text is not None else "",
+                    )
+                )
         threaded.sort(key=lambda c: (c.row, c.col, c.created))
         threaded_cells = {(c.row, c.col) for c in threaded}
         notes: list[RawComment] = []
         for _, target in (l for l in links if l[0].endswith("/comments")):
             root = ET.fromstring(self._zip.read(target))
-            authors = [(a.text or "").strip() for a in root.findall("m:authors/m:author", NS)]
+            authors = [
+                (a.text or "").strip() for a in root.findall("m:authors/m:author", NS)
+            ]
             for node in root.findall("m:commentList/m:comment", NS):
                 row, col = split_ref(node.get("ref", ""))
                 text_node = node.find("m:text", NS)
                 text = _text_of(text_node) if text_node is not None else ""
-                if (row, col) in threaded_cells and text.startswith("[Threaded comment]"):
+                if (row, col) in threaded_cells and text.startswith(
+                    "[Threaded comment]"
+                ):
                     continue
                 index = int(node.get("authorId") or -1)
                 author = authors[index] if 0 <= index < len(authors) else ""
                 if author and text.startswith(author + ":\n"):
-                    text = text[len(author) + 2:]
-                notes.append(RawComment(row, col, author, self._modified(), text.strip()))
+                    text = text[len(author) + 2 :]
+                notes.append(
+                    RawComment(row, col, author, self._modified(), text.strip())
+                )
         notes.sort(key=lambda c: (c.row, c.col))
         return [*notes, *threaded]
 
@@ -326,8 +409,12 @@ class Workbook:
         result: dict[str, str] = {}
         for _, kind, target in _typed_relationships(self._zip, "xl/workbook.xml"):
             if kind.endswith("/person") and target in self._zip.namelist():
-                for person in ET.fromstring(self._zip.read(target)).findall("{*}person"):
-                    result[person.get("id", "")] = (person.get("displayName") or "").strip()
+                for person in ET.fromstring(self._zip.read(target)).findall(
+                    "{*}person"
+                ):
+                    result[person.get("id", "")] = (
+                        person.get("displayName") or ""
+                    ).strip()
         return result
 
     def _modified(self) -> str:
@@ -381,7 +468,9 @@ def _names(names: Iterator[str]) -> str:
     return ", ".join(names) or "(none)"
 
 
-def _typed_relationships(archive: zipfile.ZipFile, part: str) -> list[tuple[str, str, str]]:
+def _typed_relationships(
+    archive: zipfile.ZipFile, part: str
+) -> list[tuple[str, str, str]]:
     """(id, type, target part) for each relationship of a part."""
     folder, name = posixpath.split(part)
     path = posixpath.join(folder, "_rels", name + ".rels")
@@ -390,11 +479,15 @@ def _typed_relationships(archive: zipfile.ZipFile, part: str) -> list[tuple[str,
     result = []
     for rel in ET.fromstring(archive.read(path)).findall("rel:Relationship", NS):
         target = rel.get("Target", "")
-        result.append((
-            rel.get("Id", ""),
-            rel.get("Type", ""),
-            target.lstrip("/") if target.startswith("/") else posixpath.normpath(posixpath.join(folder, target)),
-        ))
+        result.append(
+            (
+                rel.get("Id", ""),
+                rel.get("Type", ""),
+                target.lstrip("/")
+                if target.startswith("/")
+                else posixpath.normpath(posixpath.join(folder, target)),
+            )
+        )
     return result
 
 
@@ -406,7 +499,10 @@ def _date_styles(archive: zipfile.ZipFile, names: set[str]) -> frozenset[int]:
     if "xl/styles.xml" not in names:
         return frozenset()
     root = ET.fromstring(archive.read("xl/styles.xml"))
-    custom = {int(f.get("numFmtId", "0")): f.get("formatCode", "") for f in root.findall("m:numFmts/m:numFmt", NS)}
+    custom = {
+        int(f.get("numFmtId", "0")): f.get("formatCode", "")
+        for f in root.findall("m:numFmts/m:numFmt", NS)
+    }
     result = set()
     for index, xf in enumerate(root.findall("m:cellXfs/m:xf", NS)):
         format_id = int(xf.get("numFmtId", "0"))
@@ -425,7 +521,9 @@ def _table_block(wb: Workbook, table: Table) -> Block:
     if table.header_rows < 1:
         raise InputError(f"{wb.path.name}: table {table.name!r} has no header row")
     r1, c1, r2, c2 = _range(table.ref)
-    rows = wb.read_block(wb.sheet_named(table.sheet), r1, c1, r2 - table.totals_rows, c2)
+    rows = wb.read_block(
+        wb.sheet_named(table.sheet), r1, c1, r2 - table.totals_rows, c2
+    )
     return Block(table.name, _trim_empty_tail(rows), r1, c1, table.sheet)
 
 
@@ -437,10 +535,18 @@ def _sheet_block(wb: Workbook, sheet: Sheet, header_row: int | None) -> Block:
         header_row = min(r for r, _ in grid)
     header_cols = [c for r, c in grid if r == header_row]
     if not header_cols:
-        raise InputError(f"{wb.path.name}: sheet {sheet.name!r} has no header cells in row {header_row}")
+        raise InputError(
+            f"{wb.path.name}: sheet {sheet.name!r} has no header cells in row {header_row}"
+        )
     c1, c2 = min(header_cols), max(header_cols)
     last = max((r for r, c in grid if c1 <= c <= c2), default=header_row)
-    return Block(sheet.name, wb.read_block(sheet, header_row, c1, last, c2), header_row, c1, sheet.name)
+    return Block(
+        sheet.name,
+        wb.read_block(sheet, header_row, c1, last, c2),
+        header_row,
+        c1,
+        sheet.name,
+    )
 
 
 def select_block(wb: Workbook, selection: XlsxSelection) -> Block:
@@ -469,7 +575,9 @@ def _slug(text: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "-", text.upper()).strip("-")
 
 
-def _map_source(block: Block, source: dict[str, Any], id_column: str | None, traceability: bool) -> Part:
+def _map_source(
+    block: Block, source: dict[str, Any], id_column: str | None, traceability: bool
+) -> Part:
     """Apply one configured source to its block: headings, exclude, rename, set, lists, then Type and generated IDs."""
     where = f"xlsx source {_source_name(source)!r}"
     headers = list(block.rows[0])
@@ -480,12 +588,18 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
         raise InputError(f"{where}: duplicate column name(s): {', '.join(duplicates)}")
     columns, exclude = source.get("columns", {}), source.get("exclude", [])
     headings = source.get("headings")
-    heading_columns = [headings[k] for k in ("column", "text") if k in headings] if headings else []
+    heading_columns = (
+        [headings[k] for k in ("column", "text") if k in headings] if headings else []
+    )
     for name in (*columns, *exclude, *heading_columns):
         if name not in headers:
-            raise ConfigError(f"{where} has no column {name!r}; columns: {_names(iter(headers))}")
+            raise ConfigError(
+                f"{where} has no column {name!r}; columns: {_names(iter(headers))}"
+            )
     live = [
-        (block.first_row + 1 + i, row) for i, row in enumerate(block.rows[1:]) if any(cell.strip() for cell in row)
+        (block.first_row + 1 + i, row)
+        for i, row in enumerate(block.rows[1:])
+        if any(cell.strip() for cell in row)
     ]
     under: list[str] = [""] * len(live)
     removed = 0
@@ -499,7 +613,14 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
                 if text_at is not None:
                     current = row[text_at].strip()
                 else:
-                    current = next((c.strip() for i, c in enumerate(row) if i != type_at and c.strip()), "")
+                    current = next(
+                        (
+                            c.strip()
+                            for i, c in enumerate(row)
+                            if i != type_at and c.strip()
+                        ),
+                        "",
+                    )
             else:
                 kept.append((number, row))
                 under.append(current)
@@ -509,7 +630,9 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
     out_headers = [columns.get(headers[i], headers[i]) for i in keep]
     clashes = sorted({h for h in out_headers if out_headers.count(h) > 1})
     if clashes:
-        raise ConfigError(f"{where}: columns map to the same output header: {', '.join(clashes)}")
+        raise ConfigError(
+            f"{where}: columns map to the same output header: {', '.join(clashes)}"
+        )
     numbers = [number for number, _ in live]
     rows = [[row[i] for i in keep] for _, row in live]
 
@@ -522,7 +645,9 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
 
     def need(name: str, key: str) -> int:
         if name not in out_headers:
-            raise ConfigError(f"{where}: {key} names {name!r}, which is not a mapped column; columns: {_names(iter(out_headers))}")
+            raise ConfigError(
+                f"{where}: {key} names {name!r}, which is not a mapped column; columns: {_names(iter(out_headers))}"
+            )
         return out_headers.index(name)
 
     constants = dict(source.get("set", {}))
@@ -547,12 +672,18 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
         at = need(name, "lists")
         pattern = r"\r?\n" if separator == "newline" else re.escape(separator)
         for row in rows:
-            row[at] = "; ".join(p for p in (part.strip() for part in re.split(pattern, row[at])) if p)
+            row[at] = "; ".join(
+                p for p in (part.strip() for part in re.split(pattern, row[at])) if p
+            )
     if "id_prefix" in source:
         if not id_column:
-            raise ConfigError(f"{where} sets 'id_prefix', which needs an ID column: use --id-column or set id_column")
+            raise ConfigError(
+                f"{where} sets 'id_prefix', which needs an ID column: use --id-column or set id_column"
+            )
         at = column(id_column)
-        id_from = source.get("id_from") or (["Field", "Name"] if constants.get("Type") == "Value" else None)
+        id_from = source.get("id_from") or (
+            ["Field", "Name"] if constants.get("Type") == "Value" else None
+        )
         parts_at = [need(name, "id_from") for name in id_from] if id_from else []
         names = out_headers.index("Name") if "Name" in out_headers else None
         aliases = out_headers.index("Aliases") if "Aliases" in out_headers else None
@@ -562,13 +693,19 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
             if id_from:
                 slug = "-".join(filter(None, (_slug(row[i]) for i in parts_at)))
             else:
-                alias = next((a.strip() for a in row[aliases].split(";") if a.strip()), "") if aliases is not None else ""
+                alias = (
+                    next((a.strip() for a in row[aliases].split(";") if a.strip()), "")
+                    if aliases is not None
+                    else ""
+                )
                 slug = _slug(alias) or (_slug(row[names]) if names is not None else "")
             if slug:
                 row[at] = source["id_prefix"] + slug
     elif source.get("merge"):
         if not id_column:
-            raise ConfigError(f"{where} is a merge source, which needs an ID column: use --id-column or set id_column")
+            raise ConfigError(
+                f"{where} is a merge source, which needs an ID column: use --id-column or set id_column"
+            )
         if id_column not in out_headers:
             raise ConfigError(
                 f"{where} is a merge source with no {id_column!r} column to match records by; "
@@ -580,21 +717,48 @@ def _map_source(block: Block, source: dict[str, Any], id_column: str | None, tra
             f"set id_prefix to generate IDs, or remove the source"
         )
     sheet_columns = {
-        block.first_col + i: None if h in exclude else columns.get(h, h) for i, h in enumerate(headers)
+        block.first_col + i: None if h in exclude else columns.get(h, h)
+        for i, h in enumerate(headers)
     }
     lists = frozenset(source.get("lists", {}))
     keys = None
     if source.get("merge"):
         at = out_headers.index(id_column)
-        keys = [_split(row[at]) if id_column in lists else [row[at].strip()] if row[at].strip() else [] for row in rows]
-    return Part(block.name, block.sheet, out_headers, rows, numbers, sheet_columns, keys, lists, removed, categories)
+        keys = [
+            _split(row[at])
+            if id_column in lists
+            else [row[at].strip()]
+            if row[at].strip()
+            else []
+            for row in rows
+        ]
+    return Part(
+        block.name,
+        block.sheet,
+        out_headers,
+        rows,
+        numbers,
+        sheet_columns,
+        keys,
+        lists,
+        removed,
+        categories,
+    )
 
 
 def _plain_part(block: Block) -> Part:
     headers = list(block.rows[0])
-    body = [(block.first_row + 1 + i, row) for i, row in enumerate(block.rows[1:]) if any(c.strip() for c in row)]
+    body = [
+        (block.first_row + 1 + i, row)
+        for i, row in enumerate(block.rows[1:])
+        if any(c.strip() for c in row)
+    ]
     return Part(
-        block.name, block.sheet, headers, [row for _, row in body], [n for n, _ in body],
+        block.name,
+        block.sheet,
+        headers,
+        [row for _, row in body],
+        [n for n, _ in body],
         {block.first_col + i: h for i, h in enumerate(headers)},
     )
 
@@ -604,7 +768,9 @@ def _split(cell: str) -> list[str]:
 
 
 def _listed(items: list[str], limit: int = 12) -> str:
-    return ", ".join(items[:limit]) + (f" and {len(items) - limit} more" if len(items) > limit else "")
+    return ", ".join(items[:limit]) + (
+        f" and {len(items) - limit} more" if len(items) > limit else ""
+    )
 
 
 def _repair_ids(parts: list[Part], id_column: str | None, file: str) -> list[str]:
@@ -612,7 +778,11 @@ def _repair_ids(parts: list[Part], id_column: str | None, file: str) -> list[str
     warnings: list[str] = []
     if not id_column:
         return warnings
-    usable = [(part, part.headers.index(id_column)) for part in parts if id_column in part.headers]
+    usable = [
+        (part, part.headers.index(id_column))
+        for part in parts
+        if id_column in part.headers
+    ]
     for part, at in usable:
         named = []
         for number, row in zip(part.numbers, part.rows):
@@ -650,16 +820,23 @@ def _repair_ids(parts: list[Part], id_column: str | None, file: str) -> list[str
 
 def _combine(parts: list[Part], id_column: str | None) -> Block:
     """One block from several parts: shared headers line up, missing cells are empty."""
-    headers: list[str] = [id_column] if id_column and any(id_column in p.headers for p in parts) else []
+    headers: list[str] = (
+        [id_column] if id_column and any(id_column in p.headers for p in parts) else []
+    )
     for part in parts:
         headers += [h for h in part.headers if h not in headers]
     rows = [headers]
     for part in parts:
-        rows += [[row[part.headers.index(h)] if h in part.headers else "" for h in headers] for row in part.rows]
+        rows += [
+            [row[part.headers.index(h)] if h in part.headers else "" for h in headers]
+            for row in part.rows
+        ]
     return Block(" + ".join(p.name for p in parts), rows)
 
 
-def _merge(block: Block, part: Part, id_column: str, list_columns: frozenset[str], file: str) -> list[str]:
+def _merge(
+    block: Block, part: Part, id_column: str, list_columns: frozenset[str], file: str
+) -> list[str]:
     """Fill the combined table's records from one merge source; one warning for unknown IDs, one for conflicts."""
     headers = block.rows[0]
     for name in part.headers:
@@ -668,8 +845,16 @@ def _merge(block: Block, part: Part, id_column: str, list_columns: frozenset[str
             for row in block.rows[1:]:
                 row.append("")
     by_id = {row[headers.index(id_column)].strip(): row for row in block.rows[1:]}
-    fills = [(part.headers.index(h), headers.index(h), h in list_columns or h in part.lists, h)
-             for h in part.headers if h != id_column]
+    fills = [
+        (
+            part.headers.index(h),
+            headers.index(h),
+            h in list_columns or h in part.lists,
+            h,
+        )
+        for h in part.headers
+        if h != id_column
+    ]
     unknown: dict[str, None] = {}
     conflicts: dict[str, None] = {}
     for row, keys in zip(part.rows, part.keys or []):
@@ -682,22 +867,32 @@ def _merge(block: Block, part: Part, id_column: str, list_columns: frozenset[str
                 value = row[source_at]
                 if is_list:
                     # The record's own cell may not have been split by a lists entry, so read it either way.
-                    have = {part.strip() for part in re.split(r"[;,]", target[target_at])}
+                    have = {
+                        part.strip() for part in re.split(r"[;,]", target[target_at])
+                    }
                     new = [v for v in dict.fromkeys(_split(value)) if v not in have]
                     if new:
-                        target[target_at] = "; ".join(filter(None, [target[target_at].strip(), *new]))
+                        target[target_at] = "; ".join(
+                            filter(None, [target[target_at].strip(), *new])
+                        )
                 elif value.strip() and not target[target_at].strip():
                     target[target_at] = value
                 elif value.strip() and target[target_at].strip() != value.strip():
-                    conflicts[f"{key} {name}: kept {target[target_at].strip()!r}, ignored {value.strip()!r}"] = None
+                    conflicts[
+                        f"{key} {name}: kept {target[target_at].strip()!r}, ignored {value.strip()!r}"
+                    ] = None
     warnings = []
     where = f"{file} [{part.name}]"
     if unknown:
         noun = "ID matches" if len(unknown) == 1 else "IDs match"
-        warnings.append(f"{where}: {len(unknown)} {noun} no record in {id_column!r}; ignored {_listed(list(unknown))}")
+        warnings.append(
+            f"{where}: {len(unknown)} {noun} no record in {id_column!r}; ignored {_listed(list(unknown))}"
+        )
     if conflicts:
         noun = "value differs" if len(conflicts) == 1 else "values differ"
-        warnings.append(f"{where}: {len(conflicts)} {noun} from the record; {_listed(list(conflicts))}")
+        warnings.append(
+            f"{where}: {len(conflicts)} {noun} from the record; {_listed(list(conflicts))}"
+        )
     return warnings
 
 
@@ -705,17 +900,26 @@ def _initials(author: str) -> str:
     words = re.sub(r"[\x00-\x1f\x7f]", " ", author).split()
     if not words:
         return "XL"
-    value = (words[0][:2] if len(words) == 1 else "".join(w[0] for w in words)).upper()[:16]
+    value = (words[0][:2] if len(words) == 1 else "".join(w[0] for w in words)).upper()[
+        :16
+    ]
     return value if valid_initials(value) else "XL"
 
 
-def _place(part: Part, id_column: str | None, comment: RawComment, ids: set[str]) -> tuple[str, str, str] | None:
+def _place(
+    part: Part, id_column: str | None, comment: RawComment, ids: set[str]
+) -> tuple[str, str, str] | None:
     """The (requirement ID, output column, text) a comment lands on in this part, or None if it falls outside it.
 
     A comment on a merge source's row lands on the first record that row fills in.
     """
     column = part.columns.get(comment.col)
-    if not id_column or id_column not in part.headers or column is None or comment.row not in part.numbers:
+    if (
+        not id_column
+        or id_column not in part.headers
+        or column is None
+        or comment.row not in part.numbers
+    ):
         return None
     at = part.numbers.index(comment.row)
     if part.keys is None:
@@ -731,7 +935,11 @@ def _place(part: Part, id_column: str | None, comment: RawComment, ids: set[str]
 
 
 def _review_comments(
-    wb: Workbook, parts: list[Part], id_column: str | None, ids: set[str], label: str,
+    wb: Workbook,
+    parts: list[Part],
+    id_column: str | None,
+    ids: set[str],
+    label: str,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     comments: list[dict[str, Any]] = []
     dropped = 0
@@ -739,19 +947,34 @@ def _review_comments(
         try:
             found = wb.raw_comments(wb.sheet_named(sheet_name))
         except (KeyError, ET.ParseError, ValueError, zipfile.BadZipFile) as exc:
-            raise InputError(f"{wb.path.name}: cannot read comments of sheet {sheet_name!r}: {exc}") from exc
+            raise InputError(
+                f"{wb.path.name}: cannot read comments of sheet {sheet_name!r}: {exc}"
+            ) from exc
         for raw in found:
             placed = next(
-                (hit for part in parts if part.sheet == sheet_name and (hit := _place(part, id_column, raw, ids))), None
+                (
+                    hit
+                    for part in parts
+                    if part.sheet == sheet_name
+                    and (hit := _place(part, id_column, raw, ids))
+                ),
+                None,
             )
             if placed is None:
                 dropped += 1
                 continue
             rid, column, text = placed
-            comments.append({
-                "id": f"xlsx-{len(comments) + 1}", "requirementId": rid, "column": column,
-                "initials": _initials(raw.author), "created": raw.created, "modified": None, "text": text,
-            })
+            comments.append(
+                {
+                    "id": f"xlsx-{len(comments) + 1}",
+                    "requirementId": rid,
+                    "column": column,
+                    "initials": _initials(raw.author),
+                    "created": raw.created,
+                    "modified": None,
+                    "text": text,
+                }
+            )
     warnings = []
     if dropped:
         noun = "comment" if dropped == 1 else "comments"
@@ -774,8 +997,15 @@ def import_workbook(
         if sources:
             parts = [
                 _map_source(
-                    select_block(wb, XlsxSelection(s.get("table"), s.get("sheet"), s.get("header_row"))),
-                    s, id_column, traceability,
+                    select_block(
+                        wb,
+                        XlsxSelection(
+                            s.get("table"), s.get("sheet"), s.get("header_row")
+                        ),
+                    ),
+                    s,
+                    id_column,
+                    traceability,
                 )
                 for s in sources
             ]
@@ -788,7 +1018,13 @@ def import_workbook(
         if len(records) < len(parts):
             # findings imports baselines, which imports this module.
             from .findings import TRACE_FIELDS
-            list_columns = frozenset([*(f for f, (_, _, single) in TRACE_FIELDS.items() if not single), "Aliases"])
+
+            list_columns = frozenset(
+                [
+                    *(f for f, (_, _, single) in TRACE_FIELDS.items() if not single),
+                    "Aliases",
+                ]
+            )
             for part in parts:
                 if part.keys is not None:
                     warnings += _merge(block, part, id_column, list_columns, file)
@@ -797,11 +1033,18 @@ def import_workbook(
         found: list[dict[str, Any]] = []
         if comments:
             at = block.rows[0].index(id_column) if id_column in block.rows[0] else None
-            ids = {row[at].strip() for row in block.rows[1:]} if at is not None else set()
+            ids = (
+                {row[at].strip() for row in block.rows[1:]} if at is not None else set()
+            )
             found, extra = _review_comments(wb, parts, id_column, ids, label)
             warnings += extra
         stats = tuple(
-            SourceStats(_source_name(s), None if part.keys is not None else len(part.rows), part.headings_removed, part.categories)
+            SourceStats(
+                _source_name(s),
+                None if part.keys is not None else len(part.rows),
+                part.headings_removed,
+                part.categories,
+            )
             for s, part in zip(sources, parts)
         )
         return Imported(block, tuple(warnings), tuple(found), stats)
@@ -818,7 +1061,13 @@ def mapping_template(path: str | Path) -> dict[str, Any]:
             if any(t.sheet == sheet.name for t in wb.tables) or not wb.cells(sheet):
                 continue
             first = min(r for r, _ in wb.cells(sheet))
-            sources.append({"sheet": sheet.name, "header_row": first, "block": _sheet_block(wb, sheet, first)})
+            sources.append(
+                {
+                    "sheet": sheet.name,
+                    "header_row": first,
+                    "block": _sheet_block(wb, sheet, first),
+                }
+            )
     config = json.loads(json.dumps(DEFAULT_CONFIG))
     id_headers = []
     for source in sources:
@@ -840,7 +1089,10 @@ def block_to_csv(rows: list[list[str]], delimiter: str) -> str:
 def describe(path: str | Path) -> str:
     with Workbook.open(path) as wb:
         lines = ["Sheets:"]
-        lines += [f"  {s.name}" + ("" if s.state == "visible" else f" ({s.state})") for s in wb.sheets]
+        lines += [
+            f"  {s.name}" + ("" if s.state == "visible" else f" ({s.state})")
+            for s in wb.sheets
+        ]
         lines.append("Tables:")
         if not wb.tables:
             lines.append("  (none)")
@@ -850,5 +1102,7 @@ def describe(path: str | Path) -> str:
                 r1, c1, _, c2 = _range(table.ref)
                 row = wb.read_block(wb.sheet_named(table.sheet), r1, c1, r1, c2)[0]
                 headers = "  headers: " + ", ".join(row)
-            lines.append(f"  {table.name}  sheet: {table.sheet}  ref: {table.ref}{headers}")
+            lines.append(
+                f"  {table.name}  sheet: {table.sheet}  ref: {table.ref}{headers}"
+            )
         return "\n".join(lines)

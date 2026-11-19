@@ -139,7 +139,7 @@ python reqtable.pyz requirements-uat.csv --id-column ID --document-mode develop 
 
 ## Systems and traceability pilot
 
-Generate the Develop and Review reports using the `--traceability` commands in the [README](README.md#systems-and-traceability-pilot). Work on a copy of the CSV when testing saves.
+Generate the Develop and Review reports using the `--traceability` commands in the [traceability guide](../traceability.md). Work on a copy of the CSV when testing saves.
 
 1. Confirm **Requirements** opens with the core writing columns, including Verification Method. Narrow the ID column and confirm the ID sits below the grab handle. Use the **System** selector to show Python generator and Browser report in turn. Edit `REQ-003` in one scope and confirm the other shows the same edit. Select ReqTable with **Include subsystems** enabled and confirm `REQ-003` appears once.
 2. Select `REQ-003`, check that its ID cell has a link indicator, and use **Links** in the workspace bar. Follow the offline workflow need into **Needs & Sources**, then return with **Back to previous record**. From the Python generator scope, follow the browser child and confirm **Reveal in grid** retains that scope. Remove the reveal via **Active filters**.

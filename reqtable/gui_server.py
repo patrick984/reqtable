@@ -1,4 +1,5 @@
 """Local web server for the GUI: a thin, token-guarded shell over reqtable.gui."""
+
 from __future__ import annotations
 
 import hmac
@@ -16,10 +17,32 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from . import gui_lookups
-from .gui_mapping import build_mapping, load_mapping, mapping_json, preview_mapping, role_named, save_mapping, suggest_columns
+from .gui_mapping import (
+    build_mapping,
+    load_mapping,
+    mapping_json,
+    preview_mapping,
+    role_named,
+    save_mapping,
+    suggest_columns,
+)
 from .gui import (
-    WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, blocked_checks, build_argv, column_source, launcher, lookup_source,
-    ScriptStep, posix_command, powershell_command, script, table_inputs, workflow_named,
+    WORKFLOWS,
+    BadRequest,
+    GuiError,
+    Launcher,
+    Workflow,
+    blocked_checks,
+    build_argv,
+    column_source,
+    launcher,
+    lookup_source,
+    ScriptStep,
+    posix_command,
+    powershell_command,
+    script,
+    table_inputs,
+    workflow_named,
 )
 from .gui_page import render_page
 
@@ -43,18 +66,29 @@ class Session:
         self.lock = threading.Lock()
 
     def commands(self, argv: list[str]) -> dict[str, Any]:
-        return {"argv": argv, "sh": posix_command(argv, self.launcher.shown), "powershell": powershell_command(argv, self.launcher.shown)}
+        return {
+            "argv": argv,
+            "sh": posix_command(argv, self.launcher.shown),
+            "powershell": powershell_command(argv, self.launcher.shown),
+        }
 
     def command(self, workflow: Workflow, values: dict[str, Any]) -> dict[str, Any]:
         return {
             **self.commands(build_argv(workflow, values, self.workdir)),
-            "replaces": [str(value) for value in self.saved_values(workflow, values) if (self.workdir / value).exists()],
+            "replaces": [
+                str(value)
+                for value in self.saved_values(workflow, values)
+                if (self.workdir / value).exists()
+            ],
         }
 
     @staticmethod
     def saved_values(workflow: Workflow, values: dict[str, Any]) -> list[str]:
         return [
-            value for field in workflow.fields if field.kind == "save" and (value := str(values.get(field.name, "")).strip())
+            value
+            for field in workflow.fields
+            if field.kind == "save"
+            and (value := str(values.get(field.name, "")).strip())
         ]
 
     def run(self, workflow: Workflow, values: dict[str, Any]) -> dict[str, Any]:
@@ -62,19 +96,40 @@ class Session:
         env = {**os.environ, **self.launcher.env, "PYTHONIOENCODING": "utf-8"}
         try:
             done = subprocess.run(
-                [*self.launcher.run, *argv], cwd=self.workdir, env=env, capture_output=True, text=True,
-                encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=RUN_TIMEOUT_SECONDS,
+                [*self.launcher.run, *argv],
+                cwd=self.workdir,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdin=subprocess.DEVNULL,
+                timeout=RUN_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired:
             return {
-                **self.commands(argv), "exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds",
-                "outputs": [], "blocked": [],
+                **self.commands(argv),
+                "exit_code": None,
+                "stdout": "",
+                "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds",
+                "outputs": [],
+                "blocked": [],
             }
-        written = [self.workdir / value for value in self.saved_values(workflow, values) if done.returncode == 0 and (self.workdir / value).is_file()]
+        written = [
+            self.workdir / value
+            for value in self.saved_values(workflow, values)
+            if done.returncode == 0 and (self.workdir / value).is_file()
+        ]
         with self.lock:
-            self.openable.update(path.resolve() for path in written if path.suffix.lower() == ".html")
+            self.openable.update(
+                path.resolve() for path in written if path.suffix.lower() == ".html"
+            )
         return {
-            **self.commands(argv), "exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written],
+            **self.commands(argv),
+            "exit_code": done.returncode,
+            "stdout": done.stdout,
+            "stderr": done.stderr,
+            "outputs": [str(p) for p in written],
             "blocked": blocked_checks(done.stderr) if done.returncode == 1 else [],
         }
 
@@ -87,11 +142,15 @@ class Session:
         self.opener(target.as_uri())
 
     def browse(self, path: str, extensions: tuple[str, ...]) -> dict[str, Any]:
-        folder = (self.workdir / Path(path).expanduser()).resolve() if path else self.workdir
+        folder = (
+            (self.workdir / Path(path).expanduser()).resolve() if path else self.workdir
+        )
         try:
             children = sorted(folder.iterdir(), key=lambda p: p.name.lower())
         except (OSError, NotADirectoryError) as exc:
-            raise GuiError(f"cannot open folder {folder}: {exc.strerror or exc}") from exc
+            raise GuiError(
+                f"cannot open folder {folder}: {exc.strerror or exc}"
+            ) from exc
         entries = []
         for child in children:
             if child.name.startswith("."):
@@ -100,7 +159,11 @@ class Session:
                 is_dir = child.is_dir()
             except OSError:
                 continue
-            if is_dir or "*" in extensions or (extensions and child.suffix.lower() in extensions):
+            if (
+                is_dir
+                or "*" in extensions
+                or (extensions and child.suffix.lower() in extensions)
+            ):
                 entries.append({"name": child.name, "path": str(child), "dir": is_dir})
         entries.sort(key=lambda e: not e["dir"])
         parent = folder.parent
@@ -116,11 +179,22 @@ class Session:
 
     def mapping_preview(self, body: dict[str, Any]) -> dict[str, Any]:
         mapping = build_mapping(body.get("form"))  # type: ignore[arg-type]
-        return {"mapping": mapping, **preview_mapping(self.workdir / str(body.get("path", "")), mapping)}
+        return {
+            "mapping": mapping,
+            **preview_mapping(self.workdir / str(body.get("path", "")), mapping),
+        }
 
     def mapping_save(self, body: dict[str, Any]) -> dict[str, Any]:
         mapping = build_mapping(body.get("form"))  # type: ignore[arg-type]
-        return {"mapping": mapping, **save_mapping(self.workdir, str(body.get("path", "")), mapping, body.get("overwrite") is True)}
+        return {
+            "mapping": mapping,
+            **save_mapping(
+                self.workdir,
+                str(body.get("path", "")),
+                mapping,
+                body.get("overwrite") is True,
+            ),
+        }
 
     def mapping_suggest(self, query: dict[str, str]) -> dict[str, Any]:
         found = gui_lookups.columns(self.workdir, query)
@@ -140,12 +214,23 @@ class Session:
             if not isinstance(note, str):
                 raise BadRequest("note must be text")
             title = f"{workflow.title} ({note})" if note else workflow.title
-            built.append(ScriptStep(title, build_argv(workflow, values, self.workdir), workflow.records))
-        return {"script": script(built, shell, self.workdir, self.launcher.shown), "filename": SCRIPT_NAMES[shell]}
+            built.append(
+                ScriptStep(
+                    title, build_argv(workflow, values, self.workdir), workflow.records
+                )
+            )
+        return {
+            "script": script(built, shell, self.workdir, self.launcher.shown),
+            "filename": SCRIPT_NAMES[shell],
+        }
 
 
 def parse_job(body: object) -> tuple[Workflow, dict[str, Any]]:
-    if not isinstance(body, dict) or not isinstance(body.get("workflow"), str) or not isinstance(body.get("values", {}), dict):
+    if (
+        not isinstance(body, dict)
+        or not isinstance(body.get("workflow"), str)
+        or not isinstance(body.get("values", {}), dict)
+    ):
         raise BadRequest("expected {workflow, values}")
     return workflow_named(body["workflow"]), body.get("values", {})
 
@@ -178,7 +263,9 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}")
 
     def token_ok(self, supplied: str | None) -> bool:
-        return supplied is not None and hmac.compare_digest(supplied.encode(), self.session.token.encode())
+        return supplied is not None and hmac.compare_digest(
+            supplied.encode(), self.session.token.encode()
+        )
 
     def refuse(self, status: HTTPStatus, message: str) -> None:
         self.send_json(status, {"error": message})
@@ -187,27 +274,47 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_allowed():
             return self.refuse(HTTPStatus.FORBIDDEN, "unexpected Host header")
         url = urlsplit(self.path)
-        query = {key: values[0] for key, values in parse_qs(url.query, keep_blank_values=True).items()}
+        query = {
+            key: values[0]
+            for key, values in parse_qs(url.query, keep_blank_values=True).items()
+        }
         if url.path == "/":
             if not self.token_ok(query.get("token")):
-                return self.send_bytes(HTTPStatus.FORBIDDEN, b"Open the address that reqtable --gui printed, including ?token=...", "text/plain")
-            return self.send_bytes(HTTPStatus.OK, render_page(self.session.token).encode("utf-8"), "text/html")
+                return self.send_bytes(
+                    HTTPStatus.FORBIDDEN,
+                    b"Open the address that reqtable --gui printed, including ?token=...",
+                    "text/plain",
+                )
+            return self.send_bytes(
+                HTTPStatus.OK,
+                render_page(self.session.token).encode("utf-8"),
+                "text/html",
+            )
         if not url.path.startswith("/api/"):
             return self.refuse(HTTPStatus.NOT_FOUND, "not found")
         if not self.token_ok(self.headers.get(TOKEN_HEADER)):
             return self.refuse(HTTPStatus.FORBIDDEN, "missing or wrong token")
         routes: dict[str, Callable[[], dict[str, Any]]] = {
-            "/api/workflows": lambda: {"workflows": workflows_json(), "workdir": str(self.session.workdir), "mapping": mapping_json()},
+            "/api/workflows": lambda: {
+                "workflows": workflows_json(),
+                "workdir": str(self.session.workdir),
+                "mapping": mapping_json(),
+            },
             "/api/browse": lambda: self.session.browse(
-                query.get("path", ""), tuple(e for e in query.get("ext", "").lower().split(",") if e)
+                query.get("path", ""),
+                tuple(e for e in query.get("ext", "").lower().split(",") if e),
             ),
             "/api/columns": lambda: gui_lookups.columns(self.session.workdir, query),
             "/api/tables": lambda: gui_lookups.tables(self.session.workdir, query),
             "/api/gates": lambda: gui_lookups.gates(self.session.workdir, query),
-            "/api/baselines": lambda: gui_lookups.baselines(self.session.workdir, query),
+            "/api/baselines": lambda: gui_lookups.baselines(
+                self.session.workdir, query
+            ),
             "/api/systems": lambda: gui_lookups.systems(self.session.workdir, query),
             "/api/mapping/suggest": lambda: self.session.mapping_suggest(query),
-            "/api/mapping/load": lambda: load_mapping(self.session.workdir, query.get("path", "")),
+            "/api/mapping/load": lambda: load_mapping(
+                self.session.workdir, query.get("path", "")
+            ),
         }
         self.dispatch(routes.get(url.path))
 
@@ -219,11 +326,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(HTTPStatus.NOT_FOUND, "not found")
         if not self.token_ok(self.headers.get(TOKEN_HEADER)):
             return self.refuse(HTTPStatus.FORBIDDEN, "missing or wrong token")
-        if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
-            return self.refuse(HTTPStatus.BAD_REQUEST, "send JSON with Content-Type: application/json")
+        if (self.headers.get("Content-Type") or "").split(";")[
+            0
+        ].strip() != "application/json":
+            return self.refuse(
+                HTTPStatus.BAD_REQUEST, "send JSON with Content-Type: application/json"
+            )
         declared = (self.headers.get("Content-Length") or "").strip()
         if not declared.isdigit():
-            return self.refuse(HTTPStatus.BAD_REQUEST, "send a Content-Length header with the size of the body")
+            return self.refuse(
+                HTTPStatus.BAD_REQUEST,
+                "send a Content-Length header with the size of the body",
+            )
         length = int(declared)
         if length > MAX_BODY_BYTES:
             return self.refuse(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "request too large")
@@ -250,7 +364,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise BadRequest("expected {steps, shell}")
             return session.script(body.get("steps"), body.get("shell"))
 
-        def mapping(action: Callable[[dict[str, Any]], dict[str, Any]]) -> Callable[[], dict[str, Any]]:
+        def mapping(
+            action: Callable[[dict[str, Any]], dict[str, Any]],
+        ) -> Callable[[], dict[str, Any]]:
             def handler() -> dict[str, Any]:
                 if not isinstance(body, dict):
                     raise BadRequest("expected {path, form}")
@@ -259,8 +375,12 @@ class Handler(BaseHTTPRequestHandler):
             return handler
 
         routes = {
-            "/api/command": command, "/api/run": run, "/api/open": open_file, "/api/script": make_script,
-            "/api/mapping/preview": mapping(session.mapping_preview), "/api/mapping/save": mapping(session.mapping_save),
+            "/api/command": command,
+            "/api/run": run,
+            "/api/open": open_file,
+            "/api/script": make_script,
+            "/api/mapping/preview": mapping(session.mapping_preview),
+            "/api/mapping/save": mapping(session.mapping_save),
         }
         self.dispatch(routes.get(path))
 
@@ -296,18 +416,27 @@ def workflows_json() -> list[dict[str, Any]]:
     for workflow in WORKFLOWS:
         source = column_source(workflow)
         lookup = lookup_source(workflow)
-        result.append({
-            **asdict(workflow), "column_source": source.name if source else "", "lookup_input": lookup.name if lookup else "",
-            "table_inputs": [f.name for f in table_inputs(workflow)], "records": workflow.records,
-        })
+        result.append(
+            {
+                **asdict(workflow),
+                "column_source": source.name if source else "",
+                "lookup_input": lookup.name if lookup else "",
+                "table_inputs": [f.name for f in table_inputs(workflow)],
+                "records": workflow.records,
+            }
+        )
     return result
 
 
-def make_server(workdir: Path, port: int = 0, opener: Callable[[str], object] = webbrowser.open) -> GuiServer:
+def make_server(
+    workdir: Path, port: int = 0, opener: Callable[[str], object] = webbrowser.open
+) -> GuiServer:
     return GuiServer(Session(Path(workdir).resolve(), opener), port)
 
 
-def open_server(workdir: Path, opener: Callable[[str], object] = webbrowser.open) -> tuple[GuiServer, bool]:
+def open_server(
+    workdir: Path, opener: Callable[[str], object] = webbrowser.open
+) -> tuple[GuiServer, bool]:
     """A server on the preferred port, or on any free port when that one is taken; the flag says it fell back."""
     try:
         return make_server(workdir, PREFERRED_PORT, opener), False
@@ -326,7 +455,9 @@ def serve(workdir: Path, open_browser: bool) -> int:
         )
     print("Press Ctrl+C to stop", flush=True)
     if open_browser:
-        threading.Thread(target=webbrowser.open, args=(server.url,), daemon=True).start()
+        threading.Thread(
+            target=webbrowser.open, args=(server.url,), daemon=True
+        ).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

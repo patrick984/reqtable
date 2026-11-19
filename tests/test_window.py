@@ -14,13 +14,21 @@ def large_report(rows: int, **options) -> str:
     config = load_config(None, {"id_column": "ID", "title": "Large", **options})
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "large.csv"
-        lines = ["ID,Requirement,Priority"] + [f"REQ-{n:04},The system shall do thing {n}.,Must" for n in range(rows)]
+        lines = ["ID,Requirement,Priority"] + [
+            f"REQ-{n:04},The system shall do thing {n}.,Must" for n in range(rows)
+        ]
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return render_report(build_report_data(read_csv_table(str(path), config), config, "large.html"))
+        return render_report(
+            build_report_data(read_csv_table(str(path), config), config, "large.html")
+        )
 
 
 def embedded_data(report: str) -> dict:
-    match = re.search(r'<script id="reqtable-data" type="application/json">(.*?)</script>', report, re.S)
+    match = re.search(
+        r'<script id="reqtable-data" type="application/json">(.*?)</script>',
+        report,
+        re.S,
+    )
     return json.loads(match.group(1))
 
 
@@ -32,26 +40,47 @@ class LargeReportTests(unittest.TestCase):
 
     def test_requirements_table_is_an_aria_grid_with_numbered_header_rows(self):
         report = large_report(10)
-        self.assertIn('<table id="requirements-table" role="grid" aria-multiselectable="true">', report)
+        self.assertIn(
+            '<table id="requirements-table" role="grid" aria-multiselectable="true">',
+            report,
+        )
         self.assertIn('<tr id="heading-row" aria-rowindex="1">', report)
-        self.assertIn('<tr id="filter-row" class="filter-row" aria-rowindex="2">', report)
+        self.assertIn(
+            '<tr id="filter-row" class="filter-row" aria-rowindex="2">', report
+        )
 
-    @unittest.skipUnless(shutil.which("node"), "Node is needed to parse the report's JavaScript")
+    @unittest.skipUnless(
+        shutil.which("node"), "Node is needed to parse the report's JavaScript"
+    )
     def test_report_script_parses(self):
-        for options in ({}, {"document_mode": "develop"}, {"document_mode": "develop", "traceability": True}):
+        for options in (
+            {},
+            {"document_mode": "develop"},
+            {"document_mode": "develop", "traceability": True},
+        ):
             report = large_report(350, **options)
             script = report.rsplit("<script>", 1)[1].rsplit("</script>", 1)[0]
-            with tempfile.NamedTemporaryFile("w", suffix=".js", encoding="utf-8") as handle:
+            with tempfile.NamedTemporaryFile(
+                "w", suffix=".js", encoding="utf-8"
+            ) as handle:
                 handle.write(script)
                 handle.flush()
                 subprocess.run(["node", "--check", handle.name], check=True)
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class WindowRangeTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + WINDOW_JS + assertions,
-                       text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + WINDOW_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_small_tables_draw_every_row(self):
         self.run_js("""
@@ -107,10 +136,16 @@ if __name__ == "__main__":
     unittest.main()
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class EdgeScrollTests(unittest.TestCase):
     def test_scroll_speed_follows_the_pointer_toward_the_edge(self):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + WINDOW_JS + """
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + WINDOW_JS
+            + """
 assert.equal(edgeScrollSpeed(300,100,500),0);
 assert.equal(edgeScrollSpeed(100,100,500),-28);
 assert.equal(edgeScrollSpeed(20,100,500),-28);
@@ -118,14 +153,25 @@ assert.equal(edgeScrollSpeed(500,100,500),28);
 assert.equal(edgeScrollSpeed(900,100,500),28);
 assert.ok(edgeScrollSpeed(120,100,500)<0&&edgeScrollSpeed(120,100,500)>-28);
 assert.ok(edgeScrollSpeed(480,100,500)>0&&edgeScrollSpeed(480,100,500)<28);
-""", text=True, check=True)
+""",
+            text=True,
+            check=True,
+        )
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class PopoverPlacementTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + POPOVER_JS + assertions,
-                       text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + POPOVER_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_opens_below_the_anchor_when_it_fits(self):
         self.run_js("""
@@ -139,7 +185,9 @@ const anchor={left:100,top:700,bottom:720};
 assert.deepEqual(popoverPlacement(anchor,{width:300,height:150},{width:1200,height:800}),{left:100,top:545,maxHeight:null});
 """)
 
-    def test_a_tall_popover_shrinks_into_the_roomier_side_without_covering_the_anchor(self):
+    def test_a_tall_popover_shrinks_into_the_roomier_side_without_covering_the_anchor(
+        self,
+    ):
         self.run_js("""
 const viewport={width:1000,height:768},size={width:380,height:520};
 assert.deepEqual(popoverPlacement({left:500,top:431,bottom:455},size,viewport),{left:500,top:8,maxHeight:418});

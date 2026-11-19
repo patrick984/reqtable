@@ -1,5 +1,6 @@
 """The GUI's workbook mapping builder: what each kind of table can fill in, and the pure code that turns a form into
-the ``xlsx.sources`` mapping documented in the README. Only ``preview_mapping`` and ``save_mapping`` touch the disk."""
+the ``xlsx.sources`` mapping documented in docs/excel.md. Only ``preview_mapping`` and ``save_mapping`` touch the disk."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from .core import ConfigError, ReqtableError, atomic_write_text, validate_headings, validate_xlsx_sources
+from .core import (
+    ConfigError,
+    ReqtableError,
+    atomic_write_text,
+    validate_headings,
+    validate_xlsx_sources,
+)
 from .gui import BadRequest, GuiError, guess_id_column
 from .xlsx import SourceStats, XlsxSelection, import_workbook
 
@@ -58,96 +65,176 @@ def _id(label: str = "ID") -> Target:
 NAME = Target("Name", "Name", hints=("title",))
 REFERENCE = Target("Reference", "Link or citation", hints=("url", "link"))
 METHOD = Target("Verification Method", "Verification Method", True, ("method",))
-LEVEL = Target("Verification Level", "Verification Level (verification stages)", True, ("level", "stage"))
+LEVEL = Target(
+    "Verification Level",
+    "Verification Level (verification stages)",
+    True,
+    ("level", "stage"),
+)
 
 ROLES: tuple[Role, ...] = (
     Role(
-        "requirements", "Requirements", "The requirements themselves. Each row keeps its own Type.", None,
+        "requirements",
+        "Requirements",
+        "The requirements themselves. Each row keeps its own Type.",
+        None,
         (
-            _id("ID"), Target("Name", "Short title", hints=("title",)),
-            Target("Requirement", "Requirement text", hints=("text", "description", "shall")),
-            Target("Priority", "Priority"), METHOD, LEVEL,
+            _id("ID"),
+            Target("Name", "Short title", hints=("title",)),
+            Target(
+                "Requirement",
+                "Requirement text",
+                hints=("text", "description", "shall"),
+            ),
+            Target("Priority", "Priority"),
+            METHOD,
+            LEVEL,
             Target("Verified by", "Tests that verify it", True, ("tests",)),
             Target("Allocated to", "Systems it is allocated to", True),
             Target("Derived from", "Parent requirements", True, ("parent",)),
             Target("Source refs", "Needs and sources", True, ("sources",)),
-            Target("Owner", "Owning system"), Target("Rationale", "Rationale"),
-            Target("Compliance", "Compliance (is it met?)"), Target("Type", "Record type", hints=("kind",)),
+            Target("Owner", "Owning system"),
+            Target("Rationale", "Rationale"),
+            Target("Compliance", "Compliance (is it met?)"),
+            Target("Type", "Record type", hints=("kind",)),
         ),
         headings=True,
     ),
     Role(
-        "glossary", "Glossary terms", "Words and abbreviations the project defines. Each row becomes a Term.", "Term",
+        "glossary",
+        "Glossary terms",
+        "Words and abbreviations the project defines. Each row becomes a Term.",
+        "Term",
         (
-            _id("ID"), Target("Name", "Term", hints=("name", "word")),
+            _id("ID"),
+            Target("Name", "Term", hints=("name", "word")),
             Target("Definition", "Meaning", hints=("meaning", "description")),
-            Target("Aliases", "Other spellings", True, ("abbreviation", "synonyms", "alias")),
-            Target("Auto Link", "Link automatically in text", hints=("autolink",)), REFERENCE,
+            Target(
+                "Aliases",
+                "Other spellings",
+                True,
+                ("abbreviation", "synonyms", "alias"),
+            ),
+            Target("Auto Link", "Link automatically in text", hints=("autolink",)),
+            REFERENCE,
         ),
         id_prefix="TERM-",
     ),
     Role(
-        "values", "Allowed values",
-        "The values a column may hold, such as Must and Should for Priority, or Unit and System for Verification Level.", "Value",
+        "values",
+        "Allowed values",
+        "The values a column may hold, such as Must and Should for Priority, or Unit and System for Verification Level.",
+        "Value",
         (
-            _id("ID"), Target(FIELD_COLUMN, "Column the value belongs to", hints=("column",)),
+            _id("ID"),
+            Target(FIELD_COLUMN, "Column the value belongs to", hints=("column",)),
             Target("Name", "Allowed value", hints=("value",)),
             Target("Definition", "Meaning", hints=("meaning", "description")),
-            Target("Aliases", "Old spellings", True, ("synonyms", "alias")), REFERENCE,
+            Target("Aliases", "Old spellings", True, ("synonyms", "alias")),
+            REFERENCE,
         ),
-        id_prefix="VAL-", needs_field=True,
+        id_prefix="VAL-",
+        needs_field=True,
     ),
     Role(
-        "tests", "Tests", "Tests, scripts or checklists that verify requirements. The description lands in the Requirement column.",
+        "tests",
+        "Tests",
+        "Tests, scripts or checklists that verify requirements. The description lands in the Requirement column.",
         "Test",
         (
-            _id("ID"), Target("Name", "Test title", hints=("title", "name")),
-            Target("Requirement", "Description", hints=("description", "text", "steps")),
-            Target("Test plan", "Test plan", hints=("plan",)), METHOD, LEVEL,
-            Target("Execution", "How it is run (Manual or Automated)"), Target("Result", "Result", hints=("status",)),
+            _id("ID"),
+            Target("Name", "Test title", hints=("title", "name")),
+            Target(
+                "Requirement", "Description", hints=("description", "text", "steps")
+            ),
+            Target("Test plan", "Test plan", hints=("plan",)),
+            METHOD,
+            LEVEL,
+            Target("Execution", "How it is run (Manual or Automated)"),
+            Target("Result", "Result", hints=("status",)),
             Target("Reference", "Link to the test", hints=("url", "link")),
         ),
         id_prefix="TEST-",
     ),
     Role(
-        "plans", "Test plans", "Groups of tests. The description lands in the Requirement column.", "Test plan",
+        "plans",
+        "Test plans",
+        "Groups of tests. The description lands in the Requirement column.",
+        "Test plan",
         (
-            _id("ID"), Target("Name", "Plan title", hints=("title",)),
-            Target("Requirement", "Description", hints=("description", "text")), REFERENCE,
+            _id("ID"),
+            Target("Name", "Plan title", hints=("title",)),
+            Target("Requirement", "Description", hints=("description", "text")),
+            REFERENCE,
         ),
         id_prefix="PLAN-",
     ),
     Role(
-        "systems", "Systems", "The systems and subsystems the requirements are allocated to.", "System",
-        (_id("ID"), NAME, Target("Part of", "Parent system", hints=("parent",)), REFERENCE),
+        "systems",
+        "Systems",
+        "The systems and subsystems the requirements are allocated to.",
+        "System",
+        (
+            _id("ID"),
+            NAME,
+            Target("Part of", "Parent system", hints=("parent",)),
+            REFERENCE,
+        ),
         id_prefix="SYS-",
     ),
     Role(
-        "needs", "Needs", "Stakeholder needs that requirements trace back to. The description lands in the Requirement column.",
+        "needs",
+        "Needs",
+        "Stakeholder needs that requirements trace back to. The description lands in the Requirement column.",
         "Need",
         (
-            _id("ID"), NAME, Target("Requirement", "Description", hints=("description", "text")),
-            Target("Source refs", "Sources", True, ("sources",)), REFERENCE,
+            _id("ID"),
+            NAME,
+            Target("Requirement", "Description", hints=("description", "text")),
+            Target("Source refs", "Sources", True, ("sources",)),
+            REFERENCE,
         ),
         id_prefix="NEED-",
     ),
     Role(
-        "sources", "Sources", "Documents, standards or people that needs and requirements cite.", "Source",
-        (_id("ID"), NAME, REFERENCE), id_prefix="SRC-",
+        "sources",
+        "Sources",
+        "Documents, standards or people that needs and requirements cite.",
+        "Source",
+        (_id("ID"), NAME, REFERENCE),
+        id_prefix="SRC-",
     ),
 )
 ROLES += (
     Role(
-        "merge", "Details for existing requirements (matched by ID)",
+        "merge",
+        "Details for existing requirements (matched by ID)",
         "Fills in cells of requirements that are already imported, matching each row by ID. Use it for a verification "
         "matrix sheet, or add a tests table a second time here to link its tests to the requirements they verify.",
         None,
         (
             Target(
-                ID_COLUMN, "Requirement ID (which requirement this row is about)", True,
-                ("requirement", "requirements", "requirement id", "req", "req id", "verifies"),
+                ID_COLUMN,
+                "Requirement ID (which requirement this row is about)",
+                True,
+                (
+                    "requirement",
+                    "requirements",
+                    "requirement id",
+                    "req",
+                    "req id",
+                    "verifies",
+                ),
             ),
-            LEVEL, METHOD, Target("Verified by", "Tests that verify it", True, ("test", "tests", "test id")), Target("Priority", "Priority"),
+            LEVEL,
+            METHOD,
+            Target(
+                "Verified by",
+                "Tests that verify it",
+                True,
+                ("test", "tests", "test id"),
+            ),
+            Target("Priority", "Priority"),
             Target("Rationale", "Rationale"),
         ),
         merge=True,
@@ -191,17 +278,33 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
             if candidate.column == ID_COLUMN and not role.merge:
                 hit = header == guessed_id and bool(guessed_id)
             else:
-                hit = name in {candidate.column.casefold(), candidate.label.casefold(), *candidate.hints}
+                hit = name in {
+                    candidate.column.casefold(),
+                    candidate.label.casefold(),
+                    *candidate.hints,
+                }
             if hit:
                 target = candidate
                 break
         if target is None:
-            columns.append({"header": header, "action": EXCLUDE if role.merge else KEEP, "to": "", "separator": ""})
+            columns.append(
+                {
+                    "header": header,
+                    "action": EXCLUDE if role.merge else KEEP,
+                    "to": "",
+                    "separator": "",
+                }
+            )
             continue
         taken.add(target.column)
-        columns.append({
-            "header": header, "action": MAP, "to": target.column, "separator": LIST_SEPARATOR if target.list_separator else "",
-        })
+        columns.append(
+            {
+                "header": header,
+                "action": MAP,
+                "to": target.column,
+                "separator": LIST_SEPARATOR if target.list_separator else "",
+            }
+        )
     if role.merge and ID_COLUMN not in taken and guessed_id:
         # A merge key is the requirement a row points to; a header that only looks like an ID is the fallback.
         fallback = next(c for c in columns if c["header"] == guessed_id)
@@ -209,7 +312,10 @@ def suggest_columns(role: Role, headers: list[str]) -> dict[str, Any]:
             fallback.update(action=MAP, to=ID_COLUMN, separator=LIST_SEPARATOR)
             taken.add(ID_COLUMN)
     has_id = ID_COLUMN in taken
-    return {"columns": columns, "id_prefix": "" if has_id or role.merge else role.id_prefix}
+    return {
+        "columns": columns,
+        "id_prefix": "" if has_id or role.merge else role.id_prefix,
+    }
 
 
 @dataclass(frozen=True)
@@ -234,11 +340,21 @@ class HeadingRows:
     into: str = DEFAULT_CATEGORY
 
     def to_json(self) -> dict[str, Any]:
-        return {"column": self.column, "values": list(self.values), **({"text": self.text} if self.text else {}), "into": self.into}
+        return {
+            "column": self.column,
+            "values": list(self.values),
+            **({"text": self.text} if self.text else {}),
+            "into": self.into,
+        }
 
     @classmethod
     def from_json(cls, headings: Mapping[str, Any]) -> HeadingRows:
-        return cls(headings["column"], tuple(headings["values"]), headings.get("text", ""), headings["into"])
+        return cls(
+            headings["column"],
+            tuple(headings["values"]),
+            headings.get("text", ""),
+            headings["into"],
+        )
 
 
 @dataclass(frozen=True)
@@ -274,7 +390,9 @@ def _parse_column(item: object, where: str) -> ColumnDraft:
     if action not in (KEEP, MAP, EXCLUDE):
         raise BadRequest(f"{where}.action must be keep, map or exclude")
     return ColumnDraft(
-        _text(item.get("header"), f"{where}.header"), action, _text(item.get("to"), f"{where}.to"),
+        _text(item.get("header"), f"{where}.header"),
+        action,
+        _text(item.get("to"), f"{where}.to"),
         _text(item.get("separator"), f"{where}.separator"),
     )
 
@@ -288,8 +406,10 @@ def _parse_headings(item: object, where: str) -> HeadingRows | None:
     if not isinstance(values, list):
         raise BadRequest(f"{where}.values must be a list")
     return HeadingRows(
-        _text(item.get("column"), f"{where}.column"), tuple(v for v in (_text(v, f"{where}.values") for v in values) if v),
-        _text(item.get("text"), f"{where}.text"), _text(item.get("into"), f"{where}.into"),
+        _text(item.get("column"), f"{where}.column"),
+        tuple(v for v in (_text(v, f"{where}.values") for v in values) if v),
+        _text(item.get("text"), f"{where}.text"),
+        _text(item.get("into"), f"{where}.into"),
     )
 
 
@@ -307,7 +427,9 @@ def _parse_source(item: object, index: int) -> SourceDraft:
         return SourceDraft(kind, name, None, None, "", "", (), {}, item["raw"])
     row = item.get("header_row")
     header_row = None if row in (None, "") else row
-    if header_row is not None and (isinstance(header_row, bool) or not isinstance(header_row, int)):
+    if header_row is not None and (
+        isinstance(header_row, bool) or not isinstance(header_row, int)
+    ):
         try:
             header_row = int(str(header_row))
         except ValueError:
@@ -318,9 +440,17 @@ def _parse_source(item: object, index: int) -> SourceDraft:
     if not isinstance(columns, list) or not isinstance(extra, Mapping):
         raise BadRequest(f"{where} has columns or extra of the wrong shape")
     return SourceDraft(
-        kind, name, header_row, role_named(role_id) if role_id else None, _text(item.get("field"), f"{where}.field"),
+        kind,
+        name,
+        header_row,
+        role_named(role_id) if role_id else None,
+        _text(item.get("field"), f"{where}.field"),
         _text(item.get("id_prefix"), f"{where}.id_prefix"),
-        tuple(_parse_column(column, f"{where}.columns[{i}]") for i, column in enumerate(columns)), extra,
+        tuple(
+            _parse_column(column, f"{where}.columns[{i}]")
+            for i, column in enumerate(columns)
+        ),
+        extra,
         headings=_parse_headings(item.get("headings"), f"{where}.headings"),
     )
 
@@ -331,7 +461,9 @@ def _build_headings(draft: SourceDraft) -> dict[str, Any]:
     if not headings.column:
         raise GuiError(f"{draft.where}: choose which column marks a heading row")
     if not headings.values:
-        raise GuiError(f"{draft.where}: say which value in {headings.column!r} marks a heading row, such as Heading")
+        raise GuiError(
+            f"{draft.where}: say which value in {headings.column!r} marks a heading row, such as Heading"
+        )
     if not headings.into:
         raise GuiError(f"{draft.where}: say which column receives the category")
     return headings.to_json()
@@ -352,13 +484,19 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
     if role.merge:
         source["merge"] = True
         if not any(c.action == MAP and c.to == ID_COLUMN for c in draft.columns):
-            raise GuiError(f"{draft.where}: choose which column holds the requirement ID, so each row finds its requirement")
+            raise GuiError(
+                f"{draft.where}: choose which column holds the requirement ID, so each row finds its requirement"
+            )
     empty = [c.header for c in draft.columns if c.action == MAP and not c.to]
     if empty:
-        raise GuiError(f"{draft.where}: choose where {empty[0]!r} goes, keep it as it is, or leave it out")
+        raise GuiError(
+            f"{draft.where}: choose where {empty[0]!r} goes, keep it as it is, or leave it out"
+        )
     columns = {
-        c.header: out for c in draft.columns
-        if c.action == MAP and (out := id_column if c.to == ID_COLUMN else c.to) != c.header
+        c.header: out
+        for c in draft.columns
+        if c.action == MAP
+        and (out := id_column if c.to == ID_COLUMN else c.to) != c.header
     }
     outputs = [c.output for c in draft.columns if c.action != EXCLUDE]
     for output, count in Counter(outputs).items():
@@ -371,14 +509,17 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         source["exclude"] = exclude
     lists = {
         (id_column if c.output == ID_COLUMN else c.output): c.separator
-        for c in draft.columns if c.action != EXCLUDE and c.separator
+        for c in draft.columns
+        if c.action != EXCLUDE and c.separator
     }
     if lists:
         source["lists"] = lists
     constants = dict(draft.extra.get("set", {}))
     if role.needs_field and FIELD_COLUMN not in outputs:
         if not draft.field:
-            raise GuiError(f"{draft.where}: say which column these values are for, or map a column to {FIELD_COLUMN!r}")
+            raise GuiError(
+                f"{draft.where}: say which column these values are for, or map a column to {FIELD_COLUMN!r}"
+            )
         constants[FIELD_COLUMN] = draft.field
     if constants:
         source["set"] = constants
@@ -386,7 +527,10 @@ def build_source(draft: SourceDraft, id_column: str) -> dict[str, Any]:
         source["id_prefix"] = draft.id_prefix
     if draft.headings:
         source["headings"] = _build_headings(draft)
-    return {**source, **{k: v for k, v in draft.extra.items() if k not in source and k != "set"}}
+    return {
+        **source,
+        **{k: v for k, v in draft.extra.items() if k not in source and k != "set"},
+    }
 
 
 def build_mapping(form: Mapping[str, Any]) -> dict[str, Any]:
@@ -401,11 +545,22 @@ def build_mapping(form: Mapping[str, Any]) -> dict[str, Any]:
     drafts = [_parse_source(item, i) for i, item in enumerate(form["sources"])]
     chosen = [d for d in drafts if d.raw is not None or d.role is not None]
     if not chosen:
-        raise GuiError("Choose at least one table or sheet to import, and say what it holds.")
+        raise GuiError(
+            "Choose at least one table or sheet to import, and say what it holds."
+        )
     sources = [build_source(draft, id_column) for draft in chosen]
     mapping = {
-        "id_column": id_column, "traceability": True, **{k: v for k, v in extra.items() if k not in ("id_column", "traceability", "xlsx")},
-        "xlsx": {**{k: v for k, v in xlsx_extra.items() if k != "sources"}, "sources": sources},
+        "id_column": id_column,
+        "traceability": True,
+        **{
+            k: v
+            for k, v in extra.items()
+            if k not in ("id_column", "traceability", "xlsx")
+        },
+        "xlsx": {
+            **{k: v for k, v in xlsx_extra.items() if k != "sources"},
+            "sources": sources,
+        },
     }
     try:
         validate_xlsx_sources(sources)
@@ -417,24 +572,40 @@ def build_mapping(form: Mapping[str, Any]) -> dict[str, Any]:
 def form_from_mapping(mapping: object) -> tuple[dict[str, Any], list[str]]:
     """Best effort inverse of build_mapping. Anything the form cannot show is kept untouched and listed in the notes."""
     if not isinstance(mapping, Mapping):
-        raise GuiError("That file is not a reqtable settings file: its top level must be a JSON object.")
+        raise GuiError(
+            "That file is not a reqtable settings file: its top level must be a JSON object."
+        )
     xlsx = mapping.get("xlsx")
     sources = xlsx.get("sources") if isinstance(xlsx, Mapping) else None
     if not isinstance(sources, list) or not sources:
-        raise GuiError("That settings file has no xlsx.sources, so there is no workbook mapping to edit.")
+        raise GuiError(
+            "That settings file has no xlsx.sources, so there is no workbook mapping to edit."
+        )
     notes: list[str] = []
-    extra = {k: v for k, v in mapping.items() if k not in ("id_column", "traceability", "xlsx")}
+    extra = {
+        k: v
+        for k, v in mapping.items()
+        if k not in ("id_column", "traceability", "xlsx")
+    }
     xlsx_extra = {k: v for k, v in xlsx.items() if k != "sources"}  # type: ignore[union-attr]
     for key in extra:
         notes.append(f"Kept as it is, not editable here: {key}")
     for key in xlsx_extra:
         notes.append(f"Kept as it is, not editable here: xlsx.{key}")
     if mapping.get("traceability") is False:
-        notes.append("The file turns traceability off. Sources with a record type need it, so it is switched on.")
+        notes.append(
+            "The file turns traceability off. Sources with a record type need it, so it is switched on."
+        )
     id_column = mapping.get("id_column") or ID_COLUMN
-    form_sources = [_source_form(source, index, notes, id_column) for index, source in enumerate(sources)]
+    form_sources = [
+        _source_form(source, index, notes, id_column)
+        for index, source in enumerate(sources)
+    ]
     return {
-        "id_column": mapping.get("id_column") or ID_COLUMN, "sources": form_sources, "extra": extra, "xlsx_extra": xlsx_extra,
+        "id_column": mapping.get("id_column") or ID_COLUMN,
+        "sources": form_sources,
+        "extra": extra,
+        "xlsx_extra": xlsx_extra,
     }, notes
 
 
@@ -446,21 +617,44 @@ def _loadable_headings(headings: object) -> HeadingRows | None:
     return HeadingRows.from_json(headings)  # type: ignore[arg-type]
 
 
-def _source_form(source: object, index: int, notes: list[str], id_column: str) -> dict[str, Any]:
+def _source_form(
+    source: object, index: int, notes: list[str], id_column: str
+) -> dict[str, Any]:
     if not isinstance(source, Mapping) or ("table" in source) == ("sheet" in source):
-        raise GuiError(f"xlsx.sources[{index}] needs exactly one of 'table' or 'sheet'.")
+        raise GuiError(
+            f"xlsx.sources[{index}] needs exactly one of 'table' or 'sheet'."
+        )
     kind = "table" if "table" in source else "sheet"
     name = str(source[kind])
-    constants = dict(source.get("set", {})) if isinstance(source.get("set"), Mapping) else {}
+    constants = (
+        dict(source.get("set", {})) if isinstance(source.get("set"), Mapping) else {}
+    )
     type_name = source.get("type") or constants.get("Type")
-    role = role_for_type(type_name) if type_name != "Requirement" else ROLES_BY_ID["requirements"]
+    role = (
+        role_for_type(type_name)
+        if type_name != "Requirement"
+        else ROLES_BY_ID["requirements"]
+    )
     if source.get("merge") is True:
         role = ROLES_BY_ID["merge"] if not type_name else None
     if role is None or ("type" in source and "Type" in constants):
-        notes.append(f"{kind.capitalize()} {name!r} has a record type this form cannot edit, so it is kept exactly as it is.")
+        notes.append(
+            f"{kind.capitalize()} {name!r} has a record type this form cannot edit, so it is kept exactly as it is."
+        )
         return {"kind": kind, "name": name, "raw": dict(source)}
     headings = _loadable_headings(source.get("headings")) if role.headings else None
-    handled = {kind, "header_row", "columns", "exclude", "lists", "id_prefix", "set", "type", "merge", *(("headings",) if headings else ())}
+    handled = {
+        kind,
+        "header_row",
+        "columns",
+        "exclude",
+        "lists",
+        "id_prefix",
+        "set",
+        "type",
+        "merge",
+        *(("headings",) if headings else ()),
+    }
     extra = {k: v for k, v in source.items() if k not in handled}
     if type_name == "Requirement":
         extra["type"] = "Requirement"
@@ -469,22 +663,58 @@ def _source_form(source: object, index: int, notes: list[str], id_column: str) -
     if constants:
         extra["set"] = {**extra.get("set", {}), **constants}
     for key in extra:
-        notes.append(f"{kind.capitalize()} {name!r}: kept as it is, not editable here: {key}")
+        notes.append(
+            f"{kind.capitalize()} {name!r}: kept as it is, not editable here: {key}"
+        )
     columns: dict[str, dict[str, Any]] = {}
     for header, to in (source.get("columns") or {}).items():
-        columns[header] = {"header": header, "action": MAP, "to": ID_COLUMN if to == id_column else to, "separator": ""}
+        columns[header] = {
+            "header": header,
+            "action": MAP,
+            "to": ID_COLUMN if to == id_column else to,
+            "separator": "",
+        }
     for header in source.get("exclude") or []:
-        columns[header] = {"header": header, "action": EXCLUDE, "to": "", "separator": ""}
-    for output, separator in ((ID_COLUMN if k == id_column else k, v) for k, v in (source.get("lists") or {}).items()):
-        match = next((c for c in columns.values() if c["action"] == MAP and c["to"] == output), None) or columns.setdefault(
+        columns[header] = {
+            "header": header,
+            "action": EXCLUDE,
+            "to": "",
+            "separator": "",
+        }
+    for output, separator in (
+        (ID_COLUMN if k == id_column else k, v)
+        for k, v in (source.get("lists") or {}).items()
+    ):
+        match = next(
+            (c for c in columns.values() if c["action"] == MAP and c["to"] == output),
+            None,
+        ) or columns.setdefault(
             output, {"header": output, "action": KEEP, "to": "", "separator": ""}
         )
         match["separator"] = separator
-    if role.needs_field and not field and FIELD_COLUMN not in {c["to"] if c["action"] == MAP else c["header"] for c in columns.values()}:
-        columns[FIELD_COLUMN] = {"header": FIELD_COLUMN, "action": KEEP, "to": "", "separator": ""}
+    if (
+        role.needs_field
+        and not field
+        and FIELD_COLUMN
+        not in {
+            c["to"] if c["action"] == MAP else c["header"] for c in columns.values()
+        }
+    ):
+        columns[FIELD_COLUMN] = {
+            "header": FIELD_COLUMN,
+            "action": KEEP,
+            "to": "",
+            "separator": "",
+        }
     return {
-        "kind": kind, "name": name, "header_row": source.get("header_row"), "role": role.id, "field": field,
-        "id_prefix": source.get("id_prefix", ""), "columns": list(columns.values()), "extra": extra,
+        "kind": kind,
+        "name": name,
+        "header_row": source.get("header_row"),
+        "role": role.id,
+        "field": field,
+        "id_prefix": source.get("id_prefix", ""),
+        "columns": list(columns.values()),
+        "extra": extra,
         "headings": headings.to_json() if headings else None,
     }
 
@@ -493,9 +723,13 @@ def _heading_summary(headings: Mapping[str, Any], stats: SourceStats) -> dict[st
     found = Counter(stats.categories)
     return {
         "removed": stats.headings_removed,
-        "categories": [{"name": name, "count": count} for name, count in found.items() if name],
+        "categories": [
+            {"name": name, "count": count} for name, count in found.items() if name
+        ],
         "uncategorised": found.get("", 0),
-        "warning": None if stats.headings_removed else f"No row in {headings['column']!r} says {' or '.join(headings['values'])}.",
+        "warning": None
+        if stats.headings_removed
+        else f"No row in {headings['column']!r} says {' or '.join(headings['values'])}.",
     }
 
 
@@ -503,7 +737,9 @@ def preview_mapping(workbook: Path, mapping: Mapping[str, Any]) -> dict[str, Any
     """Run the importer on the draft once: rows per source, record types and warnings, or the error the CLI would give."""
     sources = mapping["xlsx"]["sources"]
     try:
-        imported = import_workbook(workbook, XlsxSelection(), sources, mapping["id_column"], True, False)
+        imported = import_workbook(
+            workbook, XlsxSelection(), sources, mapping["id_column"], True, False
+        )
     except (ReqtableError, OSError) as exc:
         return {"error": str(exc)}
     counts = []
@@ -514,11 +750,21 @@ def preview_mapping(workbook: Path, mapping: Mapping[str, Any]) -> dict[str, Any
         counts.append(entry)
     rows = imported.block.rows
     type_at = rows[0].index("Type") if "Type" in rows[0] else None
-    types = Counter((row[type_at].strip() if type_at is not None else "") or "Requirement" for row in rows[1:])
-    return {"sources": counts, "types": dict(types), "total": len(rows) - 1, "warnings": list(imported.warnings)}
+    types = Counter(
+        (row[type_at].strip() if type_at is not None else "") or "Requirement"
+        for row in rows[1:]
+    )
+    return {
+        "sources": counts,
+        "types": dict(types),
+        "total": len(rows) - 1,
+        "warnings": list(imported.warnings),
+    }
 
 
-def save_mapping(workdir: Path, path: str, mapping: Mapping[str, Any], overwrite: bool) -> dict[str, Any]:
+def save_mapping(
+    workdir: Path, path: str, mapping: Mapping[str, Any], overwrite: bool
+) -> dict[str, Any]:
     if not path.strip():
         raise GuiError("Choose where to save the mapping.")
     target = workdir / path
@@ -541,4 +787,3 @@ def load_mapping(workdir: Path, path: str) -> dict[str, Any]:
         raise GuiError(f"{path} is not valid JSON: {exc}") from exc
     form, notes = form_from_mapping(mapping)
     return {"form": form, "notes": notes}
-

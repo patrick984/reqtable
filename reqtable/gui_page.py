@@ -1,4 +1,5 @@
 """The single page the GUI serves. It renders every form from /api/workflows, so field lists live only in reqtable.gui."""
+
 from __future__ import annotations
 
 import json
@@ -685,4 +686,6 @@ start();
 
 
 def render_page(token: str) -> str:
-    return PAGE.replace("__MODULES__", GATES_JS + MAPPING_JS).replace("__TOKEN__", json.dumps(token))
+    return PAGE.replace("__MODULES__", GATES_JS + MAPPING_JS).replace(
+        "__TOKEN__", json.dumps(token)
+    )

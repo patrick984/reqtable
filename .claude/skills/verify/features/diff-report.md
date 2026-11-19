@@ -21,7 +21,7 @@ Preconditions:
 
 - `<URL>diff.html` is loaded fresh. It compares `examples/requirements-old.csv` with `examples/requirements-new.csv`.
 
-- **Counts.** Read `JSON.parse(document.getElementById('reqtable-data').textContent).meta.counts`. It reports three changed, one added, one removed and zero unchanged, matching UAT-CHECKLIST.md.
+- **Counts.** Read `JSON.parse(document.getElementById('reqtable-data').textContent).meta.counts`. It reports three changed, one added, one removed and zero unchanged, matching docs/uat/UAT-CHECKLIST.md.
 - **Row statuses.** Read row classes. Each row carries one of `row-added`, `row-removed`, `row-changed` or `row-unchanged`.
 - **Switch view.** Choose **View → Diff view** (`#view-toggle`). The layout switches between unified and side-by-side. Record the button text before and after.
 - **Filter.** Open **Filter**, untick `input[data-status="removed"]`. The removed row leaves the grid. Tick it again and it returns.

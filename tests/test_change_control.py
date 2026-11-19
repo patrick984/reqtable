@@ -11,14 +11,24 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "change_control.json"
 CHANGE = "(?:Changed|Added|Removed) since"
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class ChangeControlTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + COMPARISON_JS + GATE_CHECKS_JS
-                       + TRACE_MODEL_JS + f"const fixture={FIXTURE.read_text()};\n"
-                       + 'const identify=row=>row.ID,schema={headers:fixture.headers,idColumn:"ID"};\n'
-                       + f"const isChange=issue=>/^{CHANGE}/.test(issue.message);\n" + assertions,
-                       text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + COMPARISON_JS
+            + GATE_CHECKS_JS
+            + TRACE_MODEL_JS
+            + f"const fixture={FIXTURE.read_text()};\n"
+            + 'const identify=row=>row.ID,schema={headers:fixture.headers,idColumn:"ID"};\n'
+            + f"const isChange=issue=>/^{CHANGE}/.test(issue.message);\n"
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_shared_fixture_cases(self):
         self.run_js("""

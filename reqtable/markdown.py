@@ -46,7 +46,9 @@ def render_markdown(source: str) -> str:
 
     def flush_paragraph() -> None:
         if paragraph:
-            output.append("<p>" + "<br>".join(_inline(line) for line in paragraph) + "</p>")
+            output.append(
+                "<p>" + "<br>".join(_inline(line) for line in paragraph) + "</p>"
+            )
             paragraph.clear()
 
     def close_list() -> None:
@@ -57,44 +59,69 @@ def render_markdown(source: str) -> str:
 
     def flush_quote() -> None:
         if quote_lines:
-            output.append("<blockquote>" + "<br>".join(_inline(line) for line in quote_lines) + "</blockquote>")
+            output.append(
+                "<blockquote>"
+                + "<br>".join(_inline(line) for line in quote_lines)
+                + "</blockquote>"
+            )
             quote_lines.clear()
 
     for line in lines:
         if code_lines is not None:
             if line.startswith("```"):
-                output.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
+                output.append(
+                    "<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>"
+                )
                 code_lines = None
             else:
                 code_lines.append(line)
             continue
         if line.startswith("```"):
-            flush_paragraph(); close_list(); flush_quote(); code_lines = []
+            flush_paragraph()
+            close_list()
+            flush_quote()
+            code_lines = []
             continue
         heading = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading:
-            flush_paragraph(); close_list(); flush_quote()
+            flush_paragraph()
+            close_list()
+            flush_quote()
             level = min(6, len(heading.group(1)) + 2)
             output.append(f"<h{level}>{_inline(heading.group(2))}</h{level}>")
             continue
         item = re.match(r"^\s*([-+*])\s+(.+)$", line)
         ordered = re.match(r"^\s*\d+[.)]\s+(.+)$", line)
         if item or ordered:
-            flush_paragraph(); flush_quote()
+            flush_paragraph()
+            flush_quote()
             desired = "ul" if item else "ol"
             if list_type != desired:
-                close_list(); output.append(f"<{desired}>"); list_type = desired
-            output.append(f"<li>{_inline((item or ordered).group(2 if item else 1))}</li>")
+                close_list()
+                output.append(f"<{desired}>")
+                list_type = desired
+            output.append(
+                f"<li>{_inline((item or ordered).group(2 if item else 1))}</li>"
+            )
             continue
         if line.startswith(">"):
-            flush_paragraph(); close_list(); quote_lines.append(line[1:].lstrip())
+            flush_paragraph()
+            close_list()
+            quote_lines.append(line[1:].lstrip())
             continue
         if line.strip() == "":
-            flush_paragraph(); close_list(); flush_quote()
+            flush_paragraph()
+            close_list()
+            flush_quote()
         else:
-            close_list(); flush_quote(); paragraph.append(line)
+            close_list()
+            flush_quote()
+            paragraph.append(line)
     if code_lines is not None:
-        output.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
-    flush_paragraph(); close_list(); flush_quote()
+        output.append(
+            "<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>"
+        )
+    flush_paragraph()
+    close_list()
+    flush_quote()
     return "".join(output)
-

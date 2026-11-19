@@ -76,7 +76,9 @@ function removeDecision(decisions,record){return decisions.filter(d=>!sameDecisi
 function packageFooterText(pkg){return `${pkg.baseline.name} · ${pkg.baseline.hash}`;}
 """
 
-PACKAGE_JS = PACKAGE_MODEL_JS + r"""
+PACKAGE_JS = (
+    PACKAGE_MODEL_JS
+    + r"""
 const packageCover=data.package?$("#package-cover"):null;
 function packageFacts(pkg){
   const {baseline,gate}=pkg,scope=baseline.system?`System ${baseline.system}`:"Whole table";
@@ -158,3 +160,4 @@ function packageClearCopy(clone){
 }
 buildPackageCover();
 """
+)

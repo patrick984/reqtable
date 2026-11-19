@@ -6,8 +6,10 @@ import unittest
 
 from reqtable.html_report import JS
 
-HISTORY_JS = JS[JS.index("function cloneRecords("):]
-HISTORY_JS = HISTORY_JS[:HISTORY_JS.index("\n", HISTORY_JS.index("function redoEdit("))]
+HISTORY_JS = JS[JS.index("function cloneRecords(") :]
+HISTORY_JS = HISTORY_JS[
+    : HISTORY_JS.index("\n", HISTORY_JS.index("function redoEdit("))
+]
 
 PRELUDE = r"""
 const assert=require("node:assert/strict");
@@ -26,10 +28,17 @@ const state={currentRows:rows(),savedRows:rows(),comments:[],savedComments:[],
 """
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class EditHistoryTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input=PRELUDE + HISTORY_JS + "\n" + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input=PRELUDE + HISTORY_JS + "\n" + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_same_records_compares_record_contents(self):
         self.run_js(r"""

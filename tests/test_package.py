@@ -6,41 +6,81 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reqtable.core import build_report_data, extract_report_json, load_config, read_csv_table
+from reqtable.core import (
+    build_report_data,
+    extract_report_json,
+    load_config,
+    read_csv_table,
+)
 from reqtable.html_report import render_report
 from reqtable.package import PACKAGE_JS, PACKAGE_MODEL_JS
 
 PACKAGE = {
-    "gate": {"id": "SRR", "name": "System Requirements Review", "produces": "SRR", "scope": "table"},
-    "baseline": {"name": "SRR", "gate": "SRR", "system": None, "created": "2026-11-01", "createdBy": "pn",
-                 "hash": "sha256:" + "ab" * 32, "hashOk": True, "source": "git"},
+    "gate": {
+        "id": "SRR",
+        "name": "System Requirements Review",
+        "produces": "SRR",
+        "scope": "table",
+    },
+    "baseline": {
+        "name": "SRR",
+        "gate": "SRR",
+        "system": None,
+        "created": "2026-11-01",
+        "createdBy": "pn",
+        "hash": "sha256:" + "ab" * 32,
+        "hashOk": True,
+        "source": "git",
+    },
     "previous": None,
     "roles": [{"role": "reviewer", "min": 2}, {"role": "approver", "min": 1}],
     "signoffs": [],
     "approval": {"approved": False, "roles": []},
     "decisionOptions": ["Reviewed", "Changes requested", "Approved", "Rejected"],
 }
-DECISION = {"role": "reviewer", "user": "jsmith", "decision": "Reviewed", "date": "2026-11-08T10:00:00+01:00", "note": ""}
+DECISION = {
+    "role": "reviewer",
+    "user": "jsmith",
+    "decision": "Reviewed",
+    "date": "2026-11-08T10:00:00+01:00",
+    "note": "",
+}
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class PackageModelTests(unittest.TestCase):
     def run_js(self, assertions, tz="UTC"):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n' + PACKAGE_MODEL_JS + assertions,
-                       text=True, check=True, env={"TZ": tz, "PATH": shutil.which("node").rsplit("/", 1)[0]})
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + PACKAGE_MODEL_JS
+            + assertions,
+            text=True,
+            check=True,
+            env={"TZ": tz, "PATH": shutil.which("node").rsplit("/", 1)[0]},
+        )
 
     def test_cover_facts_name_the_gate_output_and_hash(self):
-        subprocess.run(["node"], input=r"""
+        subprocess.run(
+            ["node"],
+            input=r"""
 const assert=require("node:assert/strict");
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const state={decisions:[]},data={};
-""" + PACKAGE_JS + r"""
+"""
+            + PACKAGE_JS
+            + r"""
 const html=packageFacts({gate:{id:"PDR",name:"Preliminary Design Review",produces:"Allocated baseline",scope:"table"},
   baseline:{name:"PDR",system:null,created:"2026-11-08",createdBy:"Casey",hash:"sha256:abc",hashOk:true},previous:"SRR"});
 assert.match(html,/<dt>Produces<\/dt><dd>Allocated baseline<\/dd>/);
 assert.match(html,/sha256:abc/);
 assert.match(html,/<dd>SRR<\/dd>/);
-""", text=True, check=True)
+""",
+            text=True,
+            check=True,
+        )
 
     def test_waiver_rows_count_records_and_tolerate_missing_description(self):
         self.run_js(r"""
@@ -50,12 +90,16 @@ assert.deepEqual(waiverRows([{check:"a",description:"A",reason:"r",user:"u",date
 """)
 
     def test_cover_waivers_list_reason_and_are_absent_when_empty(self):
-        subprocess.run(["node"], input=r"""
+        subprocess.run(
+            ["node"],
+            input=r"""
 const assert=require("node:assert/strict");
 const escapeHtml=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const displayTimestamp=v=>v;
 const state={decisions:[]},data={};
-""" + PACKAGE_JS + r"""
+"""
+            + PACKAGE_JS
+            + r"""
 assert.equal(packageWaivers({waivers:[]}),"");
 assert.equal(packageWaivers({}),"");
 const html=packageWaivers({waivers:[{check:"srr-text",description:"Every <b>requirement</b> has text",reason:"Vendor data due 2026-12",user:"ann",date:"2026-11-09T10:00:00+01:00",failing:["R1","R2","R3"]}]});
@@ -63,7 +107,10 @@ assert.match(html,/<h3>Waivers<\/h3>/);
 assert.match(html,/<th scope="row">srr-text<\/th>/);
 assert.match(html,/Every &lt;b&gt;requirement&lt;\/b&gt; has text/);
 assert.match(html,/Vendor data due 2026-12<\/td><td>ann<\/td><td>2026-11-09T10:00:00\+01:00<\/td><td>3<\/td>/);
-""", text=True, check=True)
+""",
+            text=True,
+            check=True,
+        )
 
     def test_verification_labels(self):
         self.run_js(r"""
@@ -87,7 +134,8 @@ assert.equal(table[1].pending[0].user,"c");
 """)
 
     def test_create_decision_trims_and_requires_fields(self):
-        self.run_js(r"""
+        self.run_js(
+            r"""
 const now=new Date("2026-11-08T10:05:07Z");
 const ok=createDecision({role:" approver ",user:"  pn ",decision:"Approved",note:"  fine\n"},now);
 assert.deepEqual(ok.record,{role:"approver",user:"pn",decision:"Approved",date:"2026-11-08T05:05:07-05:00",note:"fine"});
@@ -95,12 +143,17 @@ assert.match(createDecision({role:"r",user:"  ",decision:"d"},now).error,/user/)
 assert.match(createDecision({role:"",user:"u",decision:"d"},now).error,/role/);
 assert.match(createDecision({role:"r",user:"u"},now).error,/decision/);
 assert.equal(createDecision({role:"r",user:"u",decision:"d"},now).record.note,"");
-""", tz="America/New_York")
+""",
+            tz="America/New_York",
+        )
 
     def test_date_has_local_offset_with_minutes(self):
-        self.run_js(r"""
+        self.run_js(
+            r"""
 assert.equal(isoWithOffset(new Date("2026-11-08T10:05:07Z")),"2026-11-08T15:35:07+05:30");
-""", tz="Asia/Kolkata")
+""",
+            tz="Asia/Kolkata",
+        )
 
     def test_footer_text_repeats_name_and_full_hash(self):
         self.run_js(r"""
@@ -122,7 +175,9 @@ class PackageReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "in.csv"
             path.write_text("ID,Text\nR1,One\n", encoding="utf-8")
-            data = build_report_data(read_csv_table(str(path), config), config, "report.html")
+            data = build_report_data(
+                read_csv_table(str(path), config), config, "report.html"
+            )
         data.update(extra)
         return render_report(data)
 
@@ -134,7 +189,9 @@ class PackageReportTests(unittest.TestCase):
             path.write_text(report, encoding="utf-8")
             data = extract_report_json(str(path))
         self.assertEqual(data["decisions"], [DECISION])
-        self.assertEqual(data["package"]["baseline"]["hash"], PACKAGE["baseline"]["hash"])
+        self.assertEqual(
+            data["package"]["baseline"]["hash"], PACKAGE["baseline"]["hash"]
+        )
 
     def test_package_report_prints_cover_first_with_hash_footer(self):
         report = self.build(package=PACKAGE)
@@ -143,8 +200,14 @@ class PackageReportTests(unittest.TestCase):
         self.assertIn("position:fixed", report)
 
     def test_package_report_with_waivers_carries_the_cover_markup_and_reason(self):
-        waiver = {"check": "srr-text", "description": "Every requirement has text", "reason": "Vendor data due in December",
-                  "user": "ann", "date": "2026-11-09T10:00:00+01:00", "failing": ["R1"]}
+        waiver = {
+            "check": "srr-text",
+            "description": "Every requirement has text",
+            "reason": "Vendor data due in December",
+            "user": "ann",
+            "date": "2026-11-09T10:00:00+01:00",
+            "failing": ["R1"],
+        }
         report = self.build(package={**PACKAGE, "waivers": [waiver]})
         self.assertIn("function packageWaivers", report)
         self.assertIn("<h3>Waivers</h3>", report)

@@ -13,7 +13,7 @@
 
 ## How to get to it (user POV)
 
-- CLI commands in the README's Gate packages and sign-off section.
+- CLI commands in the Gate packages and sign-off section of [docs/gates.md](../../../../docs/gates.md).
 - Open the package HTML, fill in **Record decision**, then File → **Save report copy**.
 
 ## Driving it with the CLI

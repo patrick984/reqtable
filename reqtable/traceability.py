@@ -4,11 +4,29 @@ from .glossary import GLOSSARY_COLUMNS, GLOSSARY_MODEL_JS, GLOSSARY_UI_JS
 from .values import VALUE_COLUMNS, VALUE_MODEL_JS
 
 TRACE_COLUMNS = (
-    "Type", "Name", "Requirement", "Part of", "Allocated to", "Owner",
-    "Derived from", "Source refs", "Verified by", "Test plan", "Affects", "Change status", "Reference", "Origin", "Rationale", *GLOSSARY_COLUMNS, *VALUE_COLUMNS,
+    "Type",
+    "Name",
+    "Requirement",
+    "Part of",
+    "Allocated to",
+    "Owner",
+    "Derived from",
+    "Source refs",
+    "Verified by",
+    "Test plan",
+    "Affects",
+    "Change status",
+    "Reference",
+    "Origin",
+    "Rationale",
+    *GLOSSARY_COLUMNS,
+    *VALUE_COLUMNS,
 )
 
-TRACE_MODEL_JS = GLOSSARY_MODEL_JS + VALUE_MODEL_JS + r"""
+TRACE_MODEL_JS = (
+    GLOSSARY_MODEL_JS
+    + VALUE_MODEL_JS
+    + r"""
 const traceFields={
   "Part of": {from:["System"],to:["System"],single:true},
   "Allocated to": {from:["Requirement"],to:["System"]},
@@ -318,8 +336,11 @@ function workspaceControls({view,develop,systemScope,modes,matrix,system,glossar
   return shown;
 }
 """
+)
 
-TRACE_UI_JS = GLOSSARY_UI_JS + r"""
+TRACE_UI_JS = (
+    GLOSSARY_UI_JS
+    + r"""
 const trace=(()=>{
   const panel=$("#trace-panel"),detail=$("#trace-record"),tree=$("#trace-tree");
   const editor=$("#trace-editor"),picker=$("#trace-picker"),deletion=$("#trace-delete");
@@ -1384,6 +1405,7 @@ const trace=(()=>{
     panel};
 })();
 """
+)
 
 TRACE_MENU = '<button id="open-trace" aria-expanded="false" aria-controls="trace-panel" aria-label="Links and trace findings">Links</button>'
 

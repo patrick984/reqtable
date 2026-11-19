@@ -34,17 +34,40 @@ class OutputError(ReqtableError):
 
 
 RECORD_TYPES = (
-    "System", "Requirement", "Need", "Source", "Term", "Value", "Field", "Test", "Test plan", "Change request",
+    "System",
+    "Requirement",
+    "Need",
+    "Source",
+    "Term",
+    "Value",
+    "Field",
+    "Test",
+    "Test plan",
+    "Change request",
 )
 
 
 def _preset_gate(
-    id: str, name: str, produces: str, checks: list[dict[str, Any]], reviewers: int = 2, **extra: Any
+    id: str,
+    name: str,
+    produces: str,
+    checks: list[dict[str, Any]],
+    reviewers: int = 2,
+    **extra: Any,
 ) -> dict[str, Any]:
     return {
-        "id": id, "name": name, "produces": produces, "scope": "table",
-        "includes": ["Requirement", "System"], "captures_status": False, "checks": checks,
-        "signoff": [{"role": "Reviewer", "min": reviewers}, {"role": "Approver", "min": 1}], **extra,
+        "id": id,
+        "name": name,
+        "produces": produces,
+        "scope": "table",
+        "includes": ["Requirement", "System"],
+        "captures_status": False,
+        "checks": checks,
+        "signoff": [
+            {"role": "Reviewer", "min": reviewers},
+            {"role": "Approver", "min": 1},
+        ],
+        **extra,
     }
 
 
@@ -53,12 +76,15 @@ def _check(id: str, description: str, **condition: Any) -> dict[str, Any]:
 
 
 def _no_findings(prefix: str) -> dict[str, Any]:
-    return _check(f"{prefix}-no-findings", "There are no trace findings", no_findings=True)
+    return _check(
+        f"{prefix}-no-findings", "There are no trace findings", no_findings=True
+    )
 
 
 def _change_control(prefix: str) -> dict[str, Any]:
     return _check(
-        f"{prefix}-change-control", "Every change since the last baseline has an approved change request",
+        f"{prefix}-change-control",
+        "Every change since the last baseline has an approved change request",
         unchanged_since=True,
     )
 
@@ -67,55 +93,164 @@ _COMPLIANT = {"Compliance": ["Compliant", "Waived"]}
 _TESTS = {"type": "Test"}
 
 PRESET_GATES = [
-    _preset_gate("SRR", "System Requirements Review", "Functional baseline", [
-        _check("srr-text", "Every requirement has its requirement text", filled="Requirement"),
-        _check("srr-method", "Every requirement has a verification method", filled="Verification Method"),
-        _check("srr-priority", "Every requirement has a priority", filled="Priority"),
-        _no_findings("srr"),
-    ]),
-    _preset_gate("SFR", "System Functional Review", "Functional baseline", [
-        _check("sfr-allocated", "Every requirement is allocated to a system", linked="Allocated to"),
-        _no_findings("sfr"),
-        _change_control("sfr"),
-    ]),
-    _preset_gate("PDR", "Preliminary Design Review", "Allocated baseline", [
-        _check("pdr-allocated-leaf", "Every requirement is allocated to a leaf system", linked="Allocated to", leaf=True),
-        _check("pdr-level", "Every requirement has a verification level", filled="Verification Level"),
-        _no_findings("pdr"),
-        _change_control("pdr"),
-    ]),
-    _preset_gate("DDR", "Detailed Design Review", "Subsystem design baseline", [
-        _check("ddr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
-        _no_findings("ddr"),
-        _change_control("ddr"),
-    ], reviewers=1, scope="system"),
-    _preset_gate("CDR", "Critical Design Review", "Product baseline", [
-        _check("cdr-verified", "Every requirement is linked to a verifying test", linked="Verified by"),
-        _no_findings("cdr"),
-        _change_control("cdr"),
-    ]),
-    _preset_gate("TRR", "Test Readiness Review", "Test baseline", [
-        _check("trr-test-plan", "Every test belongs to a test plan", applies_to=_TESTS, linked="Test plan"),
-        _check("trr-test-method", "Every test has a verification method", applies_to=_TESTS, filled="Verification Method"),
-        _no_findings("trr"),
-        _change_control("trr"),
-    ], includes=["Requirement", "System", "Test", "Test plan"]),
-    _preset_gate("SVR", "System Verification Review", "Verified baseline", [
-        _check("svr-results", "Every test has passed", applies_to=_TESTS, **{"in": {"Result": ["Passed"]}}),
-        _check("svr-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
-        _no_findings("svr"),
-        _change_control("svr"),
-    ], captures_status=True),
-    _preset_gate("FCA", "Functional Configuration Audit", "Functional audit baseline", [
-        _check("fca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
-        _no_findings("fca"),
-        _change_control("fca"),
-    ], captures_status=True),
-    _preset_gate("PCA", "Physical Configuration Audit", "As-built product baseline", [
-        _check("pca-compliance", "Every requirement is compliant or waived", **{"in": _COMPLIANT}),
-        _no_findings("pca"),
-        _change_control("pca"),
-    ], captures_status=True),
+    _preset_gate(
+        "SRR",
+        "System Requirements Review",
+        "Functional baseline",
+        [
+            _check(
+                "srr-text",
+                "Every requirement has its requirement text",
+                filled="Requirement",
+            ),
+            _check(
+                "srr-method",
+                "Every requirement has a verification method",
+                filled="Verification Method",
+            ),
+            _check(
+                "srr-priority", "Every requirement has a priority", filled="Priority"
+            ),
+            _no_findings("srr"),
+        ],
+    ),
+    _preset_gate(
+        "SFR",
+        "System Functional Review",
+        "Functional baseline",
+        [
+            _check(
+                "sfr-allocated",
+                "Every requirement is allocated to a system",
+                linked="Allocated to",
+            ),
+            _no_findings("sfr"),
+            _change_control("sfr"),
+        ],
+    ),
+    _preset_gate(
+        "PDR",
+        "Preliminary Design Review",
+        "Allocated baseline",
+        [
+            _check(
+                "pdr-allocated-leaf",
+                "Every requirement is allocated to a leaf system",
+                linked="Allocated to",
+                leaf=True,
+            ),
+            _check(
+                "pdr-level",
+                "Every requirement has a verification level",
+                filled="Verification Level",
+            ),
+            _no_findings("pdr"),
+            _change_control("pdr"),
+        ],
+    ),
+    _preset_gate(
+        "DDR",
+        "Detailed Design Review",
+        "Subsystem design baseline",
+        [
+            _check(
+                "ddr-verified",
+                "Every requirement is linked to a verifying test",
+                linked="Verified by",
+            ),
+            _no_findings("ddr"),
+            _change_control("ddr"),
+        ],
+        reviewers=1,
+        scope="system",
+    ),
+    _preset_gate(
+        "CDR",
+        "Critical Design Review",
+        "Product baseline",
+        [
+            _check(
+                "cdr-verified",
+                "Every requirement is linked to a verifying test",
+                linked="Verified by",
+            ),
+            _no_findings("cdr"),
+            _change_control("cdr"),
+        ],
+    ),
+    _preset_gate(
+        "TRR",
+        "Test Readiness Review",
+        "Test baseline",
+        [
+            _check(
+                "trr-test-plan",
+                "Every test belongs to a test plan",
+                applies_to=_TESTS,
+                linked="Test plan",
+            ),
+            _check(
+                "trr-test-method",
+                "Every test has a verification method",
+                applies_to=_TESTS,
+                filled="Verification Method",
+            ),
+            _no_findings("trr"),
+            _change_control("trr"),
+        ],
+        includes=["Requirement", "System", "Test", "Test plan"],
+    ),
+    _preset_gate(
+        "SVR",
+        "System Verification Review",
+        "Verified baseline",
+        [
+            _check(
+                "svr-results",
+                "Every test has passed",
+                applies_to=_TESTS,
+                **{"in": {"Result": ["Passed"]}},
+            ),
+            _check(
+                "svr-compliance",
+                "Every requirement is compliant or waived",
+                **{"in": _COMPLIANT},
+            ),
+            _no_findings("svr"),
+            _change_control("svr"),
+        ],
+        captures_status=True,
+    ),
+    _preset_gate(
+        "FCA",
+        "Functional Configuration Audit",
+        "Functional audit baseline",
+        [
+            _check(
+                "fca-compliance",
+                "Every requirement is compliant or waived",
+                **{"in": _COMPLIANT},
+            ),
+            _no_findings("fca"),
+            _change_control("fca"),
+        ],
+        captures_status=True,
+    ),
+    _preset_gate(
+        "PCA",
+        "Physical Configuration Audit",
+        "As-built product baseline",
+        [
+            _check(
+                "pca-compliance",
+                "Every requirement is compliant or waived",
+                **{"in": _COMPLIANT},
+            ),
+            _no_findings("pca"),
+            _change_control("pca"),
+        ],
+        captures_status=True,
+    ),
 ]
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -124,7 +259,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "document_mode": "review",
     "traceability": False,
     "csv": {"encoding": "utf-8-sig", "delimiter": ",", "strict_columns": True},
-    "columns": {"hidden": [], "order": [], "labels": {}, "widths": {}, "markdown": None},
+    "columns": {
+        "hidden": [],
+        "order": [],
+        "labels": {},
+        "widths": {},
+        "markdown": None,
+    },
     "diff": {
         "initial_view": "unified",
         "initial_changes_only": False,
@@ -138,7 +279,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "csv_column": "Comments",
         "csv_format": "json",
     },
-    "quality": {"requirement_column": None, "required_columns": [], "obligation": "shall"},
+    "quality": {
+        "requirement_column": None,
+        "required_columns": [],
+        "obligation": "shall",
+    },
     "xlsx": {"sources": []},
     "baselines": {
         "store": "git",
@@ -179,7 +324,9 @@ class CsvTable:
     comments: tuple[dict[str, Any], ...] = ()
 
 
-def _merge_known(base: dict[str, Any], override: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+def _merge_known(
+    base: dict[str, Any], override: dict[str, Any], prefix: str = ""
+) -> dict[str, Any]:
     result = json.loads(json.dumps(base))
     for key, value in override.items():
         where = f"{prefix}.{key}" if prefix else key
@@ -188,13 +335,17 @@ def _merge_known(base: dict[str, Any], override: dict[str, Any], prefix: str = "
         if isinstance(base[key], dict):
             if not isinstance(value, dict):
                 raise ConfigError(f"configuration value {where} must be an object")
-            result[key] = dict(value) if not base[key] else _merge_known(base[key], value, where)
+            result[key] = (
+                dict(value) if not base[key] else _merge_known(base[key], value, where)
+            )
         else:
             result[key] = value
     return result
 
 
-def load_config(path: str | None, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+def load_config(
+    path: str | None, overrides: dict[str, Any] | None = None
+) -> dict[str, Any]:
     supplied: dict[str, Any] = {}
     if path:
         try:
@@ -202,7 +353,9 @@ def load_config(path: str | None, overrides: dict[str, Any] | None = None) -> di
         except (OSError, UnicodeError) as exc:
             raise ConfigError(f"cannot read configuration {path}: {exc}") from exc
         except json.JSONDecodeError as exc:
-            raise ConfigError(f"invalid JSON configuration {path}:{exc.lineno}:{exc.colno}: {exc.msg}") from exc
+            raise ConfigError(
+                f"invalid JSON configuration {path}:{exc.lineno}:{exc.colno}: {exc.msg}"
+            ) from exc
         if not isinstance(supplied, dict):
             raise ConfigError("configuration root must be a JSON object")
     config = _merge_known(DEFAULT_CONFIG, supplied)
@@ -229,9 +382,12 @@ def validate_config(config: dict[str, Any]) -> None:
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ConfigError(f"quality.{field} must be null or a non-empty string")
     if not isinstance(quality["required_columns"], list) or not all(
-        isinstance(column, str) and column.strip() for column in quality["required_columns"]
+        isinstance(column, str) and column.strip()
+        for column in quality["required_columns"]
     ):
-        raise ConfigError("quality.required_columns must be an array of non-empty column names")
+        raise ConfigError(
+            "quality.required_columns must be an array of non-empty column names"
+        )
     if config["id_column"] is not None and not isinstance(config["id_column"], str):
         raise ConfigError("id_column must be null or a string")
     if not isinstance(config["title"], str):
@@ -241,7 +397,12 @@ def validate_config(config: dict[str, Any]) -> None:
     if not isinstance(config["csv"]["encoding"], str) or not config["csv"]["encoding"]:
         raise ConfigError("csv.encoding must be a non-empty string")
     delimiter = config["csv"]["delimiter"]
-    if not isinstance(delimiter, str) or len(delimiter) != 1 or ord(delimiter) < 32 or ord(delimiter) == 127:
+    if (
+        not isinstance(delimiter, str)
+        or len(delimiter) != 1
+        or ord(delimiter) < 32
+        or ord(delimiter) == 127
+    ):
         raise ConfigError("csv.delimiter must be one printable character")
     if not isinstance(config["csv"]["strict_columns"], bool):
         raise ConfigError("csv.strict_columns must be true or false")
@@ -250,19 +411,29 @@ def validate_config(config: dict[str, Any]) -> None:
         if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
             raise ConfigError(f"columns.{field} must be an array of strings")
     markdown = config["columns"]["markdown"]
-    if markdown is not None and (not isinstance(markdown, list) or not all(isinstance(x, str) for x in markdown)):
+    if markdown is not None and (
+        not isinstance(markdown, list) or not all(isinstance(x, str) for x in markdown)
+    ):
         raise ConfigError("columns.markdown must be null or an array of strings")
     for field in ("labels", "widths"):
         value = config["columns"][field]
-        if not isinstance(value, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items()):
+        if not isinstance(value, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in value.items()
+        ):
             raise ConfigError(f"columns.{field} must be an object of string values")
     width_pattern = re.compile(r"^(?:[1-9]\d*(?:\.\d+)?)(?:px|rem|em|ch|%)$")
     for column, width in config["columns"]["widths"].items():
         if not width_pattern.fullmatch(width):
-            raise ConfigError(f"unsafe or invalid width for column {column!r}: {width!r}")
+            raise ConfigError(
+                f"unsafe or invalid width for column {column!r}: {width!r}"
+            )
     if config["diff"]["initial_view"] not in {"unified", "side-by-side"}:
         raise ConfigError("diff.initial_view must be 'unified' or 'side-by-side'")
-    for field in ("initial_changes_only", "include_unchanged", "ignore_trailing_whitespace"):
+    for field in (
+        "initial_changes_only",
+        "include_unchanged",
+        "ignore_trailing_whitespace",
+    ):
         if not isinstance(config["diff"][field], bool):
             raise ConfigError(f"diff.{field} must be true or false")
     ignored = config["diff"]["ignore_columns"]
@@ -272,11 +443,16 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ConfigError("comments.csv_format must be 'json' or 'text'")
     if not isinstance(config["comments"]["enabled"], bool):
         raise ConfigError("comments.enabled must be true or false")
-    if not isinstance(config["comments"]["csv_column"], str) or not config["comments"]["csv_column"]:
+    if (
+        not isinstance(config["comments"]["csv_column"], str)
+        or not config["comments"]["csv_column"]
+    ):
         raise ConfigError("comments.csv_column must be a non-empty string")
     initials = config["comments"]["reviewer_initials"]
     if initials is not None and not valid_initials(initials):
-        raise ConfigError("comments.reviewer_initials must contain 1-16 non-control characters")
+        raise ConfigError(
+            "comments.reviewer_initials must contain 1-16 non-control characters"
+        )
     validate_xlsx_sources(config["xlsx"]["sources"])
     validate_baselines(config["baselines"])
     validate_gates(config["gates"])
@@ -287,7 +463,9 @@ def validate_baselines(baselines: dict[str, Any]) -> None:
         raise ConfigError("baselines.store must be 'git' or 'files'")
     prefix = baselines["git"]["tag_prefix"]
     if not isinstance(prefix, str) or not prefix.endswith("/") or prefix == "/":
-        raise ConfigError("baselines.git.tag_prefix must be a non-empty string that ends with '/'")
+        raise ConfigError(
+            "baselines.git.tag_prefix must be a non-empty string that ends with '/'"
+        )
     directory = baselines["files"]["directory"]
     if not isinstance(directory, str) or not directory.strip():
         raise ConfigError("baselines.files.directory must be a non-empty string")
@@ -310,10 +488,26 @@ def validate_enforcement(value: Any, where: str) -> None:
 def resolve_gate_enforcement(gate: dict[str, Any], default: str) -> dict[str, Any]:
     """The gate with every check carrying its effective enforcement: the check's, else the gate's, else the default."""
     level = gate.get("enforcement", default)
-    return {**gate, "checks": [{**check, "enforcement": check.get("enforcement", level)} for check in gate.get("checks", [])]}
+    return {
+        **gate,
+        "checks": [
+            {**check, "enforcement": check.get("enforcement", level)}
+            for check in gate.get("checks", [])
+        ],
+    }
 
 
-_GATE_KEYS = {"id", "name", "produces", "scope", "includes", "captures_status", "checks", "signoff", "enforcement"}
+_GATE_KEYS = {
+    "id",
+    "name",
+    "produces",
+    "scope",
+    "includes",
+    "captures_status",
+    "checks",
+    "signoff",
+    "enforcement",
+}
 
 
 def validate_gates(gates: Any) -> None:
@@ -335,7 +529,9 @@ def validate_gates(gates: Any) -> None:
         if "/" in gate_id:
             raise ConfigError(f"{where}: gate ID cannot contain '/'")
         if re.search(r"-\d+$", gate_id):
-            raise ConfigError(f"{where}: gate ID cannot end in '-' and a number; numbers are reserved for re-baselines")
+            raise ConfigError(
+                f"{where}: gate ID cannot end in '-' and a number; numbers are reserved for re-baselines"
+            )
         if gate_id in seen:
             raise ConfigError(f"{where}: duplicate gate ID")
         seen.add(gate_id)
@@ -345,8 +541,14 @@ def validate_gates(gates: Any) -> None:
         if gate.get("scope", "table") not in {"table", "system"}:
             raise ConfigError(f"{where}.scope must be 'table' or 'system'")
         includes = gate.get("includes", ["Requirement", "System"])
-        if not isinstance(includes, list) or not includes or not all(x in RECORD_TYPES for x in includes):
-            raise ConfigError(f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}")
+        if (
+            not isinstance(includes, list)
+            or not includes
+            or not all(x in RECORD_TYPES for x in includes)
+        ):
+            raise ConfigError(
+                f"{where}.includes must be a non-empty array of: {', '.join(RECORD_TYPES)}"
+            )
         if not isinstance(gate.get("captures_status", False), bool):
             raise ConfigError(f"{where}.captures_status must be true or false")
         if "enforcement" in gate:
@@ -355,7 +557,20 @@ def validate_gates(gates: Any) -> None:
         validate_checks(gate.get("checks", []), where)
 
 
-_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists", "headings", "merge"}
+_XLSX_SOURCE_KEYS = {
+    "table",
+    "sheet",
+    "header_row",
+    "columns",
+    "exclude",
+    "type",
+    "id_prefix",
+    "set",
+    "id_from",
+    "lists",
+    "headings",
+    "merge",
+}
 
 
 def validate_xlsx_sources(sources: Any) -> None:
@@ -370,41 +585,65 @@ def validate_xlsx_sources(sources: Any) -> None:
         if has_table == has_sheet:
             raise ConfigError(f"{where} needs exactly one of 'table' or 'sheet'")
         for key in ("table", "sheet", "type", "id_prefix"):
-            if key in source and (not isinstance(source[key], str) or not source[key].strip()):
+            if key in source and (
+                not isinstance(source[key], str) or not source[key].strip()
+            ):
                 raise ConfigError(f"{where}.{key} must be a non-empty string")
         if "header_row" in source:
             row = source["header_row"]
             if not has_sheet:
                 raise ConfigError(f"{where}.header_row applies only with 'sheet'")
             if isinstance(row, bool) or not isinstance(row, int) or row < 1:
-                raise ConfigError(f"{where}.header_row must be a whole number of 1 or greater")
+                raise ConfigError(
+                    f"{where}.header_row must be a whole number of 1 or greater"
+                )
         columns = source.get("columns", {})
         if not isinstance(columns, dict) or not all(
-            isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in columns.items()
+            isinstance(k, str) and isinstance(v, str) and v.strip()
+            for k, v in columns.items()
         ):
-            raise ConfigError(f"{where}.columns must be an object of source header to output header strings")
+            raise ConfigError(
+                f"{where}.columns must be an object of source header to output header strings"
+            )
         exclude = source.get("exclude", [])
-        if not isinstance(exclude, list) or not all(isinstance(x, str) for x in exclude):
+        if not isinstance(exclude, list) or not all(
+            isinstance(x, str) for x in exclude
+        ):
             raise ConfigError(f"{where}.exclude must be an array of strings")
         constants = source.get("set", {})
         if not isinstance(constants, dict) or not all(
-            isinstance(k, str) and k.strip() and isinstance(v, str) for k, v in constants.items()
+            isinstance(k, str) and k.strip() and isinstance(v, str)
+            for k, v in constants.items()
         ):
-            raise ConfigError(f"{where}.set must be an object of output header to constant string")
+            raise ConfigError(
+                f"{where}.set must be an object of output header to constant string"
+            )
         if "type" in source and "Type" in constants:
             raise ConfigError(f"{where} gives both 'type' and set.Type; use one")
         if "merge" in source:
             if not isinstance(source["merge"], bool):
                 raise ConfigError(f"{where}.merge must be true or false")
             if source["merge"]:
-                given = [key for key in ("type", "id_prefix", "id_from", "headings") if key in source]
+                given = [
+                    key
+                    for key in ("type", "id_prefix", "id_from", "headings")
+                    if key in source
+                ]
                 given += ["set.Type"] if "Type" in constants else []
                 if given:
-                    raise ConfigError(f"{where} is a merge source, which adds no records, so it cannot give {', '.join(given)}")
+                    raise ConfigError(
+                        f"{where} is a merge source, which adds no records, so it cannot give {', '.join(given)}"
+                    )
         if "id_from" in source:
             id_from = source["id_from"]
-            if not isinstance(id_from, list) or not id_from or not all(isinstance(x, str) and x.strip() for x in id_from):
-                raise ConfigError(f"{where}.id_from must be a non-empty array of column names")
+            if (
+                not isinstance(id_from, list)
+                or not id_from
+                or not all(isinstance(x, str) and x.strip() for x in id_from)
+            ):
+                raise ConfigError(
+                    f"{where}.id_from must be a non-empty array of column names"
+                )
             if "id_prefix" not in source:
                 raise ConfigError(f"{where}.id_from needs id_prefix")
         if "headings" in source:
@@ -413,9 +652,13 @@ def validate_xlsx_sources(sources: Any) -> None:
         if not isinstance(lists, dict) or not all(
             isinstance(k, str) and isinstance(v, str) and v for k, v in lists.items()
         ):
-            raise ConfigError(f"{where}.lists must be an object of output header to separator string (or \"newline\")")
+            raise ConfigError(
+                f'{where}.lists must be an object of output header to separator string (or "newline")'
+            )
     if sources and all(source.get("merge") is True for source in sources):
-        raise ConfigError("xlsx.sources: every source is a merge source; at least one must add the records they fill in")
+        raise ConfigError(
+            "xlsx.sources: every source is a merge source; at least one must add the records they fill in"
+        )
 
 
 def validate_headings(headings: Any, where: str) -> None:
@@ -426,16 +669,30 @@ def validate_headings(headings: Any, where: str) -> None:
         raise ConfigError(f"unknown configuration key: {where}.{unknown[0]}")
     for key in ("column", "into"):
         if not isinstance(headings.get(key), str) or not headings[key].strip():
-            raise ConfigError(f"{where}.{key} is required and must be a non-empty string")
-    if "text" in headings and (not isinstance(headings["text"], str) or not headings["text"].strip()):
+            raise ConfigError(
+                f"{where}.{key} is required and must be a non-empty string"
+            )
+    if "text" in headings and (
+        not isinstance(headings["text"], str) or not headings["text"].strip()
+    ):
         raise ConfigError(f"{where}.text must be a non-empty string")
     values = headings.get("values")
-    if not isinstance(values, list) or not values or not all(isinstance(v, str) and v.strip() for v in values):
-        raise ConfigError(f"{where}.values must be a non-empty array of the type values that mark a heading row")
+    if (
+        not isinstance(values, list)
+        or not values
+        or not all(isinstance(v, str) and v.strip() for v in values)
+    ):
+        raise ConfigError(
+            f"{where}.values must be a non-empty array of the type values that mark a heading row"
+        )
 
 
 def valid_initials(value: Any) -> bool:
-    return isinstance(value, str) and 1 <= len(value.strip()) <= 16 and not any(ord(c) < 32 or ord(c) == 127 for c in value)
+    return (
+        isinstance(value, str)
+        and 1 <= len(value.strip()) <= 16
+        and not any(ord(c) < 32 or ord(c) == 127 for c in value)
+    )
 
 
 def read_csv_table(path: str, config: dict[str, Any]) -> CsvTable:
@@ -467,10 +724,14 @@ def read_csv_source(csv_source: CsvSource, config: dict[str, Any]) -> CsvTable:
             raise InputError(f"{source}: empty column name in header")
         duplicates = sorted({h for h in headers if headers.count(h) > 1})
         if duplicates:
-            raise InputError(f"{source}: duplicate column name(s): {', '.join(duplicates)}")
+            raise InputError(
+                f"{source}: duplicate column name(s): {', '.join(duplicates)}"
+            )
         id_column = config.get("id_column")
         if not id_column:
-            raise ConfigError("an ID column is required; use --id-column or set id_column in the config")
+            raise ConfigError(
+                "an ID column is required; use --id-column or set id_column in the config"
+            )
         if id_column not in headers:
             raise InputError(f"{source}: ID column {id_column!r} is not present")
         rows: list[dict[str, str]] = []
@@ -489,10 +750,15 @@ def read_csv_source(csv_source: CsvSource, config: dict[str, Any]) -> CsvTable:
                     values += [""] * (len(headers) - len(values))
                 elif len(values) > len(headers):
                     values = values[: len(headers)]
-                row = {header: value.replace("\r\n", "\n").replace("\r", "\n") for header, value in zip(headers, values)}
+                row = {
+                    header: value.replace("\r\n", "\n").replace("\r", "\n")
+                    for header, value in zip(headers, values)
+                }
                 normalized_id = row[id_column].strip()
                 if not normalized_id:
-                    raise InputError(f"{source}: record {record_number} has an empty ID in {id_column!r}")
+                    raise InputError(
+                        f"{source}: record {record_number} has an empty ID in {id_column!r}"
+                    )
                 if normalized_id in by_id:
                     raise InputError(
                         f"{source}: duplicate ID {normalized_id!r} at records "
@@ -503,18 +769,33 @@ def read_csv_source(csv_source: CsvSource, config: dict[str, Any]) -> CsvTable:
                 by_id[normalized_id] = row
                 record_by_id[normalized_id] = record_number
         except (csv.Error, UnicodeError) as exc:
-            raise InputError(f"{source}: invalid CSV near record {reader.line_num}: {exc}") from exc
-    return CsvTable(source, csv_source.filename, headers, rows, ids, by_id, csv_source.warnings, csv_source.comments)
+            raise InputError(
+                f"{source}: invalid CSV near record {reader.line_num}: {exc}"
+            ) from exc
+    return CsvTable(
+        source,
+        csv_source.filename,
+        headers,
+        rows,
+        ids,
+        by_id,
+        csv_source.warnings,
+        csv_source.comments,
+    )
 
 
-def effective_columns(old: CsvTable | None, new: CsvTable, config: dict[str, Any]) -> list[str]:
+def effective_columns(
+    old: CsvTable | None, new: CsvTable, config: dict[str, Any]
+) -> list[str]:
     headers = list(new.headers)
     if old:
         headers.extend(h for h in old.headers if h not in headers)
     configured = config["columns"]["order"]
     missing = [h for h in configured if h not in headers]
     if missing:
-        raise ConfigError(f"configured ordered column(s) not found: {', '.join(missing)}")
+        raise ConfigError(
+            f"configured ordered column(s) not found: {', '.join(missing)}"
+        )
     return configured + [h for h in headers if h not in configured]
 
 
@@ -584,15 +865,19 @@ def render_diff(old: str, new: str) -> dict[str, str]:
             for line in a[i1:i2]:
                 escaped = html.escape(line) or "&nbsp;"
                 block = f'<div class="diff-line context-line">{escaped}</div>'
-                old_out.append(block); new_out.append(block); unified.append(block)
+                old_out.append(block)
+                new_out.append(block)
+                unified.append(block)
         elif tag == "delete":
             for line in a[i1:i2]:
                 block = f'<div class="diff-line removed-line">{html.escape(line) or "&nbsp;"}</div>'
-                old_out.append(block); unified.append(block)
+                old_out.append(block)
+                unified.append(block)
         elif tag == "insert":
             for line in b[j1:j2]:
                 block = f'<div class="diff-line added-line">{html.escape(line) or "&nbsp;"}</div>'
-                new_out.append(block); unified.append(block)
+                new_out.append(block)
+                unified.append(block)
         else:
             old_lines, new_lines = a[i1:i2], b[j1:j2]
             count = max(len(old_lines), len(new_lines))
@@ -603,14 +888,22 @@ def render_diff(old: str, new: str) -> dict[str, str]:
                     left_html, right_html = _word_pair(left, right)
                     old_block = f'<div class="diff-line removed-line">{left_html or "&nbsp;"}</div>'
                     new_block = f'<div class="diff-line added-line">{right_html or "&nbsp;"}</div>'
-                    old_out.append(old_block); new_out.append(new_block); unified.extend((old_block, new_block))
+                    old_out.append(old_block)
+                    new_out.append(new_block)
+                    unified.extend((old_block, new_block))
                 elif left is not None:
                     block = f'<div class="diff-line removed-line">{html.escape(left) or "&nbsp;"}</div>'
-                    old_out.append(block); unified.append(block)
+                    old_out.append(block)
+                    unified.append(block)
                 elif right is not None:
                     block = f'<div class="diff-line added-line">{html.escape(right) or "&nbsp;"}</div>'
-                    new_out.append(block); unified.append(block)
-    return {"oldHtml": "".join(old_out), "newHtml": "".join(new_out), "unifiedHtml": "".join(unified)}
+                    new_out.append(block)
+                    unified.append(block)
+    return {
+        "oldHtml": "".join(old_out),
+        "newHtml": "".join(new_out),
+        "unifiedHtml": "".join(unified),
+    }
 
 
 def _estimated_column_width(name: str, rows: list[dict[str, Any]]) -> int:
@@ -637,7 +930,14 @@ def _ordered_diff_ids(old: CsvTable, new: CsvTable) -> list[str]:
     old_positions = {value: index for index, value in enumerate(old.ids)}
     removed = [value for value in old.ids if value not in new.by_id]
     for removed_id in removed:
-        following = next((value for value in old.ids[old_positions[removed_id] + 1 :] if value in result), None)
+        following = next(
+            (
+                value
+                for value in old.ids[old_positions[removed_id] + 1 :]
+                if value in result
+            ),
+            None,
+        )
         if following is None:
             result.append(removed_id)
         else:
@@ -645,7 +945,13 @@ def _ordered_diff_ids(old: CsvTable, new: CsvTable) -> list[str]:
     return result
 
 
-def _cell(column: str, old_value: str | None, new_value: str | None, changed: bool, markdown: bool) -> dict[str, Any]:
+def _cell(
+    column: str,
+    old_value: str | None,
+    new_value: str | None,
+    changed: bool,
+    markdown: bool,
+) -> dict[str, Any]:
     old_text = "" if old_value is None else old_value
     new_text = "" if new_value is None else new_value
     result: dict[str, Any] = {
@@ -659,8 +965,14 @@ def _cell(column: str, old_value: str | None, new_value: str | None, changed: bo
         result.update(render_diff(old_text, new_text))
     else:
         display = new_text if new_value is not None else old_text
-        rendered = render_markdown(display) if markdown else html.escape(display).replace("\n", "<br>")
-        result.update({"oldHtml": rendered, "newHtml": rendered, "unifiedHtml": rendered})
+        rendered = (
+            render_markdown(display)
+            if markdown
+            else html.escape(display).replace("\n", "<br>")
+        )
+        result.update(
+            {"oldHtml": rendered, "newHtml": rendered, "unifiedHtml": rendered}
+        )
     return result
 
 
@@ -668,9 +980,15 @@ def generation_time() -> str:
     epoch = os.environ.get("SOURCE_DATE_EPOCH")
     if epoch is not None:
         try:
-            return datetime.fromtimestamp(int(epoch), timezone.utc).astimezone().isoformat(timespec="seconds")
+            return (
+                datetime.fromtimestamp(int(epoch), timezone.utc)
+                .astimezone()
+                .isoformat(timespec="seconds")
+            )
         except (ValueError, OverflowError, OSError) as exc:
-            raise ConfigError("SOURCE_DATE_EPOCH must be a valid integer timestamp") from exc
+            raise ConfigError(
+                "SOURCE_DATE_EPOCH must be a valid integer timestamp"
+            ) from exc
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
@@ -679,13 +997,19 @@ def prepare_trace_table(
 ) -> tuple[CsvTable, list[dict[str, Any]]]:
     comments_config = config["comments"]
     comment_column = comments_config["csv_column"]
-    if comments_config["enabled"] and comment_column in (*TRACE_COLUMNS, config["id_column"]):
+    if comments_config["enabled"] and comment_column in (
+        *TRACE_COLUMNS,
+        config["id_column"],
+    ):
         raise ConfigError("the comments column cannot also store traceability data")
     managed_comments = (
-        comments_config["enabled"] and comments_config["csv_format"] == "json"
+        comments_config["enabled"]
+        and comments_config["csv_format"] == "json"
         and comment_column in table.headers
     )
-    headers = [name for name in table.headers if not managed_comments or name != comment_column]
+    headers = [
+        name for name in table.headers if not managed_comments or name != comment_column
+    ]
     headers.extend(name for name in TRACE_COLUMNS if name not in headers)
     rows = [{name: row.get(name, "") for name in headers} for row in table.rows]
     comments = []
@@ -704,17 +1028,40 @@ def prepare_trace_table(
                     or record.get("column") not in headers
                     or record["column"] == config["id_column"]
                     or not valid_initials(record.get("initials"))
-                    or not all(isinstance(record.get(key), str) for key in ("created", "text"))
-                    or (record.get("modified") is not None and not isinstance(record["modified"], str))
+                    or not all(
+                        isinstance(record.get(key), str) for key in ("created", "text")
+                    )
+                    or (
+                        record.get("modified") is not None
+                        and not isinstance(record["modified"], str)
+                    )
                 ):
                     raise InputError(message)
-                comments.append({
-                    "id": f"imported-{len(comments)}",
-                    "requirementId": rid,
-                    **{key: record.get(key) for key in ("column", "initials", "created", "modified", "text")},
-                })
+                comments.append(
+                    {
+                        "id": f"imported-{len(comments)}",
+                        "requirementId": rid,
+                        **{
+                            key: record.get(key)
+                            for key in (
+                                "column",
+                                "initials",
+                                "created",
+                                "modified",
+                                "text",
+                            )
+                        },
+                    }
+                )
     prepared = CsvTable(
-        table.label, table.filename, headers, rows, table.ids, dict(zip(table.ids, rows)), table.warnings, table.comments
+        table.label,
+        table.filename,
+        headers,
+        rows,
+        table.ids,
+        dict(zip(table.ids, rows)),
+        table.warnings,
+        table.comments,
     )
     return prepared, comments
 
@@ -733,13 +1080,17 @@ def build_report_data(
         new, comments = prepare_trace_table(new, config)
         if old:
             old, old_comments = prepare_trace_table(old, config)
-            comments.extend({**comment, "id": f"old-{comment['id']}"} for comment in old_comments
-                            if comment["requirementId"] not in new.by_id)
+            comments.extend(
+                {**comment, "id": f"old-{comment['id']}"}
+                for comment in old_comments
+                if comment["requirementId"] not in new.by_id
+            )
     if config["comments"]["enabled"]:
         comments.extend(c for c in new.comments if c["column"] in new.headers)
         if old:
             comments.extend(
-                {**c, "id": f"old-{c['id']}"} for c in old.comments
+                {**c, "id": f"old-{c['id']}"}
+                for c in old.comments
                 if c["requirementId"] not in new.by_id and c["column"] in old.headers
             )
     columns = effective_columns(old, new, config)
@@ -747,10 +1098,14 @@ def build_report_data(
     quality_columns = set(quality["required_columns"])
     if quality["requirement_column"] is not None:
         quality_columns.add(quality["requirement_column"])
-    invalid_quality_columns = quality_columns.difference(set(new.headers) - {config["id_column"]})
+    invalid_quality_columns = quality_columns.difference(
+        set(new.headers) - {config["id_column"]}
+    )
     if invalid_quality_columns:
         names = ", ".join(sorted(invalid_quality_columns))
-        raise ConfigError(f"quality columns must be non-ID columns in the current CSV: {names}")
+        raise ConfigError(
+            f"quality columns must be non-ID columns in the current CSV: {names}"
+        )
     markdown_columns = config["columns"]["markdown"]
     markdown_set = set(columns if markdown_columns is None else markdown_columns)
     for name in markdown_set:
@@ -759,7 +1114,9 @@ def build_report_data(
     ignored = set(config["diff"]["ignore_columns"])
     unknown_ignored = ignored.difference(columns)
     if unknown_ignored:
-        raise ConfigError(f"ignored diff column(s) not found: {', '.join(sorted(unknown_ignored))}")
+        raise ConfigError(
+            f"ignored diff column(s) not found: {', '.join(sorted(unknown_ignored))}"
+        )
     rows: list[dict[str, Any]] = []
     if old is None:
         ids = new.ids
@@ -777,35 +1134,60 @@ def build_report_data(
             status = "removed"
         else:
             changed_columns = [
-                column for column in columns
+                column
+                for column in columns
                 if column not in ignored
-                and _comparison_value(old_row.get(column, ""), config) != _comparison_value(new_row.get(column, ""), config)
+                and _comparison_value(old_row.get(column, ""), config)
+                != _comparison_value(new_row.get(column, ""), config)
             ]
             status = "changed" if changed_columns else "unchanged"
         counts[status] += 1
         cells: dict[str, dict[str, Any]] = {}
         for column in columns:
-            old_value = old_row.get(column, "") if old_row is not None and column in old_row else None
-            new_value = new_row.get(column, "") if new_row is not None and column in new_row else None
+            old_value = (
+                old_row.get(column, "")
+                if old_row is not None and column in old_row
+                else None
+            )
+            new_value = (
+                new_row.get(column, "")
+                if new_row is not None and column in new_row
+                else None
+            )
             changed = (
                 old is not None
                 and column not in ignored
                 and _comparison_value("" if old_value is None else old_value, config)
                 != _comparison_value("" if new_value is None else new_value, config)
             )
-            cells[column] = _cell(column, old_value, new_value, changed, column in markdown_set)
-        rows.append({"id": requirement_id, "status": status, "sourceOrder": len(rows), "cells": cells})
+            cells[column] = _cell(
+                column, old_value, new_value, changed, column in markdown_set
+            )
+        rows.append(
+            {
+                "id": requirement_id,
+                "status": status,
+                "sourceOrder": len(rows),
+                "cells": cells,
+            }
+        )
     if old is not None and not config["diff"]["include_unchanged"]:
         rows = [row for row in rows if row["status"] != "unchanged"]
     labels = config["columns"]["labels"]
-    trace_widths = {"Name": 150, "Definition": 320, "Aliases": 140, "Rationale": 260} if traceability else {}
+    trace_widths = (
+        {"Name": 150, "Definition": 320, "Aliases": 140, "Rationale": 260}
+        if traceability
+        else {}
+    )
     column_data = [
         {
             "name": name,
             "label": labels.get(name, name),
             "hidden": name in config["columns"]["hidden"],
             "width": config["columns"]["widths"].get(name),
-            "estimatedWidth": max(_estimated_column_width(name, rows), trace_widths.get(name, 0)),
+            "estimatedWidth": max(
+                _estimated_column_width(name, rows), trace_widths.get(name, 0)
+            ),
             "oldOnly": bool(old and name in old.headers and name not in new.headers),
             "newOnly": bool(old and name in new.headers and name not in old.headers),
             "markdown": name in markdown_set,
@@ -818,7 +1200,9 @@ def build_report_data(
     optional_names.update(config["columns"]["widths"])
     unknown_optional = sorted(optional_names.difference(columns))
     if unknown_optional:
-        warnings.append("configured optional column(s) not found: " + ", ".join(unknown_optional))
+        warnings.append(
+            "configured optional column(s) not found: " + ", ".join(unknown_optional)
+        )
     if config["id_column"] in config["columns"]["hidden"]:
         warnings.append("the requirement ID column is initially hidden")
     stem = Path(output_name).stem
@@ -861,7 +1245,10 @@ def build_report_data(
         "comments": comments,
         "baselines": list(baselines),
         "controls": controls,
-        "gates": [resolve_gate_enforcement(gate, config["baselines"]["enforcement"]) for gate in config["gates"]],
+        "gates": [
+            resolve_gate_enforcement(gate, config["baselines"]["enforcement"])
+            for gate in config["gates"]
+        ],
     }
 
 
@@ -869,7 +1256,9 @@ def atomic_write_text(path: str, content: str, encoding: str = "utf-8") -> None:
     destination = Path(path)
     try:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+        fd, temporary = tempfile.mkstemp(
+            prefix=f".{destination.name}.", dir=destination.parent
+        )
         try:
             with os.fdopen(fd, "w", encoding=encoding, newline="") as handle:
                 handle.write(content)
@@ -914,9 +1303,15 @@ def extract_report_json(report_path: str) -> dict[str, Any]:
         data = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
         raise InputError(f"{path}: invalid embedded report data: {exc}") from exc
-    if not isinstance(data, dict) or data.get("format") != "reqtable-report" or data.get("formatVersion") not in (1, 2):
+    if (
+        not isinstance(data, dict)
+        or data.get("format") != "reqtable-report"
+        or data.get("formatVersion") not in (1, 2)
+    ):
         raise InputError(f"{path}: unsupported or invalid reqtable report format")
-    if not isinstance(data.get("comments"), list) or not isinstance(data.get("source"), dict):
+    if not isinstance(data.get("comments"), list) or not isinstance(
+        data.get("source"), dict
+    ):
         raise InputError(f"{path}: malformed report data")
     for index, comment in enumerate(data["comments"]):
         required = {"id", "requirementId", "column", "initials", "created", "text"}
@@ -945,7 +1340,10 @@ def extract_comments_csv(
     mode = data["meta"].get("mode")
     if mode == "snapshot":
         selected = source["new"]
-        allowed_ids = {str(row.get(data["meta"]["idColumn"], "")).strip() for row in selected["rows"]}
+        allowed_ids = {
+            str(row.get(data["meta"]["idColumn"], "")).strip()
+            for row in selected["rows"]
+        }
         add_status = False
     else:
         if csv_base not in {"new", "old", "union"}:
@@ -954,17 +1352,36 @@ def extract_comments_csv(
             selected = source[csv_base]
             if selected is None:
                 raise InputError(f"report does not contain a {csv_base} snapshot")
-            allowed_ids = {str(row.get(data["meta"]["idColumn"], "")).strip() for row in selected["rows"]}
+            allowed_ids = {
+                str(row.get(data["meta"]["idColumn"], "")).strip()
+                for row in selected["rows"]
+            }
             add_status = False
         else:
             id_column = data["meta"]["idColumn"]
-            old_rows = {str(row.get(id_column, "")).strip(): row for row in source["old"]["rows"]}
-            new_rows = {str(row.get(id_column, "")).strip(): row for row in source["new"]["rows"]}
-            order = [str(row.get(id_column, "")).strip() for row in source["new"]["rows"]]
-            order += [str(row.get(id_column, "")).strip() for row in source["old"]["rows"] if str(row.get(id_column, "")).strip() not in new_rows]
-            headers = list(source["new"]["headers"]) + [h for h in source["old"]["headers"] if h not in source["new"]["headers"]]
+            old_rows = {
+                str(row.get(id_column, "")).strip(): row
+                for row in source["old"]["rows"]
+            }
+            new_rows = {
+                str(row.get(id_column, "")).strip(): row
+                for row in source["new"]["rows"]
+            }
+            order = [
+                str(row.get(id_column, "")).strip() for row in source["new"]["rows"]
+            ]
+            order += [
+                str(row.get(id_column, "")).strip()
+                for row in source["old"]["rows"]
+                if str(row.get(id_column, "")).strip() not in new_rows
+            ]
+            headers = list(source["new"]["headers"]) + [
+                h for h in source["old"]["headers"] if h not in source["new"]["headers"]
+            ]
             if "_Diff Status" in headers:
-                raise InputError("cannot use union CSV base because '_Diff Status' already exists")
+                raise InputError(
+                    "cannot use union CSV base because '_Diff Status' already exists"
+                )
             if data["formatVersion"] == 1:
                 status_by_id = {row["id"]: row["status"] for row in data["rows"]}
             else:
@@ -973,7 +1390,14 @@ def extract_comments_csv(
                     raise InputError(f"{report_path}: malformed diff status map")
             selected = {
                 "headers": headers + ["_Diff Status"],
-                "rows": [{**old_rows.get(rid, {}), **new_rows.get(rid, {}), "_Diff Status": status_by_id.get(rid, "")} for rid in order],
+                "rows": [
+                    {
+                        **old_rows.get(rid, {}),
+                        **new_rows.get(rid, {}),
+                        "_Diff Status": status_by_id.get(rid, ""),
+                    }
+                    for rid in order
+                ],
             }
             allowed_ids = set(order)
             add_status = True
@@ -981,26 +1405,40 @@ def extract_comments_csv(
     if excluded and not allow_comment_loss:
         excluded_ids = sorted({c["requirementId"] for c in excluded})
         raise InputError(
-            "selected CSV base would omit comments for requirement(s): " + ", ".join(excluded_ids)
+            "selected CSV base would omit comments for requirement(s): "
+            + ", ".join(excluded_ids)
             + "; select another --csv-base or pass --allow-comment-loss"
         )
     headers = list(selected["headers"])
     if comments_column in headers:
-        raise InputError(f"comments column {comments_column!r} already exists; choose another name")
+        raise InputError(
+            f"comments column {comments_column!r} already exists; choose another name"
+        )
     headers.append(comments_column)
     grouped: dict[str, list[dict[str, Any]]] = {}
     for comment in data["comments"]:
         if comment["requirementId"] in allowed_ids:
-            exported = {key: comment.get(key) for key in ("column", "initials", "created", "modified", "text")}
+            exported = {
+                key: comment.get(key)
+                for key in ("column", "initials", "created", "modified", "text")
+            }
             grouped.setdefault(comment["requirementId"], []).append(exported)
     id_column = data["meta"]["idColumn"]
     buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(buffer, fieldnames=headers, delimiter=delimiter, extrasaction="ignore", lineterminator="\n")
+    writer = csv.DictWriter(
+        buffer,
+        fieldnames=headers,
+        delimiter=delimiter,
+        extrasaction="ignore",
+        lineterminator="\n",
+    )
     writer.writeheader()
     for source_row in selected["rows"]:
         row = dict(source_row)
         rid = str(row.get(id_column, "")).strip()
-        comments = sorted(grouped.get(rid, []), key=lambda item: item.get("created") or "")
+        comments = sorted(
+            grouped.get(rid, []), key=lambda item: item.get("created") or ""
+        )
         row[comments_column] = (
             json.dumps(comments, ensure_ascii=False, separators=(",", ":"))
             if comments_format == "json"

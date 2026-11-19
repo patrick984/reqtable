@@ -15,13 +15,36 @@ class CliTests(unittest.TestCase):
     def test_snapshot_and_diff(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            old = root / "old.csv"; new = root / "new.csv"
+            old = root / "old.csv"
+            new = root / "new.csv"
             old.write_text("ID,Text\nR1,Old\n", encoding="utf-8")
             new.write_text("ID,Text\nR1,New\nR2,Added\n", encoding="utf-8")
-            snapshot = root / "snapshot.html"; diff = root / "diff.html"
+            snapshot = root / "snapshot.html"
+            diff = root / "diff.html"
             commands = [
-                [sys.executable, "-m", "reqtable", str(new), "--id-column", "ID", "-o", str(snapshot)],
-                [sys.executable, "-m", "reqtable", "--old", str(old), "--new", str(new), "--id-column", "ID", "-o", str(diff)],
+                [
+                    sys.executable,
+                    "-m",
+                    "reqtable",
+                    str(new),
+                    "--id-column",
+                    "ID",
+                    "-o",
+                    str(snapshot),
+                ],
+                [
+                    sys.executable,
+                    "-m",
+                    "reqtable",
+                    "--old",
+                    str(old),
+                    "--new",
+                    str(new),
+                    "--id-column",
+                    "ID",
+                    "-o",
+                    str(diff),
+                ],
             ]
             for command in commands:
                 completed = subprocess.run(command, capture_output=True, text=True)
@@ -30,15 +53,24 @@ class CliTests(unittest.TestCase):
             self.assertIn('"mode":"diff"', diff.read_text(encoding="utf-8"))
 
     def test_validation_exit_code(self) -> None:
-        completed = subprocess.run([sys.executable, "-m", "reqtable"], capture_output=True, text=True)
+        completed = subprocess.run(
+            [sys.executable, "-m", "reqtable"], capture_output=True, text=True
+        )
         self.assertEqual(completed.returncode, 2)
 
     def test_gui_refuses_other_arguments_instead_of_ignoring_them(self) -> None:
-        for argv in (["--gui", "reqs.csv"], ["--gui", "--no-browser", "--id-column", "ID"], ["--gui", "-o", "x.html"]):
+        for argv in (
+            ["--gui", "reqs.csv"],
+            ["--gui", "--no-browser", "--id-column", "ID"],
+            ["--gui", "-o", "x.html"],
+        ):
             error = io.StringIO()
             with self.subTest(argv=argv), contextlib.redirect_stderr(error):
                 self.assertEqual(main(argv), 2)
-                self.assertIn("--gui takes no other arguments except --no-browser", error.getvalue())
+                self.assertIn(
+                    "--gui takes no other arguments except --no-browser",
+                    error.getvalue(),
+                )
 
     def test_develop_mode_cli(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -47,11 +79,25 @@ class CliTests(unittest.TestCase):
             output = root / "develop.html"
             source.write_text("ID,Text\nR1,Hello\n", encoding="utf-8")
             completed = subprocess.run(
-                [sys.executable, "-m", "reqtable", str(source), "--id-column", "ID", "--document-mode", "develop", "-o", str(output)],
-                capture_output=True, text=True,
+                [
+                    sys.executable,
+                    "-m",
+                    "reqtable",
+                    str(source),
+                    "--id-column",
+                    "ID",
+                    "--document-mode",
+                    "develop",
+                    "-o",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertIn('"documentMode":"develop"', output.read_text(encoding="utf-8"))
+            self.assertIn(
+                '"documentMode":"develop"', output.read_text(encoding="utf-8")
+            )
 
 
 if __name__ == "__main__":

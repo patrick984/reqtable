@@ -14,7 +14,11 @@ from reqtable.cli import main
 
 
 def report_data(path: Path) -> dict:
-    match = re.search(r'<script[^>]*id="reqtable-data"[^>]*>(.*?)</script>', path.read_text(encoding="utf-8"), re.S)
+    match = re.search(
+        r'<script[^>]*id="reqtable-data"[^>]*>(.*?)</script>',
+        path.read_text(encoding="utf-8"),
+        re.S,
+    )
     return json.loads(match.group(1))
 
 
@@ -28,15 +32,37 @@ class GitBaselineTests(unittest.TestCase):
         self.csv.write_text("ID,Text\nR1,One\nR2,Two\n", encoding="utf-8")
         self.git("init", "-q")
         self.git("add", "requirements.csv")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "first")
+        self.git(
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "first",
+        )
         self.csv.write_text("ID,Text\nR1,One changed\nR3,Three\n", encoding="utf-8")
         self.git("add", "requirements.csv")
-        self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "second")
-        self.csv.write_text("ID,Text\nR1,One changed again\nR3,Three\n", encoding="utf-8")
+        self.git(
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "second",
+        )
+        self.csv.write_text(
+            "ID,Text\nR1,One changed again\nR3,Three\n", encoding="utf-8"
+        )
         self.output = self.root / "out.html"
 
     def git(self, *args: str) -> None:
-        subprocess.run(["git", "-C", str(self.root), *args], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(self.root), *args], check=True, capture_output=True
+        )
 
     def run_main(self, *args: str) -> tuple[int, str]:
         stderr = io.StringIO()
@@ -51,16 +77,25 @@ class GitBaselineTests(unittest.TestCase):
         code, err = self.run_main("--old", "git:HEAD", "--new", str(self.csv))
         self.assertEqual(code, 0, err)
         self.assertEqual(self.statuses(), {"R1": "changed", "R3": "unchanged"})
-        self.assertRegex(report_data(self.output)["meta"]["oldFilename"], r"^requirements\.csv @ HEAD \([0-9a-f]+\)$")
+        self.assertRegex(
+            report_data(self.output)["meta"]["oldFilename"],
+            r"^requirements\.csv @ HEAD \([0-9a-f]+\)$",
+        )
 
     def test_explicit_path_and_older_rev(self) -> None:
-        code, err = self.run_main("--old", f"git:HEAD~1:{self.csv}", "--new", str(self.csv))
+        code, err = self.run_main(
+            "--old", f"git:HEAD~1:{self.csv}", "--new", str(self.csv)
+        )
         self.assertEqual(code, 0, err)
-        self.assertEqual(self.statuses(), {"R1": "changed", "R2": "removed", "R3": "added"})
+        self.assertEqual(
+            self.statuses(), {"R1": "changed", "R2": "removed", "R3": "added"}
+        )
         self.assertIn("@ HEAD~1 (", report_data(self.output)["meta"]["oldFilename"])
 
     def test_develop_mode(self) -> None:
-        code, err = self.run_main("--old", "git:HEAD", "--new", str(self.csv), "--document-mode", "develop")
+        code, err = self.run_main(
+            "--old", "git:HEAD", "--new", str(self.csv), "--document-mode", "develop"
+        )
         self.assertEqual(code, 0, err)
         self.assertEqual(report_data(self.output)["meta"]["documentMode"], "develop")
 

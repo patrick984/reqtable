@@ -5,7 +5,13 @@ from typing import Any, Iterable, Sequence
 
 from .core import ConfigError
 
-_WAIVER_TYPES: dict[str, Any] = {"check": str, "reason": str, "user": str, "date": str, "failing": list}
+_WAIVER_TYPES: dict[str, Any] = {
+    "check": str,
+    "reason": str,
+    "user": str,
+    "date": str,
+    "failing": list,
+}
 
 
 @dataclass(frozen=True)
@@ -30,11 +36,24 @@ class Waiver:
             raise ValueError("waiver reason is empty")
         if not all(isinstance(item, str) for item in data["failing"]):
             raise ValueError("waiver failing must hold strings")
-        return cls(data["check"], data["reason"], data["user"], data["date"], tuple(data["failing"]))
+        return cls(
+            data["check"],
+            data["reason"],
+            data["user"],
+            data["date"],
+            tuple(data["failing"]),
+        )
 
 
 def split_ids(values: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(part.strip() for value in values for part in value.split(",") if part.strip()))
+    return list(
+        dict.fromkeys(
+            part.strip()
+            for value in values
+            for part in value.split(",")
+            if part.strip()
+        )
+    )
 
 
 def describe_failure(check: dict[str, Any]) -> str:
@@ -48,7 +67,11 @@ def records(count: int) -> str:
 
 
 def plan_waivers(
-    result: dict[str, Any], ids: Sequence[str], reasons: Sequence[str], user: str, date: str
+    result: dict[str, Any],
+    ids: Sequence[str],
+    reasons: Sequence[str],
+    user: str,
+    date: str,
 ) -> list[Waiver]:
     """Validate --waive against the evaluation and build the records. Raises ConfigError naming the first problem."""
     if not ids:
@@ -64,13 +87,23 @@ def plan_waivers(
     for check_id in ids:
         check = checks.get(check_id)
         if check is None:
-            raise ConfigError(f"cannot waive {check_id!r}: gate {result['gate']} has no such check")
+            raise ConfigError(
+                f"cannot waive {check_id!r}: gate {result['gate']} has no such check"
+            )
         if check["enforcement"] != "strict":
-            raise ConfigError(f"cannot waive {check_id}: it is advisory and does not block")
+            raise ConfigError(
+                f"cannot waive {check_id}: it is advisory and does not block"
+            )
         if not check["error"] and not check["failing"]:
             raise ConfigError(f"cannot waive {check_id}: it is not failing")
     paired = list(reasons) if len(reasons) == len(ids) else [reasons[0]] * len(ids)
     return [
-        Waiver(check_id, reason.strip(), user, date, tuple(checks[check_id].get("failing", ())))
+        Waiver(
+            check_id,
+            reason.strip(),
+            user,
+            date,
+            tuple(checks[check_id].get("failing", ())),
+        )
         for check_id, reason in zip(ids, paired)
     ]

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from __future__ import annotations
 
 import shutil
@@ -20,7 +22,8 @@ def main() -> None:
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
         (staging / "__main__.py").write_text(
-            "from reqtable.cli import main\nraise SystemExit(main())\n", encoding="utf-8"
+            "from reqtable.cli import main\nraise SystemExit(main())\n",
+            encoding="utf-8",
         )
         zipapp.create_archive(
             staging,

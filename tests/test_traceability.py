@@ -8,7 +8,12 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from reqtable.core import build_report_data, extract_comments_csv, load_config, read_csv_table
+from reqtable.core import (
+    build_report_data,
+    extract_comments_csv,
+    load_config,
+    read_csv_table,
+)
 from reqtable.html_report import JS, render_report
 from reqtable.traceability import TRACE_COLUMNS, TRACE_MODEL_JS, TRACE_WORKSPACE
 from tests.test_core import TempFiles
@@ -18,17 +23,24 @@ UAT_CSV = Path(__file__).resolve().parent.parent / "requirements-uat.csv"
 
 class TraceCsvTests(TempFiles):
     def test_opt_in_and_csv_round_trip(self):
-        note = {"column": "Requirement", "text": "Still works offline.", "initials": "PN",
-                "created": "2026-11-07T10:00:00+11:00", "modified": None}
+        note = {
+            "column": "Requirement",
+            "text": "Still works offline.",
+            "initials": "PN",
+            "created": "2026-11-07T10:00:00+11:00",
+            "modified": None,
+        }
         csv_file = io.StringIO(newline="")
         writer = csv.writer(csv_file, delimiter=";")
-        writer.writerows([
-            ["Key", "Type", "Requirement", "Allocated to", "Comments"],
-            ["A", "System", "", "", "[]"],
-            ["B", "System", "", "", "[]"],
-            ["R", "", "Open and review.", "A; B", json.dumps([note])],
-            ["T", "Term", "", "", "[]"],
-        ])
+        writer.writerows(
+            [
+                ["Key", "Type", "Requirement", "Allocated to", "Comments"],
+                ["A", "System", "", "", "[]"],
+                ["B", "System", "", "", "[]"],
+                ["R", "", "Open and review.", "A; B", json.dumps([note])],
+                ["T", "Term", "", "", "[]"],
+            ]
+        )
         path = self.write("source.csv", csv_file.getvalue())
         config = load_config(None, {"id_column": "Key", "csv.delimiter": ";"})
         table = read_csv_table(str(path), config)
@@ -37,13 +49,17 @@ class TraceCsvTests(TempFiles):
         self.assertFalse(flat["options"]["traceability"])
         self.assertNotIn('id="trace-workspace"', render_report(flat))
 
-        config = load_config(None, {"id_column": "Key", "csv.delimiter": ";", "traceability": True})
+        config = load_config(
+            None, {"id_column": "Key", "csv.delimiter": ";", "traceability": True}
+        )
         pilot = build_report_data(table, config, "pilot.html")
         self.assertTrue(pilot["options"]["traceability"])
         self.assertIn("Derived from", pilot["source"]["new"]["headers"])
         self.assertIn("Definition", pilot["source"]["new"]["headers"])
         self.assertNotIn("Comments", pilot["source"]["new"]["headers"])
-        self.assertEqual(pilot["comments"], [{"id": "imported-0", "requirementId": "R", **note}])
+        self.assertEqual(
+            pilot["comments"], [{"id": "imported-0", "requirementId": "R", **note}]
+        )
         report = render_report(pilot)
         self.assertIn('data-trace-view="requirements" aria-pressed="true"', report)
         self.assertIn('data-trace-view="systems"', report)
@@ -51,9 +67,20 @@ class TraceCsvTests(TempFiles):
         self.assertIn('data-trace-view="glossary"', report)
         self.assertIn('id="glossary-definition"', report)
         self.assertIn('data-trace-view="tests"', report)
-        self.assertIn('data-trace-view="changes" aria-pressed="false">Change requests</button>', report)
+        self.assertIn(
+            'data-trace-view="changes" aria-pressed="false">Change requests</button>',
+            report,
+        )
         self.assertIn('<label>System <select id="trace-gates-system">', report)
-        order = ["sources", "requirements", "systems", "tests", "verification", "glossary", "all"]
+        order = [
+            "sources",
+            "requirements",
+            "systems",
+            "tests",
+            "verification",
+            "glossary",
+            "all",
+        ]
         positions = [report.index(f'data-trace-view="{view}"') for view in order]
         self.assertEqual(positions, sorted(positions))
         for label in ("Define", "Verify", "Reference"):
@@ -63,36 +90,63 @@ class TraceCsvTests(TempFiles):
 
         report_path = self.write("pilot.html", report)
         output_path = self.root / "saved.csv"
-        extract_comments_csv(str(report_path), str(output_path), "Comments", "json", "new", False, ";")
-        reopened = build_report_data(read_csv_table(str(output_path), config), config, "pilot.html")
+        extract_comments_csv(
+            str(report_path), str(output_path), "Comments", "json", "new", False, ";"
+        )
+        reopened = build_report_data(
+            read_csv_table(str(output_path), config), config, "pilot.html"
+        )
         self.assertEqual(pilot["source"], reopened["source"])
         self.assertEqual(pilot["comments"], reopened["comments"])
 
     def test_glossary_values_survive_csv_round_trip(self):
-        path = self.write("glossary.csv",
-                          "ID,Type,Name,Definition,Aliases,Auto Link,Source refs\n"
-                          "S,Source,Reference,,,,\n"
-                          'T,Term,Example Term,"A definition,\non two lines.",ET; Term,Yes,S\n')
+        path = self.write(
+            "glossary.csv",
+            "ID,Type,Name,Definition,Aliases,Auto Link,Source refs\n"
+            "S,Source,Reference,,,,\n"
+            'T,Term,Example Term,"A definition,\non two lines.",ET; Term,Yes,S\n',
+        )
         config = load_config(None, {"id_column": "ID", "traceability": True})
-        pilot = build_report_data(read_csv_table(str(path), config), config, "glossary.html")
+        pilot = build_report_data(
+            read_csv_table(str(path), config), config, "glossary.html"
+        )
         report_path = self.write("glossary.html", render_report(pilot))
         output = self.root / "saved.csv"
-        extract_comments_csv(str(report_path), str(output), "Comments", "json", "new", False)
-        reopened = build_report_data(read_csv_table(str(output), config), config, "glossary.html")
+        extract_comments_csv(
+            str(report_path), str(output), "Comments", "json", "new", False
+        )
+        reopened = build_report_data(
+            read_csv_table(str(output), config), config, "glossary.html"
+        )
         self.assertEqual(pilot["source"], reopened["source"])
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class TraceModelTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + TRACE_MODEL_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + TRACE_MODEL_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_trace_index_reads_only_its_declared_columns(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
         table = read_csv_table(str(UAT_CSV), config)
-        rows = json.dumps([dict(zip(table.headers, row)) if isinstance(row, list) else row for row in table.rows])
-        self.run_js(f"const rows={rows},headers={json.dumps(table.headers)};" + r"""
+        rows = json.dumps(
+            [
+                dict(zip(table.headers, row)) if isinstance(row, list) else row
+                for row in table.rows
+            ]
+        )
+        self.run_js(
+            f"const rows={rows},headers={json.dumps(table.headers)};"
+            + r"""
 rows.push({ID:"BAD-1",Type:"Requirement",Origin:"Self-derived",Compliance:"Compliant",Priority:"Bogus",
   "Verified by":"BAD-T; BAD-T; NOPE","Derived from":"BAD-2"},{ID:"BAD-2",Type:"Requirement","Derived from":"BAD-1"},
   {ID:"BAD-T",Type:"Test",Result:"Failed"},{ID:"BAD-X",Type:"Weird",Compliance:"Compliant"});
@@ -104,7 +158,8 @@ const declared=traceIndexColumns(index.values,"ID",false);
 assert.deepEqual([...read].filter(column=>!declared.has(column)),[]);
 assert.ok(!declared.has("Requirement")&&!declared.has("Acceptance Criteria"));
 assert.equal(traceIndexColumns(index.values,"ID",true),null);
-""")
+"""
+        )
 
     def test_glossary_matching_and_validation(self):
         self.run_js(r"""
@@ -145,15 +200,20 @@ assert(issues.some(({id,field})=>id==="CLASH2"&&field==="Aliases"));
 """)
 
     def test_reordering_requirements_keeps_systems_and_sources_in_place(self):
-        movement = "function moveRowsInOrder(" + JS.split("function moveRowsInOrder(", 1)[1]
-        self.run_js(movement.split("function moveRenderedRows(", 1)[0] + r"""
+        movement = (
+            "function moveRowsInOrder(" + JS.split("function moveRowsInOrder(", 1)[1]
+        )
+        self.run_js(
+            movement.split("function moveRenderedRows(", 1)[0]
+            + r"""
 const records=["SYS","R1","R2","NEED","R3","SOURCE","R4"];
 const requirements=new Set(["R1","R2","R3","R4"]);
 moveRowsInOrder(records,id=>id,requirements,0,2,2);
 assert.deepEqual(records,["SYS","R3","R4","NEED","R1","SOURCE","R2"]);
 moveRowsInOrder(records,id=>id,requirements,2,0,2);
 assert.deepEqual(records,["SYS","R1","R2","NEED","R3","SOURCE","R4"]);
-""")
+"""
+        )
 
     def test_canonical_records_and_picker_constraints(self):
         self.run_js(r"""
@@ -209,11 +269,19 @@ assert.deepEqual(remove.map(({row,field,value})=>[row.ID,field,value]),
 """)
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class TestRecordModelTests(unittest.TestCase):
     def run_js(self, assertions):
-        subprocess.run(["node"], input='const assert=require("node:assert/strict");\n'
-                       + TRACE_MODEL_JS + assertions, text=True, check=True)
+        subprocess.run(
+            ["node"],
+            input='const assert=require("node:assert/strict");\n'
+            + TRACE_MODEL_JS
+            + assertions,
+            text=True,
+            check=True,
+        )
 
     def test_location_hash_omits_defaults(self):
         self.run_js(r"""
@@ -268,9 +336,16 @@ for(const view of ["sources","requirements","systems","tests","verification","ga
 """)
 
     def test_workspace_control_ids_exist_in_the_report(self):
-        script = 'console.log(JSON.stringify(workspaceControlIds))'
-        ids = json.loads(subprocess.run(["node"], input=TRACE_MODEL_JS + script, text=True, check=True,
-                                        capture_output=True).stdout)
+        script = "console.log(JSON.stringify(workspaceControlIds))"
+        ids = json.loads(
+            subprocess.run(
+                ["node"],
+                input=TRACE_MODEL_JS + script,
+                text=True,
+                check=True,
+                capture_output=True,
+            ).stdout
+        )
         for control_id in ids:
             self.assertIn(f'id="{control_id}"', TRACE_WORKSPACE)
 
@@ -390,7 +465,9 @@ const findings=(rows,withValues=true)=>buildTraceIndex(withValues?[...defined,..
 """
 
     def test_compliant_requirement_needs_every_linked_test_to_have_passed(self):
-        self.run_js(self.VERIFICATION_PRELUDE + r"""
+        self.run_js(
+            self.VERIFICATION_PRELUDE
+            + r"""
 const rows=[
   test("T-PASS","Passed"),test("T-ALIAS","Pass"),test("T-FAIL","Failed"),test("T-BLANK",""),test("T-BLANK2",""),
   {ID:"R-OK",Compliance:"Compliant","Verified by":"T-PASS; T-ALIAS"},
@@ -408,10 +485,13 @@ assert.deepEqual(findings(rows).filter(line=>!line.includes("replaced spelling")
 ]);
 assert.deepEqual(findings([test("T","Failed"),{ID:"R",Compliance:"Compliant","Verified by":"T"}],false),
   ["R|Compliance|Compliant, but T is “Failed”."]);
-""")
+"""
+        )
 
     def test_compliance_and_result_apply_only_to_their_record_types(self):
-        self.run_js(self.VERIFICATION_PRELUDE + r"""
+        self.run_js(
+            self.VERIFICATION_PRELUDE
+            + r"""
 const rows=[
   {ID:"R",Compliance:"Compliant",Result:"Passed"},
   {ID:"T",Type:"Test",Compliance:"Compliant",Result:"Passed"},
@@ -423,7 +503,8 @@ assert.deepEqual(findings(rows).sort(),[
   "R|Result|Result applies to tests.",
   "T|Compliance|Compliance applies to requirements."
 ]);
-""")
+"""
+        )
 
     def test_verification_method_marks_fill_slots_in_value_order(self):
         self.run_js(r"""
@@ -454,7 +535,9 @@ const build=(rows,withValues=true)=>{
 """
 
     def test_matrix_orders_columns_by_value_records_and_resolves_aliases(self):
-        self.run_js(self.MATRIX_PRELUDE + r"""
+        self.run_js(
+            self.MATRIX_PRELUDE
+            + r"""
 const m=build([
   {ID:"R1",Requirement:"Text","Verification Method":"Try it; Inspection","Verification Level":"UAT; Unit"},
   {ID:"R2",Name:"Named",Requirement:"Text"}
@@ -467,20 +550,26 @@ assert.equal(m.rows[0].requirement,"Text");
 assert.equal(m.rows[1].requirement,"Named");
 assert.deepEqual(m.totals.methods,{Inspection:1,Test:1});
 assert.deepEqual(m.totals.levels,{Unit:1,Acceptance:1});
-""")
+"""
+        )
 
     def test_matrix_lists_undefined_values_as_extras(self):
-        self.run_js(self.MATRIX_PRELUDE + r"""
+        self.run_js(
+            self.MATRIX_PRELUDE
+            + r"""
 const m=build([{ID:"R1","Verification Method":"Test; Telepathy","Verification Level":"Beta"}]);
 assert.deepEqual(m.rows[0].methods,["Test"]);
 assert.deepEqual(m.rows[0].extraMethods,["Telepathy"]);
 assert.deepEqual(m.rows[0].levels,[]);
 assert.deepEqual(m.rows[0].extraLevels,["Beta"]);
 assert.deepEqual(m.totals.methods,{Inspection:0,Test:1});
-""")
+"""
+        )
 
     def test_matrix_carries_tests_results_compliance_and_totals(self):
-        self.run_js(self.MATRIX_PRELUDE + r"""
+        self.run_js(
+            self.MATRIX_PRELUDE
+            + r"""
 const m=build([
   {ID:"T1",Type:"Test",Name:"Core test",Result:"Pass"},{ID:"T2",Type:"Test"},
   {ID:"R1",Compliance:"Compliant","Verified by":"T1; T2"},
@@ -490,16 +579,20 @@ assert.deepEqual(m.rows.map(row=>row.id),["R1","R2","R3","R4"]);
 assert.deepEqual(m.rows[0].tests,[{id:"T1",name:"Core test",result:"Passed"},{id:"T2",name:"T2",result:""}]);
 assert.deepEqual(m.rows[1].tests,[]);
 assert.deepEqual(m.totals.compliance,{Compliant:1,"Not verified":2,"No compliance":1});
-""")
+"""
+        )
 
     def test_matrix_without_method_values_has_no_method_columns(self):
-        self.run_js(self.MATRIX_PRELUDE + r"""
+        self.run_js(
+            self.MATRIX_PRELUDE
+            + r"""
 const m=build([{ID:"R1","Verification Method":"Test"}],false);
 assert.deepEqual(m.methods,[]);
 assert.deepEqual(m.levels,[]);
 assert.deepEqual(m.rows[0].methods,[]);
 assert.deepEqual(m.rows[0].extraMethods,["Test"]);
-""")
+"""
+        )
 
     def test_matrix_headers_use_the_shortest_unique_prefix(self):
         self.run_js(r"""
@@ -510,7 +603,9 @@ assert.deepEqual(verificationMatrixLabels(["Test","Test run"]),["TEST","TEST R"]
 """)
 
     def test_matrix_csv_rows_mark_methods_levels_tests_and_extras(self):
-        self.run_js(self.MATRIX_PRELUDE + r"""
+        self.run_js(
+            self.MATRIX_PRELUDE
+            + r"""
 const m=build([
   {ID:"T1",Type:"Test",Result:"Passed"},{ID:"T2",Type:"Test"},
   {ID:"R1",Requirement:"Shall work","Verification Method":"Test; Telepathy","Verification Level":"Unit",Compliance:"Compliant","Verified by":"T1; T2"}
@@ -519,20 +614,30 @@ assert.deepEqual(verificationMatrixCsvRows(m),[
   ["ID","Requirement","Inspection","Test","Unit","Acceptance","Tests","Compliance"],
   ["R1","Shall work","","X; Telepathy","X","","T1 (Passed); T2 (No result)","Compliant"]
 ]);
-""")
+"""
+        )
 
     def test_shipped_uat_csv_links_tests_without_findings(self):
         config = load_config(None, {"id_column": "ID", "traceability": True})
-        source = build_report_data(read_csv_table(str(UAT_CSV), config), config, "uat.html")["source"]["new"]
+        source = build_report_data(
+            read_csv_table(str(UAT_CSV), config), config, "uat.html"
+        )["source"]["new"]
         script = (
-            'const rows=' + json.dumps(source["rows"]) + ';\n' + TRACE_MODEL_JS
-            + 'const index=buildTraceIndex(rows,row=>row.ID,{headers:' + json.dumps(source["headers"])
+            "const rows="
+            + json.dumps(source["rows"])
+            + ";\n"
+            + TRACE_MODEL_JS
+            + "const index=buildTraceIndex(rows,row=>row.ID,{headers:"
+            + json.dumps(source["headers"])
             + ',idColumn:"ID"});const types=type=>[...index.records.values()].filter(r=>r.type===type);'
             + 'console.log(JSON.stringify({issues:index.issues,tests:types("Test").length,plans:types("Test plan").length,'
             + 'verified:types("Test").filter(r=>r.incoming.some(e=>e.field==="Verified by")).length}));'
         )
-        result = json.loads(subprocess.run(["node"], input=script, text=True, check=True,
-                                           capture_output=True).stdout)
+        result = json.loads(
+            subprocess.run(
+                ["node"], input=script, text=True, check=True, capture_output=True
+            ).stdout
+        )
         self.assertEqual(result["issues"], [])
         self.assertEqual((result["plans"], result["tests"]), (2, 7))
         self.assertGreaterEqual(result["verified"], 1)

@@ -14,8 +14,17 @@ VIAS = ("cli", "package")
 VERIFICATIONS = ("good", "unsigned", "bad", "unverifiable", "recorded")
 
 _RECORD_TYPES: dict[str, Any] = {
-    "format": str, "baseline": str, "role": str, "user": str, "decision": str, "date": str,
-    "content_hash": str, "note": str, "evidence": (str, type(None)), "via": str, "recorded_by": str,
+    "format": str,
+    "baseline": str,
+    "role": str,
+    "user": str,
+    "decision": str,
+    "date": str,
+    "content_hash": str,
+    "note": str,
+    "evidence": (str, type(None)),
+    "via": str,
+    "recorded_by": str,
 }
 
 
@@ -41,7 +50,9 @@ def parse_date(text: str) -> datetime:
     try:
         moment = datetime.fromisoformat(text.strip().replace("Z", "+00:00"))
     except ValueError as exc:
-        raise InputError(f"invalid sign-off date {text!r}: expected an ISO date with offset") from exc
+        raise InputError(
+            f"invalid sign-off date {text!r}: expected an ISO date with offset"
+        ) from exc
     return moment if moment.tzinfo else moment.astimezone()
 
 
@@ -93,7 +104,13 @@ class SignOff:
         return parse_date(self.date)
 
     def key(self) -> tuple[str, str, str, str, datetime]:
-        return (self.baseline, self.role.casefold(), self.user.casefold(), self.decision, self.moment)
+        return (
+            self.baseline,
+            self.role.casefold(),
+            self.user.casefold(),
+            self.decision,
+            self.moment,
+        )
 
 
 @dataclass(frozen=True)
@@ -106,26 +123,40 @@ class CheckedSignOff:
     counts: bool
 
     def to_dict(self) -> dict[str, Any]:
-        return {**self.record.to_dict(), "verification": self.verification, "detail": self.detail, "counts": self.counts}
+        return {
+            **self.record.to_dict(),
+            "verification": self.verification,
+            "detail": self.detail,
+            "counts": self.counts,
+        }
 
 
-def approval_status(roles: Sequence[dict[str, Any]], signoffs: Iterable[CheckedSignOff]) -> dict[str, Any]:
+def approval_status(
+    roles: Sequence[dict[str, Any]], signoffs: Iterable[CheckedSignOff]
+) -> dict[str, Any]:
     """Each user's latest counting decision decides; a role is complete at `min` distinct positive users."""
     latest: dict[str, dict[str, SignOff]] = {}
-    ordered = sorted(enumerate(s for s in signoffs if s.counts), key=lambda pair: (pair[1].record.moment, pair[0]))
+    ordered = sorted(
+        enumerate(s for s in signoffs if s.counts),
+        key=lambda pair: (pair[1].record.moment, pair[0]),
+    )
     for _, checked in ordered:
         record = checked.record
         latest.setdefault(record.role.casefold(), {})[record.user.casefold()] = record
     statuses = []
     for entry in roles:
         decided = latest.get(entry["role"].casefold(), {}).values()
-        statuses.append({
-            "role": entry["role"],
-            "min": entry["min"],
-            "positive": [r.user for r in decided if r.decision in POSITIVE],
-            "negative": [r.user for r in decided if r.decision not in POSITIVE],
-        })
-    approved = bool(statuses) and all(len(status["positive"]) >= status["min"] for status in statuses)
+        statuses.append(
+            {
+                "role": entry["role"],
+                "min": entry["min"],
+                "positive": [r.user for r in decided if r.decision in POSITIVE],
+                "negative": [r.user for r in decided if r.decision not in POSITIVE],
+            }
+        )
+    approved = bool(statuses) and all(
+        len(status["positive"]) >= status["min"] for status in statuses
+    )
     return {"approved": approved, "roles": statuses}
 
 
@@ -134,11 +165,15 @@ def match_role(roles: Sequence[dict[str, Any]], requested: str, gate: str) -> st
         if entry["role"].casefold() == requested.strip().casefold():
             return entry["role"]
     known = ", ".join(entry["role"] for entry in roles) or "none"
-    raise ConfigError(f"gate {gate} has no sign-off role {requested!r}; its roles: {known}")
+    raise ConfigError(
+        f"gate {gate} has no sign-off role {requested!r}; its roles: {known}"
+    )
 
 
 def match_decision(requested: str) -> str:
     for decision in DECISIONS:
         if decision.casefold() == requested.strip().casefold():
             return decision
-    raise ConfigError(f"unknown decision {requested!r}; use one of: {', '.join(DECISIONS)}")
+    raise ConfigError(
+        f"unknown decision {requested!r}; use one of: {', '.join(DECISIONS)}"
+    )

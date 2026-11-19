@@ -5,7 +5,9 @@ import unittest
 from reqtable.quality import QUALITY_JS
 
 
-@unittest.skipUnless(shutil.which("node"), "Node is needed to exercise the report's JavaScript")
+@unittest.skipUnless(
+    shutil.which("node"), "Node is needed to exercise the report's JavaScript"
+)
 class QualityTests(unittest.TestCase):
     def test_source_offsets_and_content_bound_dismissals(self):
         script = """

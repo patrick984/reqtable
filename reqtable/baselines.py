@@ -79,7 +79,10 @@ def _subtree(rows: Sequence[dict[str, str]], id_column: str, system: str) -> set
 
 
 def select_scope(
-    rows: Sequence[dict[str, str]], id_column: str, system: str | None, includes: Iterable[str]
+    rows: Sequence[dict[str, str]],
+    id_column: str,
+    system: str | None,
+    includes: Iterable[str],
 ) -> list[dict[str, str]]:
     wanted = set(includes)
     included = [row for row in rows if record_type(row) in wanted]
@@ -87,11 +90,17 @@ def select_scope(
         return included
     subtree = _subtree(rows, id_column, system)
     requirements = [
-        row for row in included
-        if record_type(row) == "Requirement" and subtree.intersection(links(row.get("Allocated to", "")))
+        row
+        for row in included
+        if record_type(row) == "Requirement"
+        and subtree.intersection(links(row.get("Allocated to", "")))
     ]
     tests = {test for row in requirements for test in links(row.get("Verified by", ""))}
-    chosen_tests = [row for row in included if record_type(row) == "Test" and row[id_column].strip() in tests]
+    chosen_tests = [
+        row
+        for row in included
+        if record_type(row) == "Test" and row[id_column].strip() in tests
+    ]
     plans = {plan for row in chosen_tests for plan in links(row.get("Test plan", ""))}
     kept = {id(row) for row in requirements + chosen_tests}
 
@@ -120,9 +129,19 @@ def content_hash(
     hashed = [header for header in headers if header not in skipped]
     payload = [
         HASH_FORMAT,
-        {"system": system or None, "includes": sorted(includes), "status": captures_status},
+        {
+            "system": system or None,
+            "includes": sorted(includes),
+            "status": captures_status,
+        },
         hashed,
-        [[row.get(header, "").replace("\r\n", "\n").replace("\r", "\n") for header in hashed] for row in rows_in_scope],
+        [
+            [
+                row.get(header, "").replace("\r\n", "\n").replace("\r", "\n")
+                for header in hashed
+            ]
+            for row in rows_in_scope
+        ],
     ]
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -160,9 +179,18 @@ class BaselineName:
 
 
 _MANIFEST_TYPES: dict[str, Any] = {
-    "format": str, "name": str, "gate": str, "supersedes": (str, type(None)), "system": (str, type(None)),
-    "includes": list, "captures_status": bool, "status_columns": list, "content_hash": str,
-    "source": str, "created": str, "created_by": str,
+    "format": str,
+    "name": str,
+    "gate": str,
+    "supersedes": (str, type(None)),
+    "system": (str, type(None)),
+    "includes": list,
+    "captures_status": bool,
+    "status_columns": list,
+    "content_hash": str,
+    "source": str,
+    "created": str,
+    "created_by": str,
 }
 
 
@@ -189,11 +217,16 @@ class Manifest:
 
     def to_dict(self) -> dict[str, Any]:
         fields = asdict(self)
-        return {**{key: fields[key] for key in _MANIFEST_TYPES}, "waivers": [waiver.to_dict() for waiver in self.waivers]}
+        return {
+            **{key: fields[key] for key in _MANIFEST_TYPES},
+            "waivers": [waiver.to_dict() for waiver in self.waivers],
+        }
 
     @classmethod
     def from_dict(cls, data: Any) -> Manifest:
-        if not isinstance(data, dict) or set(data) - {"waivers"} != set(_MANIFEST_TYPES):
+        if not isinstance(data, dict) or set(data) - {"waivers"} != set(
+            _MANIFEST_TYPES
+        ):
             raise ValueError("manifest has the wrong keys")
         waivers = data.get("waivers", [])
         if not isinstance(waivers, list):
@@ -207,12 +240,21 @@ class Manifest:
             if not all(isinstance(item, str) for item in data[key]):
                 raise ValueError(f"manifest {key} must hold strings")
         parsed = BaselineName.parse(data["name"])
-        if parsed.gate != data["gate"] or parsed.system != data["system"] or parsed.number == 0:
+        if (
+            parsed.gate != data["gate"]
+            or parsed.system != data["system"]
+            or parsed.number == 0
+        ):
             raise ValueError("manifest name does not match its gate and system")
-        return cls(**{key: data[key] for key in _MANIFEST_TYPES}, waivers=tuple(Waiver.from_dict(item) for item in waivers))
+        return cls(
+            **{key: data[key] for key in _MANIFEST_TYPES},
+            waivers=tuple(Waiver.from_dict(item) for item in waivers),
+        )
 
 
-def next_name(existing: Iterable[Manifest], gate: str, system: str | None) -> tuple[BaselineName, str | None]:
+def next_name(
+    existing: Iterable[Manifest], gate: str, system: str | None
+) -> tuple[BaselineName, str | None]:
     siblings = [m for m in existing if m.gate == gate and m.system == system]
     if not siblings:
         return BaselineName(gate, 1, system), None
@@ -222,7 +264,9 @@ def next_name(existing: Iterable[Manifest], gate: str, system: str | None) -> tu
 
 def resolve(requested: str, manifests: Sequence[Manifest]) -> Manifest:
     wanted = BaselineName.parse(requested)
-    candidates = [m for m in manifests if m.gate == wanted.gate and m.system == wanted.system]
+    candidates = [
+        m for m in manifests if m.gate == wanted.gate and m.system == wanted.system
+    ]
     if wanted.number is not None:
         candidates = [m for m in candidates if m.number == wanted.number]
     if not candidates:
@@ -231,7 +275,9 @@ def resolve(requested: str, manifests: Sequence[Manifest]) -> Manifest:
     return max(candidates, key=lambda m: m.number)
 
 
-def sort_manifests(manifests: Iterable[Manifest], config: dict[str, Any]) -> list[Manifest]:
+def sort_manifests(
+    manifests: Iterable[Manifest], config: dict[str, Any]
+) -> list[Manifest]:
     order = {gate["id"]: index for index, gate in enumerate(config["gates"])}
     return sorted(
         manifests,
@@ -241,7 +287,9 @@ def sort_manifests(manifests: Iterable[Manifest], config: dict[str, Any]) -> lis
 
 def run_git(directory: Path, *args: str) -> bytes:
     try:
-        completed = subprocess.run(["git", "-C", str(directory), *args], capture_output=True)
+        completed = subprocess.run(
+            ["git", "-C", str(directory), *args], capture_output=True
+        )
     except OSError as exc:
         raise InputError(f"cannot run git: {exc}") from exc
     if completed.returncode != 0:
@@ -252,7 +300,9 @@ def run_git(directory: Path, *args: str) -> bytes:
 
 def current_user(directory: Path) -> str:
     try:
-        name = run_git(directory, "config", "user.name").decode("utf-8", "replace").strip()
+        name = (
+            run_git(directory, "config", "user.name").decode("utf-8", "replace").strip()
+        )
     except InputError:
         name = ""
     return name or getpass.getuser()
@@ -288,7 +338,13 @@ class BaselineStore(ABC):
 
     source: str
 
-    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+    def __init__(
+        self,
+        input_path: Path,
+        config: dict[str, Any],
+        read_file: TableReader,
+        warn: Callable[[str], None],
+    ):
         self.input_path = input_path
         self.config = config
         self.read_file = read_file
@@ -321,7 +377,13 @@ class BaselineStore(ABC):
 
 
 class GitStore(BaselineStore):
-    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+    def __init__(
+        self,
+        input_path: Path,
+        config: dict[str, Any],
+        read_file: TableReader,
+        warn: Callable[[str], None],
+    ):
         super().__init__(input_path, config, read_file, warn)
         self.prefix = config["baselines"]["git"]["tag_prefix"]
 
@@ -329,21 +391,33 @@ class GitStore(BaselineStore):
     def root(self) -> Path:
         directory = self.input_path.resolve().parent
         try:
-            return Path(run_git(directory, "rev-parse", "--show-toplevel").decode("utf-8").strip())
+            return Path(
+                run_git(directory, "rev-parse", "--show-toplevel")
+                .decode("utf-8")
+                .strip()
+            )
         except InputError as exc:
-            raise InputError(f"{self.input_path} is not inside a git work tree: {exc}") from exc
+            raise InputError(
+                f"{self.input_path} is not inside a git work tree: {exc}"
+            ) from exc
 
     @cached_property
     def source(self) -> str:  # type: ignore[override]
-        tracked = run_git(self.root, "ls-files", "--full-name", "--", str(self.input_path.resolve())).decode("utf-8")
+        tracked = run_git(
+            self.root, "ls-files", "--full-name", "--", str(self.input_path.resolve())
+        ).decode("utf-8")
         paths = [line for line in tracked.splitlines() if line]
         if not paths:
-            raise InputError(f"{self.input_path} is not tracked by git; commit it before creating a baseline")
+            raise InputError(
+                f"{self.input_path} is not tracked by git; commit it before creating a baseline"
+            )
         return paths[0]
 
     def current(self) -> CsvTable:
         if run_git(self.root, "status", "--porcelain", "--", self.source).strip():
-            raise InputError(f"{self.input_path} has uncommitted changes; commit them before creating a baseline")
+            raise InputError(
+                f"{self.input_path} has uncommitted changes; commit them before creating a baseline"
+            )
         return self._read_at("HEAD", self.source)
 
     def _read_at(self, rev: str, source: str) -> CsvTable:
@@ -368,7 +442,10 @@ class GitStore(BaselineStore):
 
     def list(self) -> list[Manifest]:
         listing = run_git(
-            self.root, "for-each-ref", "--format=%(refname)%00%(objecttype)%00%(contents)%01", f"refs/tags/{self.prefix}"
+            self.root,
+            "for-each-ref",
+            "--format=%(refname)%00%(objecttype)%00%(contents)%01",
+            f"refs/tags/{self.prefix}",
         ).decode("utf-8", "replace")
         found = []
         for record in listing.split("\x01"):
@@ -379,7 +456,9 @@ class GitStore(BaselineStore):
                 if kind != "tag":
                     raise ValueError("not an annotated tag")
                 _, _, body = contents.partition("\n\n")
-                manifest = Manifest.from_dict(json.JSONDecoder().raw_decode(body.lstrip())[0])
+                manifest = Manifest.from_dict(
+                    json.JSONDecoder().raw_decode(body.lstrip())[0]
+                )
                 if ref != f"refs/tags/{self._ref(manifest)}":
                     raise ValueError("tag name does not match its manifest")
             except (ValueError, InputError) as exc:
@@ -393,10 +472,20 @@ class GitStore(BaselineStore):
         with tempfile.TemporaryDirectory() as folder:
             message_file = Path(folder) / "message"
             message_file.write_text(message, encoding="utf-8")
-            run_git(self.root, "tag", "-a", self._ref(manifest), "-F", str(message_file), "HEAD")
+            run_git(
+                self.root,
+                "tag",
+                "-a",
+                self._ref(manifest),
+                "-F",
+                str(message_file),
+                "HEAD",
+            )
 
     def read(self, manifest: Manifest) -> CsvTable:
-        return self._read_at(f"refs/tags/{self._ref(manifest)}^{{commit}}", manifest.source)
+        return self._read_at(
+            f"refs/tags/{self._ref(manifest)}^{{commit}}", manifest.source
+        )
 
     def where(self, manifest: Manifest) -> str:
         return f"as tag {self._ref(manifest)}"
@@ -404,16 +493,31 @@ class GitStore(BaselineStore):
     def add_signoff(self, manifest: Manifest, record: SignOff) -> str:
         stem = f"{SIGNOFF_PREFIX}{manifest.name}/{slug(record.role)}/"
         if not slug(record.role) or not slug(record.user):
-            raise InputError("a sign-off needs a role and a user that contain letters or digits")
+            raise InputError(
+                "a sign-off needs a role and a user that contain letters or digits"
+            )
         taken = set(
-            run_git(self.root, "for-each-ref", "--format=%(refname:short)", f"refs/tags/{stem}").decode().split()
+            run_git(
+                self.root,
+                "for-each-ref",
+                "--format=%(refname:short)",
+                f"refs/tags/{stem}",
+            )
+            .decode()
+            .split()
         )
         base = f"{stem}{slug(record.user)}"
         name, number = base, 1
         while name in taken:
             number += 1
             name = f"{base}-{number}"
-        commit = run_git(self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}").decode().strip()
+        commit = (
+            run_git(
+                self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}"
+            )
+            .decode()
+            .strip()
+        )
         message = (
             f"ReqTable sign-off {record.baseline} {record.role} {record.decision}\n\n"
             f"{json.dumps(record.to_dict(), indent=2, ensure_ascii=False)}\n"
@@ -431,9 +535,17 @@ class GitStore(BaselineStore):
         return f"as tag {name}"
 
     def signoffs(self, manifest: Manifest) -> list[CheckedSignOff]:
-        commit = run_git(self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}").decode().strip()
+        commit = (
+            run_git(
+                self.root, "rev-parse", f"refs/tags/{self._ref(manifest)}^{{commit}}"
+            )
+            .decode()
+            .strip()
+        )
         listing = run_git(
-            self.root, "for-each-ref", "--format=%(refname)%00%(objecttype)%00%(*objectname)%00%(contents)%01",
+            self.root,
+            "for-each-ref",
+            "--format=%(refname)%00%(objecttype)%00%(*objectname)%00%(contents)%01",
             f"refs/tags/{SIGNOFF_PREFIX}{manifest.name}/",
         ).decode("utf-8", "replace")
         found = []
@@ -445,7 +557,9 @@ class GitStore(BaselineStore):
                 if kind != "tag":
                     raise ValueError("not an annotated tag")
                 _, _, body = contents.partition("\n\n")
-                record = SignOff.from_dict(json.JSONDecoder().raw_decode(body.lstrip())[0])
+                record = SignOff.from_dict(
+                    json.JSONDecoder().raw_decode(body.lstrip())[0]
+                )
             except ValueError as exc:
                 self.warn(f"ignoring tag {ref.removeprefix('refs/tags/')}: {exc}")
                 continue
@@ -459,13 +573,26 @@ class GitStore(BaselineStore):
                 problems.append("its content hash differs from the baseline's")
             counts = verification == "good" and not problems
             reason = "; ".join(problems)
-            found.append((record, ref, CheckedSignOff(record, verification, "; ".join(filter(None, (reason, detail))), counts)))
+            found.append(
+                (
+                    record,
+                    ref,
+                    CheckedSignOff(
+                        record,
+                        verification,
+                        "; ".join(filter(None, (reason, detail))),
+                        counts,
+                    ),
+                )
+            )
         found.sort(key=lambda item: (item[0].moment, _tag_number(item[1]), item[1]))
         return [checked for _, _, checked in found]
 
     def _verify_tag(self, ref: str) -> tuple[str, str]:
         try:
-            completed = subprocess.run(["git", "-C", str(self.root), "verify-tag", ref], capture_output=True)
+            completed = subprocess.run(
+                ["git", "-C", str(self.root), "verify-tag", ref], capture_output=True
+            )
         except OSError as exc:
             raise InputError(f"cannot run git: {exc}") from exc
         detail = completed.stderr.decode("utf-8", "replace").strip()
@@ -473,7 +600,13 @@ class GitStore(BaselineStore):
 
 
 class FileStore(BaselineStore):
-    def __init__(self, input_path: Path, config: dict[str, Any], read_file: TableReader, warn: Callable[[str], None]):
+    def __init__(
+        self,
+        input_path: Path,
+        config: dict[str, Any],
+        read_file: TableReader,
+        warn: Callable[[str], None],
+    ):
         super().__init__(input_path, config, read_file, warn)
         self.directory = input_path.parent / config["baselines"]["files"]["directory"]
         self.source = input_path.name
@@ -508,20 +641,30 @@ class FileStore(BaselineStore):
     def write(self, manifest: Manifest, table: CsvTable) -> None:
         target = self._folder(manifest)
         if not target.resolve().is_relative_to(self.directory.resolve()):
-            raise InputError(f"baseline name {manifest.name!r} would leave {self.directory}")
+            raise InputError(
+                f"baseline name {manifest.name!r} would leave {self.directory}"
+            )
         if target.exists():
-            raise InputError(f"baseline folder {target} already exists; baselines are never overwritten")
+            raise InputError(
+                f"baseline folder {target} already exists; baselines are never overwritten"
+            )
         staging = target.parent / f".{target.name}.staging"
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.rmtree(staging, ignore_errors=True)
             staging.mkdir()
-            records = [table.headers, *([row[header] for header in table.headers] for row in table.rows)]
+            records = [
+                table.headers,
+                *([row[header] for header in table.headers] for row in table.rows),
+            ]
             csv_text = block_to_csv(records, self.config["csv"]["delimiter"])
-            (staging / "requirements.csv").write_bytes(("\ufeff" + csv_text).encode("utf-8"))
+            (staging / "requirements.csv").write_bytes(
+                ("\ufeff" + csv_text).encode("utf-8")
+            )
             shutil.copy2(self.input_path, staging / f"source{self.input_path.suffix}")
             (staging / "manifest.json").write_text(
-                json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+                json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
             )
             os.rename(staging, target)
         except OSError as exc:
@@ -531,7 +674,9 @@ class FileStore(BaselineStore):
     def read(self, manifest: Manifest) -> CsvTable:
         path = self._folder(manifest) / "requirements.csv"
         config = {**self.config, "csv": {**self.config["csv"], "encoding": "utf-8-sig"}}
-        return read_csv_source(CsvSource(f"{manifest.name} requirements.csv", None, path), config)
+        return read_csv_source(
+            CsvSource(f"{manifest.name} requirements.csv", None, path), config
+        )
 
     def where(self, manifest: Manifest) -> str:
         return f"in {self._folder(manifest)}"
@@ -546,7 +691,9 @@ class FileStore(BaselineStore):
         except (OSError, ValueError) as exc:
             raise InputError(f"cannot read {path}: {exc}") from exc
         data["signoffs"] = [*data.get("signoffs", []), record.to_dict()]
-        atomic_write_text(str(path), json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        atomic_write_text(
+            str(path), json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+        )
         return f"in {path}"
 
     def signoffs(self, manifest: Manifest) -> list[CheckedSignOff]:
@@ -562,7 +709,11 @@ class FileStore(BaselineStore):
             except ValueError as exc:
                 self.warn(f"ignoring sign-off {index + 1} in {path}: {exc}")
                 continue
-            found.append(CheckedSignOff(record, "recorded", self._evidence_detail(manifest, record), True))
+            found.append(
+                CheckedSignOff(
+                    record, "recorded", self._evidence_detail(manifest, record), True
+                )
+            )
         return found
 
     def _evidence_detail(self, manifest: Manifest, record: SignOff) -> str:
@@ -586,11 +737,15 @@ def open_store(
 def require_scope_args(gate: Gate, system: str | None, config: dict[str, Any]) -> None:
     if gate.scope == "system":
         if not system:
-            raise ConfigError(f"gate {gate.id} is system-scoped; give --system with a System ID")
+            raise ConfigError(
+                f"gate {gate.id} is system-scoped; give --system with a System ID"
+            )
         if not config["traceability"]:
             raise ConfigError("system-scoped baselines need --traceability")
     elif system:
-        raise ConfigError(f"gate {gate.id} covers the whole table; --system applies only to system-scoped gates")
+        raise ConfigError(
+            f"gate {gate.id} covers the whole table; --system applies only to system-scoped gates"
+        )
 
 
 def require_system_record(table: CsvTable, system: str | None) -> None:
@@ -602,7 +757,11 @@ def require_system_record(table: CsvTable, system: str | None) -> None:
 
 
 def create_baseline(
-    store: BaselineStore, config: dict[str, Any], gate_id: str, system: str | None, waivers: Sequence[Waiver] = ()
+    store: BaselineStore,
+    config: dict[str, Any],
+    gate_id: str,
+    system: str | None,
+    waivers: Sequence[Waiver] = (),
 ) -> Manifest:
     gate = find_gate(config, gate_id)
     require_scope_args(gate, system, config)
@@ -611,14 +770,26 @@ def create_baseline(
     require_system_record(table, system)
     status_columns = config["baselines"]["status_columns"]
     digest = content_hash(
-        table.headers, select_scope(table.rows, id_column, system, gate.includes),
-        system, gate.includes, gate.captures_status, status_columns,
+        table.headers,
+        select_scope(table.rows, id_column, system, gate.includes),
+        system,
+        gate.includes,
+        gate.captures_status,
+        status_columns,
     )
     name, supersedes = next_name(store.list(), gate.id, system)
     manifest = Manifest(
-        name=str(name), gate=gate.id, supersedes=supersedes, system=system, includes=list(gate.includes),
-        captures_status=gate.captures_status, status_columns=list(status_columns), content_hash=digest,
-        source=store.source, created=generation_time(), created_by=current_user(store.input_path.resolve().parent),
+        name=str(name),
+        gate=gate.id,
+        supersedes=supersedes,
+        system=system,
+        includes=list(gate.includes),
+        captures_status=gate.captures_status,
+        status_columns=list(status_columns),
+        content_hash=digest,
+        source=store.source,
+        created=generation_time(),
+        created_by=current_user(store.input_path.resolve().parent),
         waivers=tuple(waivers),
     )
     store.write(manifest, table)
@@ -632,17 +803,27 @@ def gate_roles(config: dict[str, Any], gate_id: str) -> list[dict[str, Any]]:
     return []
 
 
-def recompute_hash(store: BaselineStore, id_column: str, manifest: Manifest) -> tuple[CsvTable, list[dict[str, str]], str]:
+def recompute_hash(
+    store: BaselineStore, id_column: str, manifest: Manifest
+) -> tuple[CsvTable, list[dict[str, str]], str]:
     table = store.read(manifest)
     rows = select_scope(table.rows, id_column, manifest.system, manifest.includes)
     digest = content_hash(
-        table.headers, rows, manifest.system, manifest.includes, manifest.captures_status, manifest.status_columns
+        table.headers,
+        rows,
+        manifest.system,
+        manifest.includes,
+        manifest.captures_status,
+        manifest.status_columns,
     )
     return table, rows, digest
 
 
 def load_baselines(
-    store: BaselineStore, config: dict[str, Any], requested: Iterable[str], warn: Callable[[str], None] = _print_warning
+    store: BaselineStore,
+    config: dict[str, Any],
+    requested: Iterable[str],
+    warn: Callable[[str], None] = _print_warning,
 ) -> list[dict[str, Any]]:
     manifests = store.list()
     gates = {gate["id"]: Gate.from_config(gate) for gate in config["gates"]}
@@ -659,30 +840,34 @@ def load_baselines(
             warn(f"baseline {found.name} does not match its recorded hash")
         gate = gates.get(found.gate)
         checked = store.signoffs(found)
-        entries.append({
-            "name": found.name,
-            "gate": found.gate,
-            "gateName": gate.name if gate else found.gate,
-            "produces": gate.produces if gate else "",
-            "system": found.system,
-            "created": found.created,
-            "createdBy": found.created_by,
-            "hash": found.content_hash,
-            "hashOk": hash_ok,
-            "includes": found.includes,
-            "capturesStatus": found.captures_status,
-            "statusColumns": found.status_columns,
-            "source": found.source,
-            "headers": table.headers,
-            "rows": rows,
-            "signoffs": [item.to_dict() for item in checked],
-            "approval": approval_status(gate_roles(config, found.gate), checked),
-            "waivers": [waiver.to_dict() for waiver in found.waivers],
-        })
+        entries.append(
+            {
+                "name": found.name,
+                "gate": found.gate,
+                "gateName": gate.name if gate else found.gate,
+                "produces": gate.produces if gate else "",
+                "system": found.system,
+                "created": found.created,
+                "createdBy": found.created_by,
+                "hash": found.content_hash,
+                "hashOk": hash_ok,
+                "includes": found.includes,
+                "capturesStatus": found.captures_status,
+                "statusColumns": found.status_columns,
+                "source": found.source,
+                "headers": table.headers,
+                "rows": rows,
+                "signoffs": [item.to_dict() for item in checked],
+                "approval": approval_status(gate_roles(config, found.gate), checked),
+                "waivers": [waiver.to_dict() for waiver in found.waivers],
+            }
+        )
     return entries
 
 
-def build_controls(store: BaselineStore, config: dict[str, Any]) -> dict[str, Any] | None:
+def build_controls(
+    store: BaselineStore, config: dict[str, Any]
+) -> dict[str, Any] | None:
     """The controlling baseline row of every baselined record, or None when there is nothing to control.
 
     A record's controlling baseline is the latest created one whose scope holds it. Among baselines created at
@@ -698,7 +883,9 @@ def build_controls(store: BaselineStore, config: dict[str, Any]) -> dict[str, An
     if not manifests:
         return None
     order = {gate["id"]: index for index, gate in enumerate(config["gates"])}
-    manifests.sort(key=lambda m: (m.created, -order.get(m.gate, len(order)), -m.number, m.name))
+    manifests.sort(
+        key=lambda m: (m.created, -order.get(m.gate, len(order)), -m.number, m.name)
+    )
     id_column = config["id_column"]
     records: dict[str, dict[str, Any]] = {}
     created: dict[str, str] = {}
@@ -707,7 +894,9 @@ def build_controls(store: BaselineStore, config: dict[str, Any]) -> dict[str, An
             table = store.read(manifest)
             if config["traceability"]:
                 table, _ = prepare_trace_table(table, config)
-            for row in select_scope(table.rows, id_column, manifest.system, manifest.includes):
+            for row in select_scope(
+                table.rows, id_column, manifest.system, manifest.includes
+            ):
                 record_id = row[id_column].strip()
                 if record_id not in records or manifest.created > created[record_id]:
                     records[record_id] = {"baseline": manifest.name, "row": row}
@@ -717,8 +906,14 @@ def build_controls(store: BaselineStore, config: dict[str, Any]) -> dict[str, An
         return None
     return {
         "baselines": [
-            {"name": m.name, "created": m.created, "system": m.system, "includes": m.includes,
-             "capturesStatus": m.captures_status, "statusColumns": m.status_columns}
+            {
+                "name": m.name,
+                "created": m.created,
+                "system": m.system,
+                "includes": m.includes,
+                "capturesStatus": m.captures_status,
+                "statusColumns": m.status_columns,
+            }
             for m in manifests
         ],
         "records": records,
