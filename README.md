@@ -21,7 +21,7 @@ It prints an address and opens it in your browser. Tasks are grouped on the left
 
 The GUI runs only on your own computer: it listens on `127.0.0.1` and needs the secret token in the printed address, so other computers and other web pages cannot use it. Press Ctrl+C in the terminal to stop it. Use `--no-browser` to print the address without opening a browser.
 
-Every task shows the exact command it runs, for macOS/Linux (`sh`) or Windows (PowerShell), with a Copy button. Steps you run or add collect in the workflow panel, where you can reorder them, then copy or save them as a script (`reqtable-workflow.sh` or `reqtable-workflow.ps1`) to repeat the same work later without the GUI.
+Every task shows the exact command it runs, for macOS/Linux (`sh`) or Windows (PowerShell), with a Copy button. Steps you run or add collect in the workflow panel, where you can reorder them, then copy or save them as a script (`reqtable-workflow.sh` or `reqtable-workflow.ps1`) to repeat the same work later without the GUI. A run that records something permanent (a baseline, a sign-off, imported decisions) is not added by itself, because running the script again would record it again; add it by hand if you mean that.
 
 ## Quick start
 
