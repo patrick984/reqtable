@@ -59,8 +59,17 @@ async function loadBook() {
   ];
   const before = new Map();
   for (const s of mp.sources) before.set(mpKey(s), [...(before.get(mpKey(s)) || []), s]);
-  mp.sources = found.flatMap((s) => before.get(mpKey(s)) || [s]);
+  const refetch = [];
+  const kept = found.flatMap((fresh) => (before.get(mpKey(fresh)) || [fresh]).map((s) => {
+    if (s !== fresh && s.missing) { s.missing = false; s.where = fresh.where; if (s.role) refetch.push(s); }
+    return s;
+  }));
+  const foundKeys = new Set(found.map(mpKey));
+  const lost = mp.sources.filter((s) => (s.role || s.raw) && !foundKeys.has(mpKey(s)));
+  for (const s of lost) { s.missing = true; s.where = "not in this workbook"; }
+  mp.sources = [...kept, ...lost];
   drawBookMessage(); drawSources(); schedulePreview(); fetchFollow();
+  for (const s of refetch) fetchColumns(s, false);
 }
 
 async function loadSaved() {
