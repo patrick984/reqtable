@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
+import signal
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
+import urllib.request
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -170,6 +175,44 @@ class SecurityTests(ServerTestCase):
     def test_server_listens_on_loopback_only(self) -> None:
         self.assertEqual(urlsplit(self.server.url).hostname, "127.0.0.1")
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
+
+
+class GuiFlagTests(unittest.TestCase):
+    def launch(self, *flags: str, cwd: str) -> subprocess.Popen[str]:
+        here = Path(__file__).resolve().parent.parent
+        return subprocess.Popen(
+            [sys.executable, "-m", "reqtable", *flags], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            env={**os.environ, "PYTHONPATH": str(here)},
+        )
+
+    @unittest.skipIf(os.name == "nt", "needs POSIX SIGINT")
+    def test_gui_serves_the_page_and_stops_cleanly_on_ctrl_c(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            process = self.launch("--gui", "--no-browser", cwd=directory)
+            try:
+                assert process.stdout is not None
+                first = process.stdout.readline().strip()
+                self.assertTrue(first.startswith("reqtable GUI running at http://127.0.0.1:"), first)
+                self.assertIn("?token=", first)
+                self.assertEqual(process.stdout.readline().strip(), "Press Ctrl+C to stop")
+                with urllib.request.urlopen(first.rsplit(" ", 1)[1]) as response:
+                    self.assertIn("reqtable", response.read().decode("utf-8"))
+                process.send_signal(signal.SIGINT)
+                self.assertEqual(process.wait(timeout=10), 0, process.stderr.read() if process.stderr else "")
+            finally:
+                process.kill()
+                process.wait()
+                for stream in (process.stdout, process.stderr):
+                    if stream:
+                        stream.close()
+
+    def test_no_browser_alone_is_a_usage_error_and_no_arguments_still_exits_2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for flags in (("--no-browser",), ()):
+                done = self.launch(*flags, cwd=directory)
+                _, error = done.communicate(timeout=20)
+                self.assertEqual(done.returncode, 2, flags)
+                self.assertIn("error:", error)
 
 
 if __name__ == "__main__":

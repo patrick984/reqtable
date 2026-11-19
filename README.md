@@ -4,6 +4,18 @@
 
 The generator uses only the Python standard library. Generated reports contain all CSS, JavaScript, data, and review comments in one file and work offline.
 
+## Point-and-click GUI
+
+If you would rather not type commands, start the GUI:
+
+```sh
+python reqtable.pyz --gui
+```
+
+It prints an address and opens it in your browser. Pick a task (make a report, compare two versions, collect review comments, look inside or convert an Excel workbook), choose your files, and press Run. The GUI runs only on your own computer: it listens on `127.0.0.1` and needs the secret token in the printed address, so other computers and other web pages cannot use it. Press Ctrl+C in the terminal to stop it. Use `--no-browser` to print the address without opening a browser.
+
+Every task shows the exact command it runs, for macOS/Linux (`sh`) or Windows (PowerShell), with a Copy button. Steps you run or add collect in the workflow panel, where you can reorder them, then copy or save them as a script (`reqtable-workflow.sh` or `reqtable-workflow.ps1`) to repeat the same work later without the GUI.
+
 ## Quick start
 
 Snapshot report:

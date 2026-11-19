@@ -108,6 +108,8 @@ def parser() -> argparse.ArgumentParser:
         help="record the decisions saved in a gate package copy as sign-offs, and exit",
     )
     result.add_argument("--print-default-config", action="store_true")
+    result.add_argument("--gui", action="store_true", help="open the point-and-click interface in your browser; it runs on this computer only")
+    result.add_argument("--no-browser", action="store_true", help="with --gui, print the address instead of opening a browser")
     result.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return result
 
@@ -275,6 +277,12 @@ def run_check_gate(args: argparse.Namespace, selection: XlsxSelection, config: d
 
 def run(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.no_browser and not args.gui:
+        raise ConfigError("--no-browser applies only to --gui")
+    if args.gui:
+        from .gui_server import serve
+
+        return serve(Path.cwd(), not args.no_browser)
     if args.print_default_config:
         print(json.dumps(DEFAULT_CONFIG, indent=2))
         return 0
