@@ -505,11 +505,11 @@ function renderPreview() {
   renderPanel();
 }
 
-function stepFromForm() {
-  const w = workflow();
+function makeStep(w, values, command) {
   return { id: String(Date.now()) + Math.random().toString(16).slice(2), workflow: w.id, title: w.title,
-    values: JSON.parse(JSON.stringify(state.values[w.id])), sh: state.preview.sh, powershell: state.preview.powershell, argv: state.preview.argv };
+    values, sh: command.sh, powershell: command.powershell, argv: command.argv };
 }
+const stepFromForm = () => makeStep(workflow(), JSON.parse(JSON.stringify(state.values[state.current])), state.preview);
 
 function pushStep(step, announceIt) {
   const last = state.steps[state.steps.length - 1];
@@ -524,12 +524,13 @@ async function runNow() {
   const id = state.current; const w = workflow();
   const button = $("runbtn"); button.disabled = true; button.textContent = "Running…";
   $("result").replaceChildren(h("div", { class: "card" }, h("p", { class: "hint" }, "Running. Big spreadsheets can take a moment…")));
+  const values = JSON.parse(JSON.stringify(state.values[id]));
   let data;
-  try { data = await api("/api/run", { workflow: id, values: state.values[id] }); }
+  try { data = await api("/api/run", { workflow: id, values }); }
   catch (e) { data = { error: e.message }; }
   if (state.current !== id) return;
   button.disabled = false; button.textContent = "Run";
-  renderResult(w, data);
+  renderResult(w, data, values);
 }
 
 const EXIT_WORDS = { 2: "reqtable could not use these settings.", 3: "reqtable could not read an input file.", 4: "reqtable could not write the result file." };
@@ -541,7 +542,7 @@ function outputTable(w, text) {
     h("tbody", {}, lines.map((l) => h("tr", {}, l.split("\t").map((c) => h("td", { title: c }, c))))));
 }
 
-function renderResult(w, data) {
+function renderResult(w, data, values) {
   const box = $("result");
   if (data.error) { box.replaceChildren(h("div", { class: "card" }, h("div", { class: "banner bad" }, h("strong", {}, "That did not run."), h("span", { class: "cli-error" }, data.error)))); return; }
   const stderr = data.stderr || "";
@@ -554,7 +555,7 @@ function renderResult(w, data) {
   if (ok) {
     const saved = data.outputs.length ? "Saved: " + data.outputs.map(shownPath).join(", ") : "";
     card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, outcome || "Done."), saved, w.recorded ? h("div", {}, w.recorded) : null));
-    const added = addStep(false);
+    const added = pushStep(makeStep(w, values, data), false);
     if (added) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
   } else if (answer) {
     card.append(h("div", { class: "banner soft", role: "status" }, h("strong", {}, outcome + "."), h("span", {}, "That is an answer, not a failure. Nothing was recorded and nothing was added to your workflow.")));

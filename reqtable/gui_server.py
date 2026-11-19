@@ -42,12 +42,12 @@ class Session:
         self.openable: set[Path] = set()
         self.lock = threading.Lock()
 
+    def commands(self, argv: list[str]) -> dict[str, Any]:
+        return {"argv": argv, "sh": posix_command(argv, self.launcher.shown), "powershell": powershell_command(argv, self.launcher.shown)}
+
     def command(self, workflow: Workflow, values: dict[str, Any]) -> dict[str, Any]:
-        argv = build_argv(workflow, values, self.workdir)
         return {
-            "argv": argv,
-            "sh": posix_command(argv, self.launcher.shown),
-            "powershell": powershell_command(argv, self.launcher.shown),
+            **self.commands(build_argv(workflow, values, self.workdir)),
             "replaces": [str(value) for value in self.saved_values(workflow, values) if (self.workdir / value).exists()],
         }
 
@@ -66,12 +66,15 @@ class Session:
                 encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, timeout=RUN_TIMEOUT_SECONDS,
             )
         except subprocess.TimeoutExpired:
-            return {"exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds", "outputs": [], "blocked": []}
+            return {
+                **self.commands(argv), "exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds",
+                "outputs": [], "blocked": [],
+            }
         written = [self.workdir / value for value in self.saved_values(workflow, values) if done.returncode == 0 and (self.workdir / value).is_file()]
         with self.lock:
             self.openable.update(path.resolve() for path in written if path.suffix.lower() == ".html")
         return {
-            "exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written],
+            **self.commands(argv), "exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written],
             "blocked": blocked_checks(done.stderr) if done.returncode == 1 else [],
         }
 

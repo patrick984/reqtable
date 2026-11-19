@@ -71,6 +71,13 @@ class RunTests(ServerTestCase):
         self.assertEqual((status, result["exit_code"]), (200, 0), result)
         self.assertIn("reqtable-data", (self.root / "out.html").read_text(encoding="utf-8"))
         self.assertEqual(result["outputs"], [str(self.root / "out.html")])
+        self.assertEqual({k: result[k] for k in ("argv", "sh", "powershell")}, {k: preview[k] for k in ("argv", "sh", "powershell")})
+
+    def test_a_failed_run_still_returns_the_command_it_ran(self) -> None:
+        status, result = self.post("/api/run", {"workflow": "report", "values": {**self.VALUES, "input": "missing.csv"}})
+        self.assertNotEqual(result["exit_code"], 0)
+        self.assertEqual(result["argv"], ["missing.csv", "--id-column", "ID", "-o", "out.html"])
+        self.assertIn("missing.csv", str(result["powershell"]))
 
     def test_preview_warns_when_run_would_replace_an_existing_file(self) -> None:
         job = {"workflow": "report", "values": self.VALUES}
