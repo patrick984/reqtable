@@ -13,6 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+      - run: pip install ruff==0.17.5
+      - run: ruff format --check .
       - run: python -m unittest discover -s tests
         env:
           GIT_AUTHOR_NAME: ci
