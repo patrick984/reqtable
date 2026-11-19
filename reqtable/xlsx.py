@@ -662,10 +662,11 @@ def _merge(block: Block, part: Part, id_column: str, list_columns: frozenset[str
             for source_at, target_at, is_list, name in fills:
                 value = row[source_at]
                 if is_list:
-                    have = _split(target[target_at])
+                    # The record's own cell may not have been split by a lists entry, so read it either way.
+                    have = {part.strip() for part in re.split(r"[;,]", target[target_at])}
                     new = [v for v in dict.fromkeys(_split(value)) if v not in have]
                     if new:
-                        target[target_at] = "; ".join(have + new)
+                        target[target_at] = "; ".join(filter(None, [target[target_at].strip(), *new]))
                 elif value.strip() and not target[target_at].strip():
                     target[target_at] = value
                 elif value.strip() and target[target_at].strip() != value.strip():

@@ -140,6 +140,13 @@ class MergeSourceTests(MappingCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(self.rows(data)["R-1"]["Verified by"], "T-0; T-1; T-2")
 
+    def test_a_comma_separated_record_cell_is_not_given_a_value_it_already_lists(self) -> None:
+        reqs = {**REQ_SOURCE, "set": {"Verified by": "T-0, T-1"}}
+        code, err, data = self.report(self.workbook, [reqs, MATRIX_SOURCE])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.rows(data)["R-1"]["Verified by"], "T-0, T-1; T-2")
+        self.assertEqual(self.rows(data)["R-3"]["Verified by"], "T-0, T-1")
+
     def test_validation_errors_name_the_source(self) -> None:
         cases = [
             ({**MATRIX_SOURCE, "merge": "yes"}, "xlsx.sources[1].merge must be true or false"),
