@@ -178,6 +178,37 @@ A mapping for a requirements table with "Req ID" and "Text" columns and a glossa
 - The mapping applies to every `.xlsx` input of the run and cannot be combined with `--table`, `--sheet` or `--header-row`. CSV inputs ignore it.
 - `-o combined.csv` exports the combined table, so you can edit it as CSV from then on.
 
+#### Fill in requirements from another table
+
+Workbooks often keep a requirement's Verification Level and Verified by outside the requirements table: a verification matrix sheet with one row per requirement and test, and a tests table whose `Verifies` cells read `R-1, R-3`. A source with `"merge": true` fills in the records the other sources add, by ID, instead of adding rows:
+
+```json
+{
+  "id_column": "ID",
+  "traceability": true,
+  "xlsx": {
+    "sources": [
+      {"table": "Reqs", "columns": {"Req ID": "ID", "Text": "Requirement"}},
+      {"sheet": "Matrix", "merge": true,
+       "columns": {"Requirement": "ID", "Level": "Verification Level", "Test": "Verified by"}},
+      {"table": "Tests", "type": "Test", "columns": {"Test ID": "ID", "Title": "Name"}, "exclude": ["Verifies"]},
+      {"table": "Tests", "merge": true, "columns": {"Verifies": "ID", "Test ID": "Verified by"},
+       "exclude": ["Title"], "lists": {"ID": ","}}
+    ]
+  }
+}
+```
+
+The `Tests` table is mapped twice: once to add the tests as `Test` records, once to link each requirement it verifies back to the test.
+
+- Merge sources run after the other sources, in mapping order, and after their IDs are repaired. A merge source needs the `id_column` header after `columns` and `exclude`, and it cannot give `type`, `id_prefix`, `id_from`, `headings` or `set.Type`. At least one source must not be a merge source.
+- Each row fills in the record whose ID is in its ID cell. With the ID column in `lists`, each listed ID fills in its record. Rows with an empty ID are skipped. A repeated ID is not renamed `~2`; every row for it fills in the same record.
+- IDs match the records' final IDs, so a record renamed `R-1~2` is filled in only by a row that reads `R-1~2`.
+- `Verified by`, `Allocated to`, `Derived from`, `Source refs`, `Affects`, `Aliases` and the source's `lists` columns collect distinct values after the record's own, joined with `; `. Other columns fill an empty cell; a different value keeps the record's and is reported.
+- Headers a merge source adds follow the other sources' headers.
+- One warning per source lists the IDs that match no record, and one lists the conflicting values: `R-2 Verification Level: kept 'Unit', ignored 'Subsystem'`.
+- An Excel comment on a merge row lands on the first record that row fills in, in the cell's output column.
+
 #### Lookup lists and tests
 
 A workbook can also hold the allowed values for columns such as Priority and Verification Method, and a table of tests. This mapping imports a requirements table whose `Tests` cells read `T-1, T-2`, a `Priorities` sheet (Value, Meaning), a `Lists` sheet (Field, Value, Meaning, Old spellings), a `TestCases` table and a `Plans` table:

@@ -355,7 +355,7 @@ def validate_gates(gates: Any) -> None:
         validate_checks(gate.get("checks", []), where)
 
 
-_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists", "headings"}
+_XLSX_SOURCE_KEYS = {"table", "sheet", "header_row", "columns", "exclude", "type", "id_prefix", "set", "id_from", "lists", "headings", "merge"}
 
 
 def validate_xlsx_sources(sources: Any) -> None:
@@ -393,6 +393,14 @@ def validate_xlsx_sources(sources: Any) -> None:
             raise ConfigError(f"{where}.set must be an object of output header to constant string")
         if "type" in source and "Type" in constants:
             raise ConfigError(f"{where} gives both 'type' and set.Type; use one")
+        if "merge" in source:
+            if not isinstance(source["merge"], bool):
+                raise ConfigError(f"{where}.merge must be true or false")
+            if source["merge"]:
+                given = [key for key in ("type", "id_prefix", "id_from", "headings") if key in source]
+                given += ["set.Type"] if "Type" in constants else []
+                if given:
+                    raise ConfigError(f"{where} is a merge source, which adds no records, so it cannot give {', '.join(given)}")
         if "id_from" in source:
             id_from = source["id_from"]
             if not isinstance(id_from, list) or not id_from or not all(isinstance(x, str) and x.strip() for x in id_from):
@@ -406,6 +414,8 @@ def validate_xlsx_sources(sources: Any) -> None:
             isinstance(k, str) and isinstance(v, str) and v for k, v in lists.items()
         ):
             raise ConfigError(f"{where}.lists must be an object of output header to separator string (or \"newline\")")
+    if sources and all(source.get("merge") is True for source in sources):
+        raise ConfigError("xlsx.sources: every source is a merge source; at least one must add the records they fill in")
 
 
 def validate_headings(headings: Any, where: str) -> None:
