@@ -401,6 +401,23 @@ class SecurityTests(ServerTestCase):
         self.assertEqual(self.post("/api/run", ["not", "an", "object"])[0], 400)
         self.assertEqual(self.post("/api/nope", {})[0], 404)
 
+    def test_a_missing_or_malformed_content_length_is_400_and_an_oversized_one_413(self) -> None:
+        for length, status in ((None, 400), ("abc", 400), ("-5", 400), ("1.5", 400), ("2000000", 413)):
+            connection = http.client.HTTPConnection("127.0.0.1", self.port)
+            try:
+                connection.putrequest("POST", "/api/command", skip_accept_encoding=True)
+                for name, value in (("Host", f"127.0.0.1:{self.port}"), (TOKEN_HEADER, self.token), ("Content-Type", "application/json")):
+                    connection.putheader(name, value)
+                if length is not None:
+                    connection.putheader("Content-Length", length)
+                connection.endheaders()
+                response = connection.getresponse()
+                with self.subTest(length=length):
+                    self.assertEqual(response.status, status)
+                    self.assertIn("error", json.loads(response.read()))
+            finally:
+                connection.close()
+
     def test_server_listens_on_loopback_only(self) -> None:
         self.assertEqual(urlsplit(self.server.url).hostname, "127.0.0.1")
         self.assertEqual(self.server.server_address[0], "127.0.0.1")

@@ -215,7 +215,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.refuse(HTTPStatus.FORBIDDEN, "missing or wrong token")
         if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
             return self.refuse(HTTPStatus.BAD_REQUEST, "send JSON with Content-Type: application/json")
-        length = int(self.headers.get("Content-Length") or 0)
+        declared = (self.headers.get("Content-Length") or "").strip()
+        if not declared.isdigit():
+            return self.refuse(HTTPStatus.BAD_REQUEST, "send a Content-Length header with the size of the body")
+        length = int(declared)
         if length > MAX_BODY_BYTES:
             return self.refuse(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "request too large")
         try:
