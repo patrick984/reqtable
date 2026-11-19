@@ -19,7 +19,7 @@ from . import gui_lookups
 from .gui_mapping import build_mapping, load_mapping, mapping_json, preview_mapping, role_named, save_mapping, suggest_columns
 from .gui import (
     WORKFLOWS, BadRequest, GuiError, Launcher, Workflow, blocked_checks, build_argv, column_source, launcher, lookup_source,
-    posix_command, powershell_command, script, table_inputs, workflow_named,
+    ScriptStep, posix_command, powershell_command, script, table_inputs, workflow_named,
 )
 from .gui_page import render_page
 
@@ -139,7 +139,8 @@ class Session:
             note = step.get("note", "") if isinstance(step, dict) else ""
             if not isinstance(note, str):
                 raise BadRequest("note must be text")
-            built.append((f"{workflow.title} ({note})" if note else workflow.title, build_argv(workflow, values, self.workdir)))
+            title = f"{workflow.title} ({note})" if note else workflow.title
+            built.append(ScriptStep(title, build_argv(workflow, values, self.workdir), workflow.records))
         return {"script": script(built, shell, self.workdir, self.launcher.shown), "filename": SCRIPT_NAMES[shell]}
 
 
@@ -297,7 +298,7 @@ def workflows_json() -> list[dict[str, Any]]:
         lookup = lookup_source(workflow)
         result.append({
             **asdict(workflow), "column_source": source.name if source else "", "lookup_input": lookup.name if lookup else "",
-            "table_inputs": [f.name for f in table_inputs(workflow)],
+            "table_inputs": [f.name for f in table_inputs(workflow)], "records": workflow.records,
         })
     return result
 

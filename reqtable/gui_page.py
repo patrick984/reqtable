@@ -506,7 +506,7 @@ function renderPreview() {
 }
 
 function makeStep(w, values, command) {
-  return { id: String(Date.now()) + Math.random().toString(16).slice(2), workflow: w.id, title: w.title,
+  return { id: String(Date.now()) + Math.random().toString(16).slice(2), workflow: w.id, title: w.title, records: w.records,
     values, sh: command.sh, powershell: command.powershell, argv: command.argv };
 }
 const stepFromForm = () => makeStep(workflow(), JSON.parse(JSON.stringify(state.values[state.current])), state.preview);
@@ -555,8 +555,8 @@ function renderResult(w, data, values) {
   if (ok) {
     const saved = data.outputs.length ? "Saved: " + data.outputs.map(shownPath).join(", ") : "";
     card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, outcome || "Done."), saved, w.recorded ? h("div", {}, w.recorded) : null));
-    const added = pushStep(makeStep(w, values, data), false);
-    if (added) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
+    if (w.records) card.append(h("p", { class: "note" }, "This step was not added to your workflow, because running the script again would record it again. Use “Add to workflow” if you want that."));
+    else if (pushStep(makeStep(w, values, data), false)) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
   } else if (answer) {
     card.append(h("div", { class: "banner soft", role: "status" }, h("strong", {}, outcome + "."), h("span", {}, "That is an answer, not a failure. Nothing was recorded and nothing was added to your workflow.")));
   } else {
@@ -595,6 +595,7 @@ function renderPanel() {
         h("button", { class: "small", type: "button", "aria-label": "Move step " + (i + 1) + " up", disabled: i === 0, onclick: () => move(-1) }, "↑"),
         h("button", { class: "small", type: "button", "aria-label": "Move step " + (i + 1) + " down", disabled: i === steps.length - 1, onclick: () => move(1) }, "↓"),
         h("button", { class: "small", type: "button", "aria-label": "Remove step " + (i + 1), onclick: () => { steps.splice(i, 1); remember(); renderPanel(); } }, "✕")),
+      s.records ? h("p", { class: "note", style: "margin:4px 0" }, "Running the script again records this again.") : null,
       h("pre", {}, s[state.shell])));
   });
   fill(panel,
@@ -608,7 +609,7 @@ function renderPanel() {
 }
 
 async function withScript(use) {
-  try { use(await api("/api/script", { steps: state.steps.map((s) => ({ workflow: s.workflow, values: s.values })), shell: state.shell })); }
+  try { use(await api("/api/script", { steps: state.steps.map((s) => ({ workflow: s.workflow, values: s.values, note: s.note || "" })), shell: state.shell })); }
   catch (e) { announce(e.message); alert(e.message); }
 }
 function saveScript(data) {

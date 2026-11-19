@@ -9,7 +9,7 @@ from pathlib import Path
 
 from reqtable import cli
 from reqtable.gui import (
-    GROUPS, WORKFLOWS, BadRequest, GuiError, blocked_checks, build_argv, guess_id_column, launcher, lookup_source, posix_command,
+    GROUPS, WORKFLOWS, BadRequest, ScriptStep, GuiError, blocked_checks, build_argv, guess_id_column, launcher, lookup_source, posix_command,
     powershell_command, quote_windows, script, workflow_named,
 )
 from reqtable.signoff import DECISIONS
@@ -278,7 +278,7 @@ class QuotingTests(unittest.TestCase):
 
 
 class ScriptTests(unittest.TestCase):
-    STEPS = [("Make a report from a spreadsheet", ["a.csv", "-o", "a.html"]), ("Compare two versions", ["--old", "o.csv", "--new", "n.csv", "-o", "d.html"])]
+    STEPS = [ScriptStep("Make a report from a spreadsheet", ["a.csv", "-o", "a.html"]), ScriptStep("Compare two versions", ["--old", "o.csv", "--new", "n.csv", "-o", "d.html"])]
 
     def test_sh_script(self) -> None:
         text = script(self.STEPS, "sh", Path("/my work"))
@@ -291,6 +291,20 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual(text.splitlines()[:2], ["$ErrorActionPreference = 'Stop'", "Set-Location -LiteralPath 'C:\\My Work'"])
         self.assertEqual(text.count("if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"), 2)
         self.assertIn("python reqtable.pyz a.csv -o a.html\nif ($LASTEXITCODE", text)
+
+    def test_a_step_that_records_says_so_above_its_command_in_both_shells(self) -> None:
+        steps = [*self.STEPS, ScriptStep("Record a sign-off", ["r.csv", "--sign-off", "srr-1"], records=True)]
+        for shell in ("sh", "powershell"):
+            lines = script(steps, shell, Path("/w")).splitlines()  # type: ignore[arg-type]
+            at = lines.index("# Record a sign-off")
+            self.assertEqual(lines[at + 1], "# This step records a new entry each time the script runs.", shell)
+            self.assertEqual(sum("records a new entry" in line for line in lines), 1, shell)
+
+    def test_every_workflow_whose_flag_writes_a_record_records(self) -> None:
+        writes = {"--create-baseline", "--sign-off", "--import-decisions"}
+        for workflow in WORKFLOWS:
+            flags = {f.flag for f in workflow.fields} | set(workflow.fixed)
+            self.assertEqual(workflow.records, bool(flags & writes), workflow.id)
 
     def test_empty_script_is_still_valid(self) -> None:
         self.assertEqual(script([], "sh", Path("/w")), "#!/bin/sh\nset -e\ncd /w\n")

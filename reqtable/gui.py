@@ -43,7 +43,8 @@ class Field:
 class Workflow:
     """One task card. `fixed` argv is always emitted. `outcomes` give exit codes a plain label, and a code other than 0
     answers the question rather than failing. `table` names the tab-separated columns of stdout, and `recorded` says what
-    a successful run leaves behind."""
+    permanent record a successful run leaves behind; such a run is never added to a workflow by itself, because running
+    the script again would record it again."""
 
     id: str
     title: str
@@ -56,6 +57,10 @@ class Workflow:
     outcomes: tuple[tuple[int, str], ...] = ()
     table: tuple[str, ...] = ()
     recorded: str = ""
+
+    @property
+    def records(self) -> bool:
+        return bool(self.recorded)
 
 
 class GuiError(Exception):
@@ -564,11 +569,18 @@ def powershell_command(argv: Sequence[str], program: Sequence[str] = ("reqtable.
     return _command(argv, program, "powershell")
 
 
-Step = tuple[str, Sequence[str]]
+@dataclass(frozen=True)
+class ScriptStep:
+    title: str
+    argv: Sequence[str]
+    records: bool = False
 
 
-def script(steps: Sequence[Step], shell: Shell, workdir: Path, program: Sequence[str] = ("reqtable.pyz",)) -> str:
-    """A runnable script for (title, argv) steps. Titles become comments."""
+RECORDS_AGAIN = "# This step records a new entry each time the script runs."
+
+
+def script(steps: Sequence[ScriptStep], shell: Shell, workdir: Path, program: Sequence[str] = ("reqtable.pyz",)) -> str:
+    """A runnable script. Titles become comments, and a step that records something says so above its command."""
     if shell == "sh":
         lines = ["#!/bin/sh", "set -e", f"cd {shlex.quote(str(workdir))}"]
         after: list[str] = []
@@ -576,8 +588,8 @@ def script(steps: Sequence[Step], shell: Shell, workdir: Path, program: Sequence
         lines = ["$ErrorActionPreference = 'Stop'", f"Set-Location -LiteralPath {quote_powershell(str(workdir))}"]
         # Native commands do not throw on failure, so stop on a non-zero exit code.
         after = ["if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"]
-    for title, argv in steps:
-        lines += ["", "# " + " ".join(title.split()), _command(argv, program, shell), *after]
+    for step in steps:
+        lines += ["", "# " + " ".join(step.title.split()), *([RECORDS_AGAIN] if step.records else []), _command(step.argv, program, shell), *after]
     return "\n".join(lines) + "\n"
 
 
