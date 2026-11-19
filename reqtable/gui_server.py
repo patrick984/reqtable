@@ -47,7 +47,14 @@ class Session:
             "argv": argv,
             "sh": posix_command(argv, self.launcher.shown),
             "powershell": powershell_command(argv, self.launcher.shown),
+            "replaces": [str(value) for value in self.saved_values(workflow, values) if (self.workdir / value).exists()],
         }
+
+    @staticmethod
+    def saved_values(workflow: Workflow, values: dict[str, Any]) -> list[str]:
+        return [
+            value for field in workflow.fields if field.kind == "save" and (value := str(values.get(field.name, "")).strip())
+        ]
 
     def run(self, workflow: Workflow, values: dict[str, Any]) -> dict[str, Any]:
         argv = build_argv(workflow, values, self.workdir)
@@ -59,12 +66,7 @@ class Session:
             )
         except subprocess.TimeoutExpired:
             return {"exit_code": None, "stdout": "", "stderr": f"error: stopped after {RUN_TIMEOUT_SECONDS} seconds", "outputs": []}
-        saved = [
-            self.workdir / value
-            for field in workflow.fields
-            if field.kind == "save" and (value := str(values.get(field.name, "")).strip())
-        ]
-        written = [path for path in saved if done.returncode == 0 and path.is_file()]
+        written = [self.workdir / value for value in self.saved_values(workflow, values) if done.returncode == 0 and (self.workdir / value).is_file()]
         with self.lock:
             self.openable.update(path.resolve() for path in written if path.suffix.lower() == ".html")
         return {"exit_code": done.returncode, "stdout": done.stdout, "stderr": done.stderr, "outputs": [str(p) for p in written]}

@@ -69,6 +69,12 @@ class RunTests(ServerTestCase):
         self.assertIn("reqtable-data", (self.root / "out.html").read_text(encoding="utf-8"))
         self.assertEqual(result["outputs"], [str(self.root / "out.html")])
 
+    def test_preview_warns_when_run_would_replace_an_existing_file(self) -> None:
+        job = {"workflow": "report", "values": self.VALUES}
+        self.assertEqual(self.post("/api/command", job)[1]["replaces"], [])
+        self.post("/api/run", job)
+        self.assertEqual(self.post("/api/command", job)[1]["replaces"], ["out.html"])
+
     def test_a_failed_run_returns_the_cli_error(self) -> None:
         status, result = self.post("/api/run", {"workflow": "report", "values": {**self.VALUES, "id_column": "Nope"}})
         self.assertEqual(status, 200)

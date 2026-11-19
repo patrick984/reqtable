@@ -356,13 +356,16 @@ function renderPreview() {
   const run = h("button", { class: "primary", type: "button", id: "runbtn", disabled: !ready, onclick: runNow }, "Run");
   const add = h("button", { type: "button", disabled: !ready, onclick: () => addStep(true) }, "Add to workflow");
   const text = ready ? p[state.shell] : "";
+  const replaces = ready && p.replaces.length
+    ? h("div", { class: "banner warn" }, "Run will replace " + p.replaces.map(shownPath).join(", ") + ", which already exists. Choose another name to keep it.")
+    : null;
   box.replaceChildren(
     h("h2", {}, "The command behind this"),
     h("div", { class: "commandbar" }, shellTabs(renderPreview),
       h("button", { class: "small", type: "button", disabled: !ready, onclick: (e) => copyText(text, e.target) }, "Copy command")),
     ready ? h("pre", { class: "command", tabindex: "0", "aria-label": "Command for " + shellName() }, text)
           : h("p", { class: "hint" }, p && p.error ? p.error : "Fill in the form above to see the command."),
-    h("div", { class: "actions" }, run, add));
+    replaces, h("div", { class: "actions" }, run, add));
   renderPanel();
 }
 
@@ -404,7 +407,7 @@ function renderResult(w, data) {
   const ok = data.exit_code === 0;
   const card = h("div", { class: "card" });
   if (ok) {
-    const saved = data.outputs.length ? "Saved: " + data.outputs.join(", ") : "";
+    const saved = data.outputs.length ? "Saved: " + data.outputs.map(shownPath).join(", ") : "";
     card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, "Done."), saved));
     const added = addStep(false);
     if (added) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
@@ -422,6 +425,7 @@ function renderResult(w, data) {
   box.replaceChildren(card);
   renderPanel();
   announce(ok ? "Done" : "Failed");
+  refreshPreview();
 }
 
 async function openReport(path, button) {
@@ -467,7 +471,7 @@ async function pickPath(field, input, set) {
   const slash = Math.max(startValue.lastIndexOf("/"), startValue.lastIndexOf("\\"));
   let folder = slash >= 0 ? startValue.slice(0, slash) : "";
   const exts = field.extensions.join(",");
-  const choose = (path) => { input.value = path; set(path); dialog.close(); };
+  const choose = (path) => { const shown = shownPath(path); input.value = shown; set(shown); dialog.close(); };
   const load = async (path) => {
     let data;
     try { data = await api("/api/browse?path=" + encodeURIComponent(path) + "&ext=" + encodeURIComponent(exts)); }
@@ -493,6 +497,10 @@ async function pickPath(field, input, set) {
   load(folder || state.workdir);
 }
 function baseName(path) { return path.split(/[\\/]/).pop(); }
+function shownPath(path) {
+  const root = state.workdir.replace(/[\\/]$/, "");
+  return path.startsWith(root) && /^[\\/]/.test(path.slice(root.length)) ? path.slice(root.length + 1) : path;
+}
 
 async function start() {
   restore();
