@@ -451,11 +451,12 @@ class PortTests(unittest.TestCase):
     def test_a_taken_preferred_port_falls_back_to_a_free_one(self) -> None:
         holder = socket.socket()
         self.addCleanup(holder.close)
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             holder.bind(("127.0.0.1", PREFERRED_PORT))
             holder.listen()
-        except OSError:
-            pass  # Something else holds it already, which is the same situation.
+        except OSError as exc:
+            self.skipTest(f"cannot hold port {PREFERRED_PORT}: {exc}")
         server, fell_back = open_server(self.root, opener=lambda url: None)
         self.addCleanup(server.server_close)
         self.assertTrue(fell_back)
