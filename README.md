@@ -554,7 +554,7 @@ In Develop mode, the **Change requests** view lists change requests, with **Add 
 ## Build and test
 
 ```sh
-python -m unittest discover -v
+python -m unittest discover -s tests -v
 python build.py
 ```
 
