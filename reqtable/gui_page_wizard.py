@@ -10,7 +10,9 @@ const pageHash = (page) => (state.journey ? journeyHash(state.journey.def.id, st
 function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
 
 function parseRoute() {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  let parts;
+  try { parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent); }
+  catch (e) { return { kind: "home" }; }
   if (parts[0] === "task" && parts[1]) return { kind: "task", id: parts[1], page: parts[2] || "" };
   if (parts[0] === "journey" && parts[1]) return { kind: "journey", jid: parts[1], step: Number(parts[2]) || 1, page: parts[3] || "" };
   return { kind: "home" };
