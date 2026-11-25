@@ -185,8 +185,10 @@ function carryValues(from, target, carry) {
 function startNext(targetId, extra) {
   const from = state.current; const target = workflowById(targetId);
   const step = (state.next[from] || []).find((s) => s.workflow === targetId);
+  const run = state.runs[runKey()];
+  delete state.values[targetId]; delete state.autoId[targetId];
   initValues(target);
-  carryValues(state.values[from], target, step ? step.carry : []);
+  carryValues(run ? run.values : state.values[from], target, step ? step.carry : []);
   Object.assign(state.values[targetId], extra || {});
   persistSession();
   const upcoming = journeyNext();
