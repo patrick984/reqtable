@@ -31,6 +31,7 @@ function blockerFor(w, page) {
 }
 
 function route() {
+  for (const dialog of [$("drawer"), $("picker")]) if (dialog.open) dialog.close();
   const r = parseRoute();
   if (r.kind === "home") return showHome();
   let id = r.id; let journey = null;
