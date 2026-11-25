@@ -135,8 +135,7 @@ NEXT: Mapping[str, tuple[NextStep, ...]] = {
         NextStep(
             "comments",
             "Collect review comments",
-            "When reviewers send their copy back",
-            (("output", "report"),),
+            "When a reviewer sends their saved copy back. Choose that copy, not the report you made.",
         ),
     ),
     "develop": (
@@ -151,8 +150,7 @@ NEXT: Mapping[str, tuple[NextStep, ...]] = {
         NextStep(
             "comments",
             "Collect review comments",
-            "When reviewers send their copy back",
-            (("output", "report"),),
+            "When a reviewer sends their saved copy back. Choose that copy, not the report you made.",
         ),
     ),
     "to_csv": (
@@ -223,8 +221,8 @@ NEXT: Mapping[str, tuple[NextStep, ...]] = {
         NextStep(
             "import_decisions",
             "Import the returned decisions",
-            "When reviewers send their saved copies back",
-            (*_same(*SOURCE), ("output", "package")),
+            "When a reviewer sends their saved copy back. Choose that copy, not the package you made.",
+            _same(*SOURCE),
         ),
     ),
     "sign_off": (
