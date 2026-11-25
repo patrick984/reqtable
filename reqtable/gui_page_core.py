@@ -7,7 +7,7 @@ const freshLookups = () => ({
   columns: [], rowCount: 0, previewRows: [], tables: [], sheets: [], columnsError: "", idNote: "", tablesError: "", tablesLoaded: false, configMaps: false,
   gates: [], gatesError: "", store: "", baselines: [], baselinesError: "", systems: [],
 });
-const state = { workflows: [], journeys: [], next: {}, mapping: null, workdir: "", current: null, page: "", journey: null, values: {}, autoId: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
+const state = { workflows: [], journeys: [], next: {}, mapping: null, workdir: "", current: null, page: "", journey: null, values: {}, autoId: {}, runs: {}, shell: "sh", steps: [], preview: null, rows: {}, lookups: freshLookups() };
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -34,7 +34,7 @@ async function api(path, body) {
 
 const stepsKey = () => "reqtable.steps:" + state.workdir;
 const sessionKey = () => "reqtable.session:" + state.workdir;
-const SESSION_PARTS = ["values", "autoId"];
+const SESSION_PARTS = ["values", "autoId", "runs"];
 const isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function remember() {
   try { localStorage.setItem(stepsKey(), JSON.stringify(state.steps)); localStorage.setItem("reqtable.shell", state.shell); } catch (e) {}
