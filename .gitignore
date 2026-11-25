@@ -6,3 +6,5 @@ __pycache__/
 /requirements-uat.html
 /requirements-uat-develop.html
 /.verify-runs/
+/.claude/settings.local.json
+/.claude/worktrees/
