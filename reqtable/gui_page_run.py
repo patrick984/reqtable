@@ -131,7 +131,7 @@ function drawResult() {
   if (!ok && !answer && rest) card.append(h("details", {}, h("summary", {}, "Technical details"), h("pre", { class: "output" }, rest)));
   if (data.blocked && data.blocked.length) card.append(waiveOffer(w, data.blocked));
   box.replaceChildren(card);
-  if (ok || answer) box.append(...whatNext(w, ok));
+  if (ok || (answer && !w.records)) box.append(...whatNext(w, ok));
 }
 
 async function openReport(path, button) {
