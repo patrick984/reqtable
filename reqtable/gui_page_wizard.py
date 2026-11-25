@@ -110,11 +110,14 @@ function wizardBar(w) {
 function journeyBar() {
   const j = state.journey;
   if (!j) return null;
-  const title = (i) => workflowById(j.def.steps[i].workflow).title;
+  const work = (i) => workflowById(j.def.steps[i].workflow);
+  const title = (i) => work(i).title;
+  const lastPage = (i) => pagesOf(work(i)).at(-1).id;
   return h("div", { class: "journeybar", role: "group", "aria-label": j.def.title },
     h("p", {}, h("strong", {}, "Step " + j.step + " of " + j.def.steps.length + ": " + title(j.step - 1))),
     h("p", { class: "note" }, j.def.steps[j.step - 1].why),
-    h("ol", {}, j.def.steps.map((_, i) => h("li", { class: i + 1 < j.step ? "done" : "", "aria-current": i + 1 === j.step ? "step" : null }, title(i)))));
+    h("ol", {}, j.def.steps.map((_, i) => i + 1 < j.step ? h("li", { class: "done" }, h("a", { href: journeyHash(j.def.id, i + 1, lastPage(i)) }, title(i)))
+      : h("li", { "aria-current": i + 1 === j.step ? "step" : null }, title(i)))));
 }
 
 function stepper(pages, index) {
@@ -133,7 +136,7 @@ function runPage(w) {
 
 function pageParts(w, page) {
   if (w.panel !== "form") return MAPPING_PAGES[page.id];
-  if (page.id === RUN_PAGE.id) return { build: () => runPage(w), draw: renderPreview };
+  if (page.id === RUN_PAGE.id) return { build: () => runPage(w), draw: () => { renderPreview(); drawResult(); } };
   return { build: () => fieldsPage(w, page), draw: drawFields };
 }
 

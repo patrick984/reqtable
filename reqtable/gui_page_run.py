@@ -1,8 +1,19 @@
 """Page script for the last page of a task: the command, Run, the result, and what usually comes next."""
 
 RUN_JS = r"""
+const runKey = () => (state.journey ? "journey:" + state.journey.def.id + ":" + state.journey.step : "task:" + state.current);
+const unset = (v) => v === "" || v == null || (Array.isArray(v) && !v.length);
+const settings = (values) => JSON.stringify(Object.entries(values || {}).filter(([, v]) => !unset(v)).sort(([a], [b]) => (a < b ? -1 : 1)));
+
+function dropStaleRuns(id) {
+  const now = settings(state.values[id]);
+  const shown = state.runs[runKey()];
+  for (const [key, run] of Object.entries(state.runs)) if (run.workflow === id && settings(run.values) !== now) delete state.runs[key];
+  if (shown && !state.runs[runKey()]) drawResult();
+}
+
 let previewSeq = 0;
-function refreshPreview() { persistSession(); later("preview", fetchPreview, 120); }
+function refreshPreview() { dropStaleRuns(state.current); persistSession(); later("preview", fetchPreview, 120); }
 async function fetchPreview() {
   const seq = ++previewSeq; const id = state.current;
   if (!id || workflow().panel !== "form") return;
@@ -18,7 +29,8 @@ function renderPreview() {
   const box = $("commandcard"); if (!box) return;
   const p = state.preview;
   const ready = p && !p.error;
-  const run = h("button", { class: "primary", type: "button", id: "runbtn", disabled: !ready, onclick: runNow }, "Run");
+  const busy = running === runKey();
+  const run = h("button", { class: "primary", type: "button", id: "runbtn", disabled: !ready || busy, onclick: runNow }, busy ? "Running…" : "Run");
   const add = h("button", { type: "button", disabled: !ready, onclick: () => addStep(true) }, "Add to workflow");
   const text = ready ? p[state.shell] : "";
   const replaces = ready && p.replaces.length
@@ -50,17 +62,25 @@ function pushStep(step, announceIt) {
 }
 function addStep(announceIt) { return pushStep(stepFromForm(), announceIt); }
 
+let running = "";
 async function runNow() {
-  const id = state.current; const w = workflow();
-  const button = $("runbtn"); button.disabled = true; button.textContent = "Running…";
-  $("result").replaceChildren(h("div", { class: "card" }, h("p", { class: "hint" }, "Running. Big spreadsheets can take a moment…")));
+  const id = state.current; const w = workflow(); const key = runKey();
   const values = JSON.parse(JSON.stringify(state.values[id]));
+  delete state.runs[key]; running = key; persistSession();
+  renderPreview(); drawResult();
   let data;
   try { data = await api("/api/run", { workflow: id, values }); }
   catch (e) { data = { error: e.message }; }
-  if (state.current !== id || !$("result")) return;
-  button.disabled = false; button.textContent = "Run";
-  renderResult(w, data, values);
+  running = "";
+  const { ok, answer, outcome } = outcomeOf(w, data);
+  const added = ok && !w.records && pushStep(makeStep(w, values, data), false);
+  state.runs[key] = { workflow: id, values, data, added };
+  persistSession();
+  if (runKey() !== key) return;
+  renderPreview(); drawResult();
+  announce(ok ? "Done" : (answer ? outcome : "Failed"));
+  refreshPreview();
+  if (ok && (w.recorded || w.id === "create_baseline")) lookupGateData();
 }
 
 const EXIT_WORDS = { 2: "reqtable could not use these settings.", 3: "reqtable could not read an input file.", 4: "reqtable could not write the result file." };
@@ -72,21 +92,29 @@ function outputTable(w, text) {
     h("tbody", {}, lines.map((l) => h("tr", {}, l.split("\t").map((c) => h("td", { title: c }, c)))))));
 }
 
-function renderResult(w, data, values) {
-  const box = $("result");
+function outcomeOf(w, data) {
+  const outcome = Object.fromEntries(w.outcomes)[data.exit_code];
+  const ok = !data.error && data.exit_code === 0;
+  return { ok, outcome, answer: !ok && !data.error && !!outcome };
+}
+
+function drawResult() {
+  const box = $("result"); if (!box) return;
+  const w = workflow(); const key = runKey(); const run = state.runs[key];
+  if (running === key) { box.replaceChildren(h("div", { class: "card" }, h("p", { class: "hint" }, "Running. Big spreadsheets can take a moment…"))); return; }
+  if (!run) { box.replaceChildren(); return; }
+  const data = run.data;
   if (data.error) { box.replaceChildren(h("div", { class: "card" }, h("div", { class: "banner bad" }, h("strong", {}, "That did not run."), h("span", { class: "cli-error" }, data.error)))); return; }
   const stderr = data.stderr || "";
   const errors = stderr.split("\n").filter((l) => /^error:/.test(l));
   const warnings = stderr.split("\n").filter((l) => /^warning:/.test(l));
-  const outcome = Object.fromEntries(w.outcomes)[data.exit_code];
-  const ok = data.exit_code === 0;
-  const answer = !ok && outcome;
+  const { ok, answer, outcome } = outcomeOf(w, data);
   const card = h("div", { class: "card" });
   if (ok) {
     const saved = data.outputs.length ? "Saved: " + data.outputs.map(shownPath).join(", ") : "";
     card.append(h("div", { class: "banner ok", role: "status" }, h("strong", {}, outcome || "Done."), saved, w.recorded ? h("div", {}, w.recorded) : null));
     if (w.records) card.append(h("p", { class: "note" }, "This step was not added to your workflow, because running the script again would record it again. Use “Add to workflow” if you want that."));
-    else if (pushStep(makeStep(w, values, data), false)) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
+    else if (run.added) card.append(h("p", { class: "note" }, "This step was added to your workflow."));
   } else if (answer) {
     card.append(h("div", { class: "banner soft", role: "status" }, h("strong", {}, outcome + "."), h("span", {}, "That is an answer, not a failure. Nothing was recorded and nothing was added to your workflow.")));
   } else {
@@ -104,10 +132,6 @@ function renderResult(w, data, values) {
   if (data.blocked && data.blocked.length) card.append(waiveOffer(w, data.blocked));
   box.replaceChildren(card);
   if (ok || answer) box.append(...whatNext(w, ok));
-  renderWorkflow();
-  announce(ok ? "Done" : (answer ? outcome : "Failed"));
-  refreshPreview();
-  if (ok && (w.recorded || w.id === "create_baseline")) lookupGateData();
 }
 
 async function openReport(path, button) {

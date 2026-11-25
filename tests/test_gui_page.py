@@ -22,7 +22,7 @@ NODE = shutil.which("node")
 RUNNER = """
 const vm = require("vm");
 const [script, setup, expression] = process.argv.slice(1);
-const context = vm.createContext({ location: { hash: "" }, history: { state: null }, console, sessionStorage: null, localStorage: null });
+const context = vm.createContext({ location: { hash: "" }, history: { state: null }, console, sessionStorage: null, localStorage: null, document: { getElementById: () => null }, setTimeout: () => 0, clearTimeout: () => {} });
 const result = vm.runInContext(script + "\\n" + setup + "\\n;JSON.stringify(" + expression + ")", context);
 process.stdout.write(result === undefined ? "null" : result);
 """
@@ -117,7 +117,7 @@ class ReloadTests(unittest.TestCase):
             STORAGE
             + before
             + "; persistSession();"
-            + "state.values = {}; state.autoId = {}; restore();"
+            + "for (const k of SESSION_PARTS) state[k] = {}; restore();"
         )
         return evaluate(expression, setup)
 
@@ -131,6 +131,48 @@ class ReloadTests(unittest.TestCase):
         )
         self.assertEqual(
             found, [{"input": "a.xlsx", "id_column": "Req ID"}, {"report": "Req ID"}]
+        )
+
+    def test_a_run_result_is_still_there_after_a_reload(self) -> None:
+        run = {
+            "workflow": "report",
+            "values": {"input": "a.csv"},
+            "data": {"exit_code": 0},
+            "added": True,
+        }
+        found = self.after_reload(
+            "state.runs['task:report'] = " + json.dumps(run), "state.runs"
+        )
+        self.assertEqual(found, {"task:report": run})
+
+
+@unittest.skipUnless(NODE, "node is not installed")
+class StoredRunTests(unittest.TestCase):
+    def runs_after(self, change: str) -> object:
+        setup = (
+            "state.current = 'report';"
+            "state.values = { report: { input: 'a.csv', output: 'r.html' }, compare: { old: 'a.csv' } };"
+            "state.runs = {"
+            " 'task:report': { workflow: 'report', values: { input: 'a.csv', output: 'r.html' }, data: {} },"
+            " 'journey:share:1': { workflow: 'report', values: { input: 'a.csv', output: 'r.html' }, data: {} },"
+            " 'task:compare': { workflow: 'compare', values: { old: 'x.csv' }, data: {} } };"
+            + change
+            + "; refreshPreview();"
+        )
+        return sorted(evaluate("Object.keys(state.runs)", setup))  # type: ignore[arg-type]
+
+    def test_a_changed_option_drops_the_results_of_that_task_only(self) -> None:
+        self.assertEqual(
+            self.runs_after("state.values.report.output = 'other.html'"),
+            ["task:compare"],
+        )
+
+    def test_a_field_that_is_merely_drawn_empty_keeps_the_result(self) -> None:
+        self.assertEqual(
+            self.runs_after(
+                "state.values.report.waivers = []; state.values.report.title = ''"
+            ),
+            ["journey:share:1", "task:compare", "task:report"],
         )
 
 
