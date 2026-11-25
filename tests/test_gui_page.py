@@ -176,5 +176,27 @@ class StoredRunTests(unittest.TestCase):
         )
 
 
+@unittest.skipUnless(NODE, "node is not installed")
+class NextTaskTests(unittest.TestCase):
+    def test_the_next_task_starts_from_its_defaults_and_what_ran(self) -> None:
+        setup = (
+            "go = () => {};"
+            "state.workflows = ["
+            " { id: 'report', fields: [{ name: 'input' }], table_inputs: ['input'], pages: [{ id: 'files' }] },"
+            " { id: 'compare', fields: [{ name: 'old' }, { name: 'new' }, { name: 'output', default: 'changes.html' }],"
+            "   table_inputs: ['old', 'new'], pages: [{ id: 'files' }] } ];"
+            "state.next = { report: [{ workflow: 'compare', carry: [['input', 'old']] }] };"
+            "state.current = 'report';"
+            "state.values = { report: { input: 'edited.csv' }, compare: { old: 'x.csv', new: 'y.csv', output: 'mine.html' } };"
+            "state.autoId = { compare: 'ID' };"
+            "state.runs = { 'task:report': { workflow: 'report', values: { input: 'ran.csv' }, data: {} } };"
+            "startNext('compare');"
+        )
+        self.assertEqual(
+            evaluate("[state.values.compare, state.autoId]", setup),
+            [{"output": "changes.html", "old": "ran.csv"}, {}],
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
