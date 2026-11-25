@@ -65,7 +65,7 @@ let bookSeq = 0;
 async function loadBook() {
   const seq = ++bookSeq;
   mp.bookError = "";
-  (state.values.mapping = state.values.mapping || {}).input = mp.workbook; persistValues();
+  (state.values.mapping = state.values.mapping || {}).input = mp.workbook; persistSession();
   if (!mp.workbook.trim()) { mp.sources = []; drawBookMessage(); drawSources(); schedulePreview(); return; }
   let data;
   try { data = await api("/api/tables?path=" + encodeURIComponent(mp.workbook)); } catch (e) { data = { error: e.message }; }

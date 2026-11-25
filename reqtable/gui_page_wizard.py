@@ -185,7 +185,7 @@ function startNext(targetId, extra) {
   initValues(target);
   carryValues(state.values[from], target, step ? step.carry : []);
   Object.assign(state.values[targetId], extra || {});
-  persistValues();
+  persistSession();
   const upcoming = journeyNext();
   const first = target.pages[0].id;
   go(upcoming && upcoming.work.id === targetId ? journeyHash(state.journey.def.id, state.journey.step + 1, first) : taskHash(targetId, first));

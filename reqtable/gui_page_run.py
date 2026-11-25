@@ -2,7 +2,7 @@
 
 RUN_JS = r"""
 let previewSeq = 0;
-function refreshPreview() { persistValues(); later("preview", fetchPreview, 120); }
+function refreshPreview() { persistSession(); later("preview", fetchPreview, 120); }
 async function fetchPreview() {
   const seq = ++previewSeq; const id = state.current;
   if (!id || workflow().panel !== "form") return;

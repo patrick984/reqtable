@@ -33,12 +33,14 @@ async function api(path, body) {
 }
 
 const stepsKey = () => "reqtable.steps:" + state.workdir;
-const valuesKey = () => "reqtable.values:" + state.workdir;
+const sessionKey = () => "reqtable.session:" + state.workdir;
+const SESSION_PARTS = ["values", "autoId"];
+const isRecord = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function remember() {
   try { localStorage.setItem(stepsKey(), JSON.stringify(state.steps)); localStorage.setItem("reqtable.shell", state.shell); } catch (e) {}
 }
-function persistValues() {
-  try { sessionStorage.setItem(valuesKey(), JSON.stringify(state.values)); } catch (e) {}
+function persistSession() {
+  try { sessionStorage.setItem(sessionKey(), JSON.stringify(Object.fromEntries(SESSION_PARTS.map((k) => [k, state[k]])))); } catch (e) {}
 }
 function restore() {
   try {
@@ -48,8 +50,8 @@ function restore() {
     if (shell === "sh" || shell === "powershell") state.shell = shell;
   } catch (e) {}
   try {
-    const values = JSON.parse(sessionStorage.getItem(valuesKey()) || "{}");
-    if (values && typeof values === "object" && !Array.isArray(values)) state.values = values;
+    const saved = JSON.parse(sessionStorage.getItem(sessionKey()) || "{}");
+    if (isRecord(saved)) for (const k of SESSION_PARTS) if (isRecord(saved[k])) state[k] = saved[k];
   } catch (e) {}
 }
 
