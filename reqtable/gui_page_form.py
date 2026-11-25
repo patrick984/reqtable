@@ -234,7 +234,7 @@ async function lookupColumns() {
       if (guessed || !data.columns.includes(current)) {
         const next = data.id_guess || "";
         if (!guessed) L.idNote = "“" + current + "” is not a column of this table, so the ID column was " + (next ? "set to “" + next + "”." : "cleared.");
-        values[idField.name] = next; state.autoId[id] = next;
+        values[idField.name] = next; state.autoId[id] = next; persistSession();
         if (next !== current) { refreshPreview(); lookupGateData(); }
       }
     }

@@ -22,7 +22,7 @@ NODE = shutil.which("node")
 RUNNER = """
 const vm = require("vm");
 const [script, setup, expression] = process.argv.slice(1);
-const context = vm.createContext({ location: { hash: "" }, history: { state: null }, console });
+const context = vm.createContext({ location: { hash: "" }, history: { state: null }, console, sessionStorage: null, localStorage: null });
 const result = vm.runInContext(script + "\\n" + setup + "\\n;JSON.stringify(" + expression + ")", context);
 process.stdout.write(result === undefined ? "null" : result);
 """
@@ -101,6 +101,37 @@ class RouteTests(unittest.TestCase):
 
     def test_back_replaces_the_entry_when_the_page_before_was_elsewhere(self) -> None:
         self.assertEqual(self.back_from("#/"), ["#/task/report/files", "route"])
+
+
+STORAGE = (
+    "const store = () => { const m = new Map(); return { getItem: (k) => m.has(k) ? m.get(k) : null, setItem: (k, v) => m.set(k, String(v)) }; };"
+    "sessionStorage = store(); localStorage = store();"
+)
+
+
+@unittest.skipUnless(NODE, "node is not installed")
+class ReloadTests(unittest.TestCase):
+    def after_reload(self, before: str, expression: str) -> object:
+        """Run `before`, save the session, start again from an empty state as a reload does, and read `expression`."""
+        setup = (
+            STORAGE
+            + before
+            + "; persistSession();"
+            + "state.values = {}; state.autoId = {}; restore();"
+        )
+        return evaluate(expression, setup)
+
+    def test_a_guessed_id_column_is_still_known_as_a_guess_after_a_reload(
+        self,
+    ) -> None:
+        found = self.after_reload(
+            "state.values.report = { input: 'a.xlsx', id_column: 'Req ID' };"
+            "state.autoId.report = 'Req ID'",
+            "[state.values.report, state.autoId]",
+        )
+        self.assertEqual(
+            found, [{"input": "a.xlsx", "id_column": "Req ID"}, {"report": "Req ID"}]
+        )
 
 
 if __name__ == "__main__":
