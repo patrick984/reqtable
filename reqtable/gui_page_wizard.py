@@ -33,7 +33,7 @@ function goBack(hash) {
 }
 
 function enterTask(w) {
-  state.current = w.id; state.rows = {}; state.preview = null; state.lookups = freshLookups();
+  state.current = w.id; state.page = ""; state.rows = {}; state.preview = null; state.lookups = freshLookups();
   initValues(w);
   if (w.panel === "form") { lookupTables(); lookupColumns(); lookupGateData(); refreshPreview(); }
   else enterMapping();
@@ -162,8 +162,9 @@ function renderWizard(w, pages, index) {
 function updateFooter() {
   const next = $("wiznext");
   if (!next || !state.current) return;
-  const w = workflow(); const pages = pagesOf(w);
-  const why = blockerFor(w, pages.find((p) => p.id === state.page));
+  const page = pagesOf(workflow()).find((p) => p.id === state.page);
+  if (!page) return;
+  const why = blockerFor(workflow(), page);
   next.disabled = !!why; $("wizwhy").textContent = why;
 }
 
