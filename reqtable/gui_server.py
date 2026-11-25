@@ -45,6 +45,7 @@ from .gui import (
     workflow_named,
 )
 from .gui_page import render_page
+from .gui_wizard import JOURNEYS, NEXT, wizard_pages
 
 TOKEN_HEADER = "X-Reqtable-Token"
 RUN_TIMEOUT_SECONDS = 300
@@ -299,6 +300,10 @@ class Handler(BaseHTTPRequestHandler):
                 "workflows": workflows_json(),
                 "workdir": str(self.session.workdir),
                 "mapping": mapping_json(),
+                "next": {
+                    id: [asdict(step) for step in steps] for id, steps in NEXT.items()
+                },
+                "journeys": [asdict(journey) for journey in JOURNEYS],
             },
             "/api/browse": lambda: self.session.browse(
                 query.get("path", ""),
@@ -423,6 +428,7 @@ def workflows_json() -> list[dict[str, Any]]:
                 "lookup_input": lookup.name if lookup else "",
                 "table_inputs": [f.name for f in table_inputs(workflow)],
                 "records": workflow.records,
+                "pages": [asdict(page) for page in wizard_pages(workflow)],
             }
         )
     return result

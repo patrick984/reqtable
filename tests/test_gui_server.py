@@ -179,6 +179,11 @@ class LookupTests(ServerTestCase):
         self.assertEqual(result["workdir"], str(self.root))
         sign_off = next(w for w in result["workflows"] if w["id"] == "sign_off")  # type: ignore[union-attr]
         self.assertEqual(sign_off["table_inputs"], ["input"])
+        self.assertEqual(
+            [page["id"] for page in sign_off["pages"]], ["files", "gate", "options"]
+        )
+        self.assertEqual(result["next"]["report"][0]["workflow"], "comments")  # type: ignore[index]
+        self.assertEqual(result["journeys"][0]["steps"][0]["workflow"], "report")  # type: ignore[index]
 
     def test_browse_lists_folders_first_and_filters_files_by_extension(self) -> None:
         (self.root / "sub").mkdir()
