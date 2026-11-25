@@ -97,7 +97,6 @@ class NextStepTests(unittest.TestCase):
                 target = workflow_named(step.workflow)
                 self.assertNotEqual(source.id, target.id)
                 self.assertTrue(step.label and step.why, step.workflow)
-                self.assertTrue(step.carry, f"{source_id}->{step.workflow}")
                 targets = [to for _, to in step.carry]
                 self.assertEqual(len(targets), len(set(targets)))
                 for frm, to in step.carry:
@@ -117,7 +116,13 @@ class NextStepTests(unittest.TestCase):
         self.assertEqual(after("list_tables"), {"mapping", "report", "to_csv"})
         self.assertEqual(after("to_csv"), {"report", "diff"})
         self.assertEqual(after("create_baseline"), {"gate_package", "sign_off"})
-        self.assertIn(("output", "package"), NEXT["gate_package"][0].carry)
+
+    def test_a_returned_copy_is_never_prefilled_with_the_file_you_made(self) -> None:
+        returned = {"comments": "report", "import_decisions": "package"}
+        for steps in NEXT.values():
+            for step in steps:
+                field = returned.get(step.workflow)
+                self.assertNotIn(field, [to for _, to in step.carry], step.workflow)
 
     def test_tasks_that_only_look_have_no_follow_up(self) -> None:
         self.assertNotIn("list_baselines", NEXT)

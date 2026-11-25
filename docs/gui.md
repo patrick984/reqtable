@@ -8,7 +8,7 @@ python reqtable.pyz --gui
 
 It prints an address and opens it in your browser. The home page has two parts:
 
-- **Typical jobs.** Pick one and the GUI walks you through it task by task: share requirements for review, edit requirements in the browser, see what changed between two versions, bring in an Excel workbook, or hold a gate review. After each task it offers the next one, with your files already filled in.
+- **Typical jobs.** Pick one and the GUI walks you through it task by task: share requirements for review, edit requirements in the browser, see what changed between two versions, bring in an Excel workbook, or hold a gate review. After each task it offers the next one, with the files it can reuse already filled in. A copy a reviewer sends back is the one file you always choose yourself.
 - **All tasks.** Every task as a card, grouped as below. Choose one to do it on its own.
 
 Each task is a short wizard: **Choose files**, then **Options** (some tasks also have a **Gate** page), then **Check and run**. **Next** waits, and says why, until the page has what it needs. **Back** and the step list at the top return to an earlier page, and **← All tasks** returns to the home page without losing what you entered. The browser's Back button works too.
