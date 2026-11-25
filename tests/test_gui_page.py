@@ -84,6 +84,24 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(self.route_of("#/task/%E0%A4%A"), {"kind": "home"})
         self.assertEqual(self.route_of("#/task/100%"), {"kind": "home"})
 
+    def back_from(self, previous: str) -> object:
+        setup = (
+            "const calls = []; route = () => calls.push('route');"
+            "history.back = () => calls.push('back');"
+            "history.replaceState = (s, t, url) => calls.push(url);"
+            "history.state = { prev: " + json.dumps(previous) + " };"
+            "goBack('#/task/report/files');"
+        )
+        return evaluate("calls", setup)
+
+    def test_back_returns_to_the_page_before_instead_of_adding_a_history_entry(
+        self,
+    ) -> None:
+        self.assertEqual(self.back_from("#/task/report/files"), ["back"])
+
+    def test_back_replaces_the_entry_when_the_page_before_was_elsewhere(self) -> None:
+        self.assertEqual(self.back_from("#/"), ["#/task/report/files", "route"])
+
 
 if __name__ == "__main__":
     unittest.main()
