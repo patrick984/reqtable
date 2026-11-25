@@ -155,7 +155,7 @@ function waiveOffer(w, blocked) {
   const values = state.values[state.current];
   const box = h("div", { class: "banner soft waiveoffer" },
     h("strong", {}, "To freeze anyway, waive the blocking checks."),
-    h("div", { class: "note" }, "A waiver records who skipped a check, and why, inside the baseline. You still have to press Run again."));
+    h("div", { class: "note" }, "A waiver records who skipped a check, and why, inside the baseline. Add the reason, then come back and press Run again."));
   const actions = h("div", { class: "actions" });
   for (const id of blocked) {
     const check = gateChecks(values.gate).find((c) => c.id === id);
@@ -163,8 +163,10 @@ function waiveOffer(w, blocked) {
       const rows = values.waivers = values.waivers || [];
       let at = rows.findIndex((r) => r.check === id);
       if (at < 0) { rows.push({ check: id, reason: "" }); at = rows.length - 1; }
-      renderLookups(); refreshPreview();
-      const input = $("waive-reason-" + at); if (input) { input.scrollIntoView({ block: "center" }); input.focus(); }
+      refreshPreview();
+      const page = w.pages.find((p) => p.fields.includes("waivers"));
+      state.focusAfter = "waive-reason-" + at;
+      go(pageHash(page.id));
     } }, "Waive “" + id + "”…"));
   }
   box.append(actions);
