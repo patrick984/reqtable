@@ -18,7 +18,19 @@ function parseRoute() {
   return { kind: "home" };
 }
 
-function redirect(hash) { history.replaceState(null, "", hash); route(); }
+function redirect(hash) { history.replaceState(history.state, "", hash); showRoute(); }
+
+let shownHash = null;
+function route() {
+  if (!history.state) history.replaceState({ prev: shownHash }, "");
+  showRoute();
+  shownHash = location.hash;
+}
+
+function goBack(hash) {
+  if (history.state && history.state.prev === hash) history.back();
+  else { history.replaceState(history.state, "", hash); route(); }
+}
 
 function enterTask(w) {
   state.current = w.id; state.rows = {}; state.preview = null; state.lookups = freshLookups();
@@ -32,7 +44,7 @@ function blockerFor(w, page) {
   return page.id === RUN_PAGE.id ? "" : formBlocker(w, page);
 }
 
-function route() {
+function showRoute() {
   for (const dialog of [$("drawer"), $("picker")]) if (dialog.open) dialog.close();
   const r = parseRoute();
   if (r.kind === "home") return showHome();
@@ -52,7 +64,7 @@ function route() {
   const stuck = pages.findIndex((p) => blockerFor(w, p));
   if (stuck >= 0 && stuck < index) index = stuck;
   state.page = pages[index].id;
-  if (location.hash !== pageHash(state.page)) history.replaceState(null, "", pageHash(state.page));
+  if (location.hash !== pageHash(state.page)) history.replaceState(history.state, "", pageHash(state.page));
   renderWizard(w, pages, index);
 }
 
@@ -129,6 +141,7 @@ function renderWizard(w, pages, index) {
   const page = pages[index];
   const parts = pageParts(w, page);
   const last = index === pages.length - 1;
+  const back = index > 0 ? pageHash(pages[index - 1].id) : "";
   const next = last ? null : h("button", { class: "primary", type: "button", id: "wiznext", "aria-describedby": "wizwhy", onclick: () => go(pageHash(pages[index + 1].id)) }, "Next");
   $("main").className = "wizard";
   fill($("main"),
@@ -136,7 +149,7 @@ function renderWizard(w, pages, index) {
     h("div", { class: "card" }, pageHead(page.title), index === 0 && w.panel === "form" ? h("p", { class: "hint" }, w.summary) : null,
       h("p", { class: "hint", style: "margin-top:0" }, page.help), parts.build()),
     h("div", { class: "wizfoot" },
-      index > 0 ? h("a", { class: "btn", href: pageHash(pages[index - 1].id) }, "Back") : h("span", {}),
+      back ? h("a", { class: "btn", href: back, onclick: (e) => { e.preventDefault(); goBack(back); } }, "Back") : h("span", {}),
       next ? h("div", { class: "go" }, h("p", { class: "why", id: "wizwhy" }), next) : null));
   parts.draw();
   updateFooter();
