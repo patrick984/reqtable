@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -7,13 +8,37 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reqtable.gui_page import render_page
+from reqtable.gui_page import SCRIPT, render_page
 
 
 def script_of(page: str) -> str:
     found = re.search(r"<script>(.*)</script>", page, re.S)
     assert found is not None
     return found.group(1)
+
+
+NODE = shutil.which("node")
+
+RUNNER = """
+const vm = require("vm");
+const [script, setup, expression] = process.argv.slice(1);
+const context = vm.createContext({ location: { hash: "" }, history: { state: null }, console });
+const result = vm.runInContext(script + "\\n" + setup + "\\n;JSON.stringify(" + expression + ")", context);
+process.stdout.write(result === undefined ? "null" : result);
+"""
+
+
+def evaluate(expression: str, setup: str = "") -> object:
+    """Run the page script in node, without a DOM and without starting it, then `setup`, and return `expression` as JSON."""
+    assert NODE is not None
+    done = subprocess.run(
+        [NODE, "-e", RUNNER, SCRIPT.replace("__TOKEN__", '"t"'), setup, expression],
+        capture_output=True,
+        text=True,
+    )
+    if done.returncode:
+        raise AssertionError(done.stderr)
+    return json.loads(done.stdout)
 
 
 class PageTests(unittest.TestCase):
@@ -29,7 +54,7 @@ class PageTests(unittest.TestCase):
         for route in ("#/task/", "#/journey/", "hashchange"):
             self.assertIn(route, page)
 
-    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    @unittest.skipUnless(NODE, "node is not installed")
     def test_the_script_is_valid_javascript(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "page.js"
@@ -38,6 +63,26 @@ class PageTests(unittest.TestCase):
                 ["node", "--check", str(path)], capture_output=True, text=True
             )
         self.assertEqual(done.returncode, 0, done.stderr)
+
+
+@unittest.skipUnless(NODE, "node is not installed")
+class RouteTests(unittest.TestCase):
+    def route_of(self, hash: str) -> object:
+        return evaluate("parseRoute()", "location.hash = " + json.dumps(hash) + ";")
+
+    def test_a_task_and_a_journey_step_are_read_from_the_hash(self) -> None:
+        self.assertEqual(
+            self.route_of("#/task/report/options"),
+            {"kind": "task", "id": "report", "page": "options"},
+        )
+        self.assertEqual(
+            self.route_of("#/journey/share/2"),
+            {"kind": "journey", "jid": "share", "step": 2, "page": ""},
+        )
+
+    def test_a_malformed_escape_in_the_hash_goes_home(self) -> None:
+        self.assertEqual(self.route_of("#/task/%E0%A4%A"), {"kind": "home"})
+        self.assertEqual(self.route_of("#/task/100%"), {"kind": "home"})
 
 
 if __name__ == "__main__":
