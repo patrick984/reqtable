@@ -1,8 +1,8 @@
 """Page script for the "Import several tables" task: choose a workbook, say what each table holds, preview and save, then make the report."""
 
 MAPPING_JS = r"""
-const mp = { workbook: "", sources: [], idColumn: "ID", extra: {}, xlsxExtra: {}, notes: [], loadPath: "", savePath: "mapping.json",
-  preview: null, saved: "", exists: false, follow: null, bookError: "", busy: false };
+const mp = { workbook: "", book: "", sources: [], idColumn: "ID", extra: {}, xlsxExtra: {}, notes: [], loadPath: "", savePath: "mapping.json",
+  preview: null, saved: "", savedForm: "", exists: false, follow: null, bookError: "" };
 
 const MAPPING_PAGES = {
   workbook: { build: buildWorkbookPage, draw: drawBookMessage },
@@ -24,8 +24,21 @@ function mappingBlocker(pageId) {
 
 function enterMapping() {
   const carried = (state.values.mapping || {}).input;
-  if (carried && carried !== mp.workbook) { mp.workbook = carried; mp.bookError = ""; loadBook(); }
+  if (carried && carried !== mp.workbook) openBook(carried);
   fetchFollow();
+}
+
+function openBook(path) {
+  const draft = state.drafts[path] || { form: { id_column: "ID", extra: {}, xlsx_extra: {}, sources: [] }, savePath: "mapping.json", saved: "", savedForm: "" };
+  Object.assign(mp, { workbook: path, book: path, bookError: "", notes: [], sources: [], savePath: draft.savePath, saved: draft.saved, savedForm: draft.savedForm });
+  applyForm(draft.form, "");
+  loadBook();
+}
+
+function keepDraft() {
+  if (!mp.book.trim() || mp.bookError) return;
+  state.drafts[mp.book] = { form: buildForm(), savePath: mp.savePath, saved: mp.saved, savedForm: mp.savedForm };
+  persistSession();
 }
 
 const mappingRoles = () => state.mapping.roles;
@@ -36,13 +49,13 @@ const hasTarget = (s, column) => s.columns.some((c) => c.action === "map" && c.t
 const mpKey = (s) => s.kind + ":" + s.name;
 
 function buildWorkbookPage() {
-  const book = h("input", { type: "text", id: "mp-workbook", spellcheck: "false", placeholder: "Choose a workbook…", oninput: (e) => { mp.workbook = e.target.value; later("mp-book", loadBook, 300); } });
+  const book = h("input", { type: "text", id: "mp-workbook", spellcheck: "false", placeholder: "Choose a workbook…", oninput: (e) => { mp.workbook = e.target.value; later("mp-book", () => openBook(mp.workbook), 300); } });
   book.value = mp.workbook;
   const loadInput = h("input", { type: "text", id: "mp-load", spellcheck: "false", placeholder: "Choose a mapping file…", oninput: (e) => { mp.loadPath = e.target.value; } });
   loadInput.value = mp.loadPath;
   return h("div", {},
     h("div", { class: "field" }, h("label", { for: "mp-workbook" }, "Excel workbook", h("span", { class: "req" }, "required")),
-      h("div", { class: "pathrow" }, book, h("button", { type: "button", onclick: () => pickPath({ kind: "open", label: "Excel workbook", extensions: [".xlsx"], default: "" }, book, (v) => { mp.workbook = v; loadBook(); }) }, "Browse…")),
+      h("div", { class: "pathrow" }, book, h("button", { type: "button", onclick: () => pickPath({ kind: "open", label: "Excel workbook", extensions: [".xlsx"], default: "" }, book, openBook) }, "Browse…")),
       h("p", { class: "help" }, "The .xlsx file that holds your requirements and the other tables.")),
     h("details", { class: "more" }, h("summary", {}, "Edit a mapping you saved earlier"),
       h("div", { class: "field" }, h("label", { for: "mp-load" }, "Mapping file"),
@@ -80,7 +93,7 @@ async function loadBook() {
   for (const s of mp.sources) before.set(mpKey(s), [...(before.get(mpKey(s)) || []), s]);
   const refetch = [];
   const kept = found.flatMap((fresh) => (before.get(mpKey(fresh)) || [fresh]).map((s) => {
-    if (s !== fresh && s.missing) { s.missing = false; s.where = fresh.where; if (s.role) refetch.push(s); }
+    if (s !== fresh) { s.where = fresh.where; if (s.missing && s.role) refetch.push(s); s.missing = false; }
     return s;
   }));
   const foundKeys = new Set(found.map(mpKey));
@@ -96,7 +109,12 @@ async function loadSaved() {
   try { data = await api("/api/mapping/load?path=" + encodeURIComponent(mp.loadPath)); } catch (e) { data = { error: e.message }; }
   if (data.error) { mp.bookError = data.error; mp.notes = []; drawBookMessage(); return; }
   mp.bookError = ""; mp.notes = data.notes;
-  const form = data.form;
+  applyForm(data.form, "not in this workbook");
+  drawBookMessage(); drawSources(); schedulePreview();
+  for (const s of mp.sources) if (s.role && !s.missing) fetchColumns(s, false);
+}
+
+function applyForm(form, unknownWhere) {
   mp.idColumn = form.id_column; mp.extra = form.extra; mp.xlsxExtra = form.xlsx_extra;
   const wanted = new Set(form.sources.map((fs) => fs.kind + ":" + fs.name));
   mp.sources = mp.sources.filter((s) => !s.dup);
@@ -106,7 +124,7 @@ async function loadSaved() {
     let s = mp.sources.find((x) => x.kind === fs.kind && x.name === fs.name && !used.has(x));
     if (!s) {
       const siblings = mp.sources.filter((x) => x.kind === fs.kind && x.name === fs.name);
-      s = newSource(fs.kind, fs.name, siblings.length ? siblings[0].where : "not in this workbook");
+      s = newSource(fs.kind, fs.name, siblings.length ? siblings[0].where : unknownWhere);
       s.missing = !siblings.length; s.dup = siblings.length > 0;
       mp.sources.splice(siblings.length ? mp.sources.indexOf(siblings[siblings.length - 1]) + 1 : mp.sources.length, 0, s);
     }
@@ -115,8 +133,6 @@ async function loadSaved() {
     Object.assign(s, { raw: null, role: fs.role, header_row: fs.header_row == null ? "" : String(fs.header_row), field: fs.field, id_prefix: fs.id_prefix, columns: fs.columns.map((c) => ({ ...c })), extra: fs.extra,
       headings: fs.headings ? { column: fs.headings.column, values: fs.headings.values.join(", "), text: fs.headings.text || "", into: fs.headings.into, auto: "" } : null });
   }
-  drawBookMessage(); drawSources(); schedulePreview();
-  for (const s of mp.sources) if (s.role && !s.missing) fetchColumns(s, false);
 }
 
 async function fetchColumns(s, fresh) {
@@ -312,7 +328,10 @@ function buildForm() {
 }
 
 let mapPreviewSeq = 0;
-function schedulePreview() { mp.saved = ""; mp.exists = false; later("mp-preview", fetchMapPreview, 300); }
+function schedulePreview() {
+  if (mp.saved && JSON.stringify(buildForm()) !== mp.savedForm) mp.saved = "";
+  mp.exists = false; keepDraft(); later("mp-preview", fetchMapPreview, 300);
+}
 async function fetchMapPreview() {
   const seq = ++mapPreviewSeq;
   if (!mp.workbook.trim() || mp.bookError) { mp.preview = null; drawSave(); return; }
@@ -329,12 +348,16 @@ async function fetchFollow() {
   drawFollow();
 }
 
+function setSavePath(path) { mp.savePath = path; mp.saved = ""; mp.exists = false; keepDraft(); fetchFollow(); drawSave(); }
+
 async function saveMapping(overwrite) {
+  const form = buildForm();
   let data;
-  try { data = await api("/api/mapping/save", { path: mp.savePath, form: buildForm(), overwrite }); } catch (e) { data = { error: e.message }; }
-  if (data.error) { mp.preview = { ...(mp.preview || {}), error: data.error }; mp.saved = ""; drawSave(); return; }
+  try { data = await api("/api/mapping/save", { path: mp.savePath, form, overwrite }); } catch (e) { data = { error: e.message }; }
+  if (data.error) { mp.preview = { ...(mp.preview || {}), error: data.error }; mp.saved = ""; keepDraft(); drawSave(); return; }
   mp.exists = !!data.exists;
-  mp.saved = data.saved ? mp.savePath : "";
+  mp.saved = data.saved ? mp.savePath : ""; mp.savedForm = JSON.stringify(form);
+  keepDraft();
   if (data.saved) {
     await fetchFollow();
     if (mp.follow && !mp.follow.error) {
@@ -364,7 +387,7 @@ function drawSave() {
   updateFooter();
   const box = $("mp-save-box"); if (!box) return;
   const p = mp.preview;
-  const pathInput = h("input", { type: "text", id: "mp-save", spellcheck: "false", onchange: (e) => { mp.savePath = e.target.value.trim(); mp.saved = ""; mp.exists = false; fetchFollow(); drawSave(); } });
+  const pathInput = h("input", { type: "text", id: "mp-save", spellcheck: "false", onchange: (e) => setSavePath(e.target.value.trim()) });
   pathInput.value = mp.savePath;
   const ready = p && p.mapping && !p.error;
   const status = !p ? h("p", { class: "hint" }, "Say what each table holds on the previous page. A preview of the import appears here.")
@@ -385,7 +408,7 @@ function drawSave() {
     json ? h("div", {}, h("div", { class: "commandbar" }, h("strong", {}, "mapping.json"), h("button", { class: "small", type: "button", onclick: (e) => copyText(json, e.target) }, "Copy JSON")),
       h("pre", { class: "json", tabindex: "0", "aria-label": "Mapping JSON" }, json)) : null,
     h("div", { class: "field", style: "margin-top:14px" }, h("label", { for: "mp-save" }, "Save the mapping as"),
-      h("div", { class: "pathrow" }, pathInput, h("button", { type: "button", onclick: () => pickPath({ kind: "save", label: "mapping", extensions: [".json"], default: "mapping.json" }, pathInput, (v) => { mp.savePath = v; mp.saved = ""; mp.exists = false; fetchFollow(); drawSave(); }) }, "Choose location…")),
+      h("div", { class: "pathrow" }, pathInput, h("button", { type: "button", onclick: () => pickPath({ kind: "save", label: "mapping", extensions: [".json"], default: "mapping.json" }, pathInput, setSavePath) }, "Choose location…")),
       h("p", { class: "help" }, "Saving never replaces an existing file without asking.")),
     confirm, saved,
     h("div", { class: "actions" }, h("button", { class: "primary", id: "mp-savebtn", type: "button", disabled: !ready, onclick: () => saveMapping(false) }, "Save mapping")));

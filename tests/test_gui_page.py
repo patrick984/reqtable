@@ -145,6 +145,27 @@ class ReloadTests(unittest.TestCase):
         )
         self.assertEqual(found, {"task:report": run})
 
+    def test_the_mapping_builder_gets_its_roles_back_after_a_reload(self) -> None:
+        found = self.after_reload(
+            "mp.workbook = mp.book = 'book.xlsx';"
+            "const s = newSource('table', 'Reqs', 'table on sheet A'); s.role = 'requirements';"
+            "s.columns = [{ header: 'Req ID', action: 'map', to: 'ID', separator: '' }];"
+            "mp.sources = [s, newSource('table', 'Notes', 'table on sheet B')]; mp.savePath = 'mine.json';"
+            "keepDraft()",
+            "(Object.assign(mp, { workbook: '', book: '', sources: [], savePath: '' }), openBook('book.xlsx'),"
+            " [mp.sources.map((x) => [x.name, x.role, x.columns.map((c) => c.to)]), mp.savePath, mappingBlocker('tables')])",
+        )
+        self.assertEqual(found, [[["Reqs", "requirements", ["ID"]]], "mine.json", ""])
+
+    def test_another_workbook_starts_from_a_fresh_list_of_tables(self) -> None:
+        found = self.after_reload(
+            "mp.workbook = mp.book = 'book.xlsx';"
+            "const s = newSource('table', 'Reqs', 'table on sheet A'); s.role = 'requirements';"
+            "mp.sources = [s]; keepDraft(); openBook('other.xlsx')",
+            "[mp.sources, mappingBlocker('tables')]",
+        )
+        self.assertEqual(found, [[], "Say what at least one table holds"])
+
 
 @unittest.skipUnless(NODE, "node is not installed")
 class StoredRunTests(unittest.TestCase):
